@@ -1,7 +1,7 @@
 package com.petrick.vtt.feature.canvas;
 
-import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.core.transform.Transform2D;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,19 +23,34 @@ public final class CanvasScene {
 
         scene.addObject(new CanvasObject(
                 "object_1",
-                new Rectd(-50, -50, 100, 100),
+                new Transform2D(
+                        new Vec2d(0, 0),
+                        0.0,
+                        new Vec2d(1.0, 1.0)
+                ),
+                new Vec2d(100, 100),
                 0xFFFFFFFF
         ));
 
         scene.addObject(new CanvasObject(
                 "object_2",
-                new Rectd(150, -40, 80, 80),
+                new Transform2D(
+                        new Vec2d(190, 0),
+                        0.0,
+                        new Vec2d(1.0, 1.0)
+                ),
+                new Vec2d(80, 80),
                 0xFFFFAA55
         ));
 
         scene.addObject(new CanvasObject(
                 "object_3",
-                new Rectd(-220, 100, 120, 70),
+                new Transform2D(
+                        new Vec2d(-160, 135),
+                        0.0,
+                        new Vec2d(1.0, 1.0)
+                ),
+                new Vec2d(120, 70),
                 0xFF55AAFF
         ));
 

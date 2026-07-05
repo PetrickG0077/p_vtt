@@ -16,7 +16,7 @@ import com.petrick.vtt.platform.render.VRenderContext;
  */
 public final class CanvasRenderer {
 
-    private static final int SELECTION_BORDER_COLOR = 0xFF66CCFF;
+    private static final int SELECTION_BORDER_COLOR = 0xFF0099FF;
 
     private final GridRenderer gridRenderer;
 
