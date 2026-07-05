@@ -5,6 +5,8 @@ import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.tool.ToolContext;
 import com.petrick.vtt.editor.tool.ToolController;
 import com.petrick.vtt.feature.camera.Camera2D;
+import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -20,14 +22,24 @@ public final class InputController {
 
     private final Camera2D camera;
 
+    private final CanvasScene scene;
+
+    private final SelectionManager selectionManager;
+
     private final ToolController toolController;
 
     private boolean globalPanning;
 
     private Vec2d lastGlobalPanMousePosition;
 
-    public InputController(Camera2D camera) {
+    public InputController(
+            Camera2D camera,
+            CanvasScene scene,
+            SelectionManager selectionManager
+    ) {
         this.camera = camera;
+        this.scene = scene;
+        this.selectionManager = selectionManager;
         this.toolController = new ToolController();
     }
 
@@ -124,6 +136,11 @@ public final class InputController {
     }
 
     private ToolContext createToolContext(RenderState renderState) {
-        return new ToolContext(camera, renderState);
+        return new ToolContext(
+                camera,
+                renderState,
+                scene,
+                selectionManager
+        );
     }
 }

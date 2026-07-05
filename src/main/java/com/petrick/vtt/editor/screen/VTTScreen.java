@@ -7,6 +7,8 @@ import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
+import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.selection.SelectionManager;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -29,6 +31,10 @@ public final class VTTScreen extends Screen {
 
     private final DebugOverlay debugOverlay;
 
+    private final CanvasScene scene;
+
+    private final SelectionManager selectionManager;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -37,8 +43,10 @@ public final class VTTScreen extends Screen {
         super(Component.literal("Virtual Tabletop"));
 
         this.camera = new Camera2D();
+        this.scene = CanvasScene.createDebugScene();
+        this.selectionManager = new SelectionManager();
         this.canvasRenderer = new CanvasRenderer();
-        this.inputController = new InputController(camera);
+        this.inputController = new InputController(camera, scene, selectionManager);
         this.debugOverlay = new DebugOverlay();
     }
 
@@ -63,7 +71,7 @@ public final class VTTScreen extends Screen {
         );
 
         renderOpaqueBackground(context);
-        canvasRenderer.render(context);
+        canvasRenderer.render(context, scene, selectionManager);
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
         debugOverlay.render(context, this.font, camera, inputController.getActiveToolId());
