@@ -25,6 +25,11 @@ public final class SelectionManager {
         selectedObjectIds.add(objectId);
     }
 
+    public void selectOnly(String objectId) {
+        clearSelection();
+        select(objectId);
+    }
+
     public void deselect(String objectId) {
         selectedObjectIds.remove(objectId);
     }
@@ -76,7 +81,7 @@ public final class SelectionManager {
         }
     }
 
-    private CanvasObject findTopmostObjectAtPoint(CanvasScene scene, Vec2d worldPosition) {
+    public CanvasObject findTopmostObjectAtPoint(CanvasScene scene, Vec2d worldPosition) {
         List<CanvasObject> objects = scene.getObjects();
 
         for (int i = objects.size() - 1; i >= 0; i--) {

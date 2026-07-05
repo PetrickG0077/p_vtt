@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.tool;
 
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.platform.render.VRenderContext;
 import org.lwjgl.glfw.GLFW;
 
@@ -12,6 +13,7 @@ import org.lwjgl.glfw.GLFW;
  * - Ctrl + clique adiciona/remove objetos da seleção.
  * - Shift + arrastar cria uma caixa de seleção.
  * - Ctrl + Shift + arrastar adiciona objetos à seleção atual.
+ * - Arrastar objeto selecionado move todos os objetos selecionados.
  */
 public final class SelectTool implements Tool {
 
@@ -31,6 +33,10 @@ public final class SelectTool implements Tool {
 
     private Vec2d selectionEnd;
 
+    private boolean draggingSelection;
+
+    private Vec2d lastDragWorldPosition;
+
     @Override
     public String getId() {
         return ID;
@@ -48,21 +54,36 @@ public final class SelectTool implements Tool {
             return false;
         }
 
+        Vec2d screenPosition = new Vec2d(mouseX, mouseY);
+        Vec2d worldPosition = context.renderState().screenToWorld(screenPosition);
+
         if (isShiftDown(modifiers)) {
             this.selecting = true;
             this.additiveSelection = isControlDown(modifiers);
-            this.selectionStart = new Vec2d(mouseX, mouseY);
-            this.selectionEnd = new Vec2d(mouseX, mouseY);
+            this.selectionStart = screenPosition;
+            this.selectionEnd = screenPosition;
             return true;
         }
 
-        Vec2d worldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+        CanvasObject clickedObject = context.selectionManager()
+                .findTopmostObjectAtPoint(context.scene(), worldPosition);
+
+        if (clickedObject == null) {
+            if (!isControlDown(modifiers)) {
+                context.selectionManager().clearSelection();
+            }
+
+            return true;
+        }
 
         if (isControlDown(modifiers)) {
-            context.selectionManager().toggleAtPoint(context.scene(), worldPosition);
-        } else {
-            context.selectionManager().selectSingleAtPoint(context.scene(), worldPosition);
+            context.selectionManager().toggle(clickedObject.id());
+        } else if (!context.selectionManager().isSelected(clickedObject.id())) {
+            context.selectionManager().selectOnly(clickedObject.id());
         }
+
+        this.draggingSelection = context.selectionManager().isSelected(clickedObject.id());
+        this.lastDragWorldPosition = worldPosition;
 
         return true;
     }
@@ -75,7 +96,11 @@ public final class SelectTool implements Tool {
             int button,
             int modifiers
     ) {
-        if (button == LEFT_MOUSE_BUTTON && selecting) {
+        if (button != LEFT_MOUSE_BUTTON) {
+            return false;
+        }
+
+        if (selecting) {
             this.selectionEnd = new Vec2d(mouseX, mouseY);
 
             Rectd worldSelectionBounds = getWorldSelectionBounds(context);
@@ -94,6 +119,12 @@ public final class SelectTool implements Tool {
             return true;
         }
 
+        if (draggingSelection) {
+            this.draggingSelection = false;
+            this.lastDragWorldPosition = null;
+            return true;
+        }
+
         return false;
     }
 
@@ -107,8 +138,25 @@ public final class SelectTool implements Tool {
             double dragY,
             int modifiers
     ) {
-        if (button == LEFT_MOUSE_BUTTON && selecting) {
+        if (button != LEFT_MOUSE_BUTTON) {
+            return false;
+        }
+
+        if (selecting) {
             this.selectionEnd = new Vec2d(mouseX, mouseY);
+            return true;
+        }
+
+        if (draggingSelection && lastDragWorldPosition != null) {
+            Vec2d currentWorldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+            Vec2d worldDelta = currentWorldPosition.subtract(lastDragWorldPosition);
+
+            context.scene().moveObjects(
+                    context.selectionManager().getSelectedObjectIds(),
+                    worldDelta
+            );
+
+            this.lastDragWorldPosition = currentWorldPosition;
             return true;
         }
 

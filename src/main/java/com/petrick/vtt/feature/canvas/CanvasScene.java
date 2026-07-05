@@ -1,10 +1,12 @@
 package com.petrick.vtt.feature.canvas;
 
 import com.petrick.vtt.core.math.Rectd;
+import com.petrick.vtt.core.math.Vec2d;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Cena temporária do canvas.
@@ -46,5 +48,36 @@ public final class CanvasScene {
 
     public List<CanvasObject> getObjects() {
         return Collections.unmodifiableList(objects);
+    }
+
+    public CanvasObject findObjectById(String objectId) {
+        for (CanvasObject object : objects) {
+            if (object.id().equals(objectId)) {
+                return object;
+            }
+        }
+
+        return null;
+    }
+
+    public void replaceObject(CanvasObject replacement) {
+        for (int i = 0; i < objects.size(); i++) {
+            CanvasObject object = objects.get(i);
+
+            if (object.id().equals(replacement.id())) {
+                objects.set(i, replacement);
+                return;
+            }
+        }
+    }
+
+    public void moveObjects(Set<String> objectIds, Vec2d worldDelta) {
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.movedBy(worldDelta));
+            }
+        }
     }
 }
