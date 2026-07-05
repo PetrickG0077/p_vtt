@@ -1,12 +1,12 @@
 package com.petrick.vtt.editor.screen;
 
-import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.editor.input.InputController;
+import com.petrick.vtt.editor.overlay.DebugOverlay;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -26,6 +26,8 @@ public final class VTTScreen extends Screen {
 
     private final InputController inputController;
 
+    private final DebugOverlay debugOverlay;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -36,6 +38,7 @@ public final class VTTScreen extends Screen {
         this.camera = new Camera2D();
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera);
+        this.debugOverlay = new DebugOverlay();
     }
 
     @Override
@@ -60,7 +63,8 @@ public final class VTTScreen extends Screen {
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context);
-        renderDebugInfo(context);
+        renderTitle(context);
+        debugOverlay.render(context, this.font, camera);
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
@@ -73,7 +77,7 @@ public final class VTTScreen extends Screen {
         );
     }
 
-    private void renderDebugInfo(VRenderContext context) {
+    private void renderTitle(VRenderContext context) {
         GuiGraphics graphics = context.graphics();
 
         graphics.drawCenteredString(
@@ -86,49 +90,9 @@ public final class VTTScreen extends Screen {
 
         graphics.drawCenteredString(
                 this.font,
-                "Sprint 1 - VTT Screen",
+                "Sprint 1 - VTT Canvas",
                 this.width / 2,
                 this.height / 2,
-                0xFFAAAAAA
-        );
-
-        graphics.drawString(
-                this.font,
-                "Mouse Screen: " + formatVec(context.mouseScreenPosition()),
-                10,
-                10,
-                0xFFFFFFFF
-        );
-
-        graphics.drawString(
-                this.font,
-                "Mouse World: " + formatVec(context.mouseWorldPosition()),
-                10,
-                22,
-                0xFFFFFFFF
-        );
-
-        graphics.drawString(
-                this.font,
-                "Camera: " + formatVec(camera.getPosition()),
-                10,
-                34,
-                0xFFFFFFFF
-        );
-
-        graphics.drawString(
-                this.font,
-                "Zoom: " + String.format(Locale.ROOT, "%.2f", camera.getZoom()),
-                10,
-                46,
-                0xFFFFFFFF
-        );
-
-        graphics.drawString(
-                this.font,
-                "Press ESC to close",
-                10,
-                58,
                 0xFFAAAAAA
         );
     }
@@ -138,10 +102,6 @@ public final class VTTScreen extends Screen {
             this.viewport = Viewport.fullScreen(this.width, this.height);
             this.renderState = new RenderState(camera, viewport);
         }
-    }
-
-    private static String formatVec(Vec2d vec) {
-        return String.format(Locale.ROOT, "(%.2f, %.2f)", vec.x(), vec.y());
     }
 
     @Override
