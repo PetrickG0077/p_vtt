@@ -106,7 +106,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (inputController.mouseClicked(mouseX, mouseY, button)) {
+        if (renderState != null && inputController.mouseClicked(mouseX, mouseY, button, renderState)) {
             return true;
         }
 
@@ -115,7 +115,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (inputController.mouseReleased(mouseX, mouseY, button)) {
+        if (renderState != null && inputController.mouseReleased(mouseX, mouseY, button, renderState)) {
             return true;
         }
 
@@ -130,7 +130,7 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (inputController.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
+        if (renderState != null && inputController.mouseDragged(mouseX, mouseY, button, dragX, dragY, renderState)) {
             return true;
         }
 
@@ -144,11 +144,7 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
-        if (renderState == null) {
-            return false;
-        }
-
-        if (inputController.mouseScrolled(mouseX, mouseY, scrollX, scrollY, renderState)) {
+        if (renderState != null && inputController.mouseScrolled(mouseX, mouseY, scrollX, scrollY, renderState)) {
             return true;
         }
 

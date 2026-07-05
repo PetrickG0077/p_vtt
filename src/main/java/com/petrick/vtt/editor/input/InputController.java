@@ -1,45 +1,37 @@
 package com.petrick.vtt.editor.input;
 
-import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
+import com.petrick.vtt.editor.tool.ToolContext;
+import com.petrick.vtt.editor.tool.ToolController;
 import com.petrick.vtt.feature.camera.Camera2D;
 
 /**
  * Controla os inputs principais do VTT.
  *
- * A Screen apenas captura eventos brutos do Minecraft
+ * A Screen captura eventos brutos do Minecraft
  * e repassa para este controller.
+ *
+ * Este controller delega as ações para a ferramenta ativa.
  */
 public final class InputController {
 
     private final Camera2D camera;
 
-    private boolean panning;
-
-    private Vec2d lastMousePosition;
+    private final ToolController toolController;
 
     public InputController(Camera2D camera) {
         this.camera = camera;
+        this.toolController = new ToolController();
     }
 
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 2) {
-            this.panning = true;
-            this.lastMousePosition = new Vec2d(mouseX, mouseY);
-            return true;
-        }
-
-        return false;
+    public boolean mouseClicked(double mouseX, double mouseY, int button, RenderState renderState) {
+        ToolContext context = createToolContext(renderState);
+        return toolController.mouseClicked(context, mouseX, mouseY, button);
     }
 
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 2) {
-            this.panning = false;
-            this.lastMousePosition = null;
-            return true;
-        }
-
-        return false;
+    public boolean mouseReleased(double mouseX, double mouseY, int button, RenderState renderState) {
+        ToolContext context = createToolContext(renderState);
+        return toolController.mouseReleased(context, mouseX, mouseY, button);
     }
 
     public boolean mouseDragged(
@@ -47,19 +39,11 @@ public final class InputController {
             double mouseY,
             int button,
             double dragX,
-            double dragY
+            double dragY,
+            RenderState renderState
     ) {
-        if (panning && lastMousePosition != null) {
-            Vec2d currentMousePosition = new Vec2d(mouseX, mouseY);
-            Vec2d delta = currentMousePosition.subtract(lastMousePosition);
-
-            camera.moveByScreenDelta(delta);
-
-            lastMousePosition = currentMousePosition;
-            return true;
-        }
-
-        return false;
+        ToolContext context = createToolContext(renderState);
+        return toolController.mouseDragged(context, mouseX, mouseY, button, dragX, dragY);
     }
 
     public boolean mouseScrolled(
@@ -69,14 +53,15 @@ public final class InputController {
             double scrollY,
             RenderState renderState
     ) {
-        double zoomFactor = scrollY > 0 ? 1.1 : 0.9;
+        ToolContext context = createToolContext(renderState);
+        return toolController.mouseScrolled(context, mouseX, mouseY, scrollX, scrollY);
+    }
 
-        camera.zoomAtScreenPoint(
-                zoomFactor,
-                new Vec2d(mouseX, mouseY),
-                renderState.getViewportBounds()
-        );
+    public ToolController getToolController() {
+        return toolController;
+    }
 
-        return true;
+    private ToolContext createToolContext(RenderState renderState) {
+        return new ToolContext(camera, renderState);
     }
 }
