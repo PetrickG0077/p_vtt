@@ -2,13 +2,15 @@ package com.petrick.vtt.feature.canvas;
 
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
  * Renderer inicial do canvas do VTT.
  *
- * Por enquanto, ele desenha apenas um quadrado de teste
- * usando coordenadas do mundo.
+ * Por enquanto, ele desenha:
+ * - grid procedural
+ * - quadrado de teste no mundo
  */
 public final class CanvasRenderer {
 
@@ -19,7 +21,14 @@ public final class CanvasRenderer {
             100.0
     );
 
+    private final GridRenderer gridRenderer;
+
+    public CanvasRenderer() {
+        this.gridRenderer = new GridRenderer();
+    }
+
     public void render(VRenderContext context) {
+        gridRenderer.render(context);
         renderTestRect(context);
     }
 
