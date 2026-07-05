@@ -6,6 +6,7 @@ import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.editor.input.InputController;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -23,9 +24,7 @@ public final class VTTScreen extends Screen {
 
     private final CanvasRenderer canvasRenderer;
 
-    private boolean panning;
-
-    private Vec2d lastMousePosition;
+    private final InputController inputController;
 
     private Viewport viewport;
 
@@ -36,6 +35,7 @@ public final class VTTScreen extends Screen {
 
         this.camera = new Camera2D();
         this.canvasRenderer = new CanvasRenderer();
+        this.inputController = new InputController(camera);
     }
 
     @Override
@@ -146,9 +146,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 2) {
-            this.panning = true;
-            this.lastMousePosition = new Vec2d(mouseX, mouseY);
+        if (inputController.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
@@ -157,9 +155,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 2) {
-            this.panning = false;
-            this.lastMousePosition = null;
+        if (inputController.mouseReleased(mouseX, mouseY, button)) {
             return true;
         }
 
@@ -174,13 +170,7 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (panning && lastMousePosition != null) {
-            Vec2d currentMousePosition = new Vec2d(mouseX, mouseY);
-            Vec2d delta = currentMousePosition.subtract(lastMousePosition);
-
-            camera.moveByScreenDelta(delta);
-
-            lastMousePosition = currentMousePosition;
+        if (inputController.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
             return true;
         }
 
@@ -198,15 +188,11 @@ public final class VTTScreen extends Screen {
             return false;
         }
 
-        double zoomFactor = scrollY > 0 ? 1.1 : 0.9;
+        if (inputController.mouseScrolled(mouseX, mouseY, scrollX, scrollY, renderState)) {
+            return true;
+        }
 
-        camera.zoomAtScreenPoint(
-                zoomFactor,
-                new Vec2d(mouseX, mouseY),
-                renderState.getViewportBounds()
-        );
-
-        return true;
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     @Override
