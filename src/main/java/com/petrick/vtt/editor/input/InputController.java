@@ -1,37 +1,68 @@
 package com.petrick.vtt.editor.input;
 
+import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.tool.ToolContext;
 import com.petrick.vtt.editor.tool.ToolController;
 import com.petrick.vtt.feature.camera.Camera2D;
+import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
  * Controla os inputs principais do VTT.
  *
- * A Screen captura eventos brutos do Minecraft
- * e repassa para este controller.
- *
- * Este controller delega as ações para a ferramenta ativa.
+ * Responsabilidades:
+ * - ações globais de câmera;
+ * - delegar ações específicas para a ferramenta ativa.
  */
 public final class InputController {
+
+    private static final int MIDDLE_MOUSE_BUTTON = 2;
 
     private final Camera2D camera;
 
     private final ToolController toolController;
+
+    private boolean globalPanning;
+
+    private Vec2d lastGlobalPanMousePosition;
 
     public InputController(Camera2D camera) {
         this.camera = camera;
         this.toolController = new ToolController();
     }
 
-    public boolean mouseClicked(double mouseX, double mouseY, int button, RenderState renderState) {
+    public boolean mouseClicked(
+            double mouseX,
+            double mouseY,
+            int button,
+            int modifiers,
+            RenderState renderState
+    ) {
+        if (button == MIDDLE_MOUSE_BUTTON) {
+            this.globalPanning = true;
+            this.lastGlobalPanMousePosition = new Vec2d(mouseX, mouseY);
+            return true;
+        }
+
         ToolContext context = createToolContext(renderState);
-        return toolController.mouseClicked(context, mouseX, mouseY, button);
+        return toolController.mouseClicked(context, mouseX, mouseY, button, modifiers);
     }
 
-    public boolean mouseReleased(double mouseX, double mouseY, int button, RenderState renderState) {
+    public boolean mouseReleased(
+            double mouseX,
+            double mouseY,
+            int button,
+            int modifiers,
+            RenderState renderState
+    ) {
+        if (button == MIDDLE_MOUSE_BUTTON) {
+            this.globalPanning = false;
+            this.lastGlobalPanMousePosition = null;
+            return true;
+        }
+
         ToolContext context = createToolContext(renderState);
-        return toolController.mouseReleased(context, mouseX, mouseY, button);
+        return toolController.mouseReleased(context, mouseX, mouseY, button, modifiers);
     }
 
     public boolean mouseDragged(
@@ -40,10 +71,21 @@ public final class InputController {
             int button,
             double dragX,
             double dragY,
+            int modifiers,
             RenderState renderState
     ) {
+        if (button == MIDDLE_MOUSE_BUTTON && globalPanning && lastGlobalPanMousePosition != null) {
+            Vec2d currentMousePosition = new Vec2d(mouseX, mouseY);
+            Vec2d delta = currentMousePosition.subtract(lastGlobalPanMousePosition);
+
+            camera.moveByScreenDelta(delta);
+
+            lastGlobalPanMousePosition = currentMousePosition;
+            return true;
+        }
+
         ToolContext context = createToolContext(renderState);
-        return toolController.mouseDragged(context, mouseX, mouseY, button, dragX, dragY);
+        return toolController.mouseDragged(context, mouseX, mouseY, button, dragX, dragY, modifiers);
     }
 
     public boolean mouseScrolled(
@@ -53,12 +95,32 @@ public final class InputController {
             double scrollY,
             RenderState renderState
     ) {
-        ToolContext context = createToolContext(renderState);
-        return toolController.mouseScrolled(context, mouseX, mouseY, scrollX, scrollY);
+        double zoomFactor = scrollY > 0 ? 1.1 : 0.9;
+
+        camera.zoomAtScreenPoint(
+                zoomFactor,
+                new Vec2d(mouseX, mouseY),
+                renderState.getViewportBounds()
+        );
+
+        return true;
     }
 
-    public ToolController getToolController() {
-        return toolController;
+    public void renderToolOverlay(VRenderContext renderContext, RenderState renderState) {
+        ToolContext context = createToolContext(renderState);
+        toolController.render(renderContext, context);
+    }
+
+    public String getActiveToolId() {
+        return toolController.getActiveToolId();
+    }
+
+    public void selectHandTool() {
+        toolController.selectHandTool();
+    }
+
+    public void selectSelectTool() {
+        toolController.selectSelectTool();
     }
 
     private ToolContext createToolContext(RenderState renderState) {

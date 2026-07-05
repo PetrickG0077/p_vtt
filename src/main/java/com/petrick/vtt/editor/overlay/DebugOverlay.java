@@ -16,7 +16,7 @@ import java.util.Locale;
  */
 public final class DebugOverlay {
 
-    public void render(VRenderContext context, Font font, Camera2D camera) {
+    public void render(VRenderContext context, Font font, Camera2D camera, String activeToolId) {
         GuiGraphics graphics = context.graphics();
 
         graphics.drawString(
@@ -56,6 +56,13 @@ public final class DebugOverlay {
                 "Press ESC to close",
                 10,
                 58,
+                0xFFAAAAAA
+        );
+        graphics.drawString(
+                font,
+                "Tool: " + activeToolId,
+                10,
+                70,
                 0xFFAAAAAA
         );
     }

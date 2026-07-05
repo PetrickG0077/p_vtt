@@ -1,18 +1,31 @@
 package com.petrick.vtt.editor.tool;
 
+import com.petrick.vtt.platform.render.VRenderContext;
+
 /**
  * Controla qual ferramenta está ativa no editor.
  */
 public final class ToolController {
 
+    private final HandTool handTool;
+
+    private final SelectTool selectTool;
+
     private Tool activeTool;
 
     public ToolController() {
-        this.activeTool = new HandTool();
+        this.handTool = new HandTool();
+        this.selectTool = new SelectTool();
+
+        this.activeTool = handTool;
     }
 
     public Tool getActiveTool() {
         return activeTool;
+    }
+
+    public String getActiveToolId() {
+        return activeTool.getId();
     }
 
     public void setActiveTool(Tool activeTool) {
@@ -23,12 +36,36 @@ public final class ToolController {
         this.activeTool = activeTool;
     }
 
-    public boolean mouseClicked(ToolContext context, double mouseX, double mouseY, int button) {
-        return activeTool.mouseClicked(context, mouseX, mouseY, button);
+    public void selectHandTool() {
+        setActiveTool(handTool);
     }
 
-    public boolean mouseReleased(ToolContext context, double mouseX, double mouseY, int button) {
-        return activeTool.mouseReleased(context, mouseX, mouseY, button);
+    public void selectSelectTool() {
+        setActiveTool(selectTool);
+    }
+
+    public void render(VRenderContext renderContext, ToolContext toolContext) {
+        activeTool.render(renderContext, toolContext);
+    }
+
+    public boolean mouseClicked(
+            ToolContext context,
+            double mouseX,
+            double mouseY,
+            int button,
+            int modifiers
+    ) {
+        return activeTool.mouseClicked(context, mouseX, mouseY, button, modifiers);
+    }
+
+    public boolean mouseReleased(
+            ToolContext context,
+            double mouseX,
+            double mouseY,
+            int button,
+            int modifiers
+    ) {
+        return activeTool.mouseReleased(context, mouseX, mouseY, button, modifiers);
     }
 
     public boolean mouseDragged(
@@ -37,18 +74,9 @@ public final class ToolController {
             double mouseY,
             int button,
             double dragX,
-            double dragY
+            double dragY,
+            int modifiers
     ) {
-        return activeTool.mouseDragged(context, mouseX, mouseY, button, dragX, dragY);
-    }
-
-    public boolean mouseScrolled(
-            ToolContext context,
-            double mouseX,
-            double mouseY,
-            double scrollX,
-            double scrollY
-    ) {
-        return activeTool.mouseScrolled(context, mouseX, mouseY, scrollX, scrollY);
+        return activeTool.mouseDragged(context, mouseX, mouseY, button, dragX, dragY, modifiers);
     }
 }

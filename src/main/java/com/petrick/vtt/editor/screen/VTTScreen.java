@@ -10,6 +10,7 @@ import com.petrick.vtt.editor.overlay.DebugOverlay;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 
@@ -63,8 +64,9 @@ public final class VTTScreen extends Screen {
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context);
+        inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
-        debugOverlay.render(context, this.font, camera);
+        debugOverlay.render(context, this.font, camera, inputController.getActiveToolId());
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
@@ -104,9 +106,38 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private int getKeyboardModifiers() {
+        long window = this.minecraft.getWindow().getWindow();
+
+        int modifiers = 0;
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_SHIFT;
+        }
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_CONTROL;
+        }
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_ALT;
+        }
+
+        return modifiers;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (renderState != null && inputController.mouseClicked(mouseX, mouseY, button, renderState)) {
+        if (renderState != null && inputController.mouseClicked(
+                mouseX,
+                mouseY,
+                button,
+                getKeyboardModifiers(),
+                renderState
+        )) {
             return true;
         }
 
@@ -115,7 +146,13 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (renderState != null && inputController.mouseReleased(mouseX, mouseY, button, renderState)) {
+        if (renderState != null && inputController.mouseReleased(
+                mouseX,
+                mouseY,
+                button,
+                getKeyboardModifiers(),
+                renderState
+        )) {
             return true;
         }
 
@@ -130,7 +167,15 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (renderState != null && inputController.mouseDragged(mouseX, mouseY, button, dragX, dragY, renderState)) {
+        if (renderState != null && inputController.mouseDragged(
+                mouseX,
+                mouseY,
+                button,
+                dragX,
+                dragY,
+                getKeyboardModifiers(),
+                renderState
+        )) {
             return true;
         }
 
@@ -149,6 +194,21 @@ public final class VTTScreen extends Screen {
         }
 
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_H) {
+            inputController.selectHandTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_S) {
+            inputController.selectSelectTool();
+            return true;
+        }
+
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
