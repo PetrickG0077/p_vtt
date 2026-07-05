@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.screen;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.feature.camera.Camera2D;
+import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
@@ -20,6 +21,12 @@ public final class VTTScreen extends Screen {
 
     private final Camera2D camera;
 
+    private final CanvasRenderer canvasRenderer;
+
+    private boolean panning;
+
+    private Vec2d lastMousePosition;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -28,6 +35,7 @@ public final class VTTScreen extends Screen {
         super(Component.literal("Virtual Tabletop"));
 
         this.camera = new Camera2D();
+        this.canvasRenderer = new CanvasRenderer();
     }
 
     @Override
@@ -50,12 +58,8 @@ public final class VTTScreen extends Screen {
                 this.height
         );
 
-        /*
-         * Importante:
-         * Não chamamos renderBackground() nem super.render() depois do nosso desenho.
-         * Isso evita o blur/fundo padrão dos menus do Minecraft.
-         */
         renderOpaqueBackground(context);
+        canvasRenderer.render(context);
         renderDebugInfo(context);
     }
 
@@ -138,6 +142,71 @@ public final class VTTScreen extends Screen {
 
     private static String formatVec(Vec2d vec) {
         return String.format(Locale.ROOT, "(%.2f, %.2f)", vec.x(), vec.y());
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 2) {
+            this.panning = true;
+            this.lastMousePosition = new Vec2d(mouseX, mouseY);
+            return true;
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 2) {
+            this.panning = false;
+            this.lastMousePosition = null;
+            return true;
+        }
+
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(
+            double mouseX,
+            double mouseY,
+            int button,
+            double dragX,
+            double dragY
+    ) {
+        if (panning && lastMousePosition != null) {
+            Vec2d currentMousePosition = new Vec2d(mouseX, mouseY);
+            Vec2d delta = currentMousePosition.subtract(lastMousePosition);
+
+            camera.moveByScreenDelta(delta);
+
+            lastMousePosition = currentMousePosition;
+            return true;
+        }
+
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseScrolled(
+            double mouseX,
+            double mouseY,
+            double scrollX,
+            double scrollY
+    ) {
+        if (renderState == null) {
+            return false;
+        }
+
+        double zoomFactor = scrollY > 0 ? 1.1 : 0.9;
+
+        camera.zoomAtScreenPoint(
+                zoomFactor,
+                new Vec2d(mouseX, mouseY),
+                renderState.getViewportBounds()
+        );
+
+        return true;
     }
 
     @Override
