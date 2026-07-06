@@ -1,6 +1,7 @@
 package com.petrick.vtt;
 
 import com.mojang.logging.LogUtils;
+import com.petrick.vtt.core.application.VTTApplication;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -13,15 +14,22 @@ public final class VTT {
 
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public VTT(IEventBus modEventBus, ModContainer modContainer) {
+    private static VTTApplication application;
 
-        LOGGER.info("");
+    public VTT(IEventBus modEventBus, ModContainer modContainer) {
         LOGGER.info("========================================");
         LOGGER.info("Initializing Virtual Tabletop...");
-        LOGGER.info("Mod ID: {}", MOD_ID);
         LOGGER.info("========================================");
-        LOGGER.info("");
 
+        application = new VTTApplication();
+        application.initialize();
     }
 
+    public static VTTApplication getApplication() {
+        if (application == null) {
+            throw new IllegalStateException("VTTApplication has not been initialized yet.");
+        }
+
+        return application;
+    }
 }

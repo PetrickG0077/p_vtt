@@ -1,5 +1,7 @@
 package com.petrick.vtt.editor.screen;
 
+import com.petrick.vtt.VTT;
+import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
@@ -14,7 +16,6 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import com.petrick.vtt.feature.asset.AssetRegistry;
-import com.petrick.vtt.feature.asset.DebugAssets;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -41,6 +42,8 @@ public final class VTTScreen extends Screen {
 
     private final AssetRegistry assetRegistry;
 
+    private final VTTSession session;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -48,12 +51,12 @@ public final class VTTScreen extends Screen {
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
 
+        this.session = VTT.getApplication().getActiveSession();
+
         this.camera = new Camera2D();
+        this.assetRegistry = session.getAssetRegistry();
+        this.scene = session.getCanvasScene();
 
-        this.assetRegistry = new AssetRegistry();
-        DebugAssets.registerAll(assetRegistry);
-
-        this.scene = CanvasScene.createDebugScene(assetRegistry);
         this.selectionManager = new SelectionManager();
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
