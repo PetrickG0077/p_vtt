@@ -164,6 +164,16 @@ public final class SelectionInspectorOverlay {
         drawLine(
                 context,
                 font,
+                "Visible: " + object.visible(),
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
                 "Bounds:",
                 x,
                 y,

@@ -14,7 +14,8 @@ public record CanvasObject(
         String id,
         Transform2D transform,
         Vec2d size,
-        CanvasVisual visual
+        CanvasVisual visual,
+        boolean visible
 ) {
 
     public CanvasObject movedBy(Vec2d delta) {
@@ -22,7 +23,8 @@ public record CanvasObject(
                 id,
                 transform.movedBy(delta),
                 size,
-                visual
+                visual,
+                visible
         );
     }
 
@@ -31,7 +33,8 @@ public record CanvasObject(
                 id,
                 transform.withScale(transform.scale().multiply(factor)),
                 size,
-                visual
+                visual,
+                visible
         );
     }
 
@@ -40,8 +43,23 @@ public record CanvasObject(
                 id,
                 transform.rotatedBy(deltaDegrees),
                 size,
-                visual
+                visual,
+                visible
         );
+    }
+
+    public CanvasObject withVisible(boolean visible) {
+        return new CanvasObject(
+                id,
+                transform,
+                size,
+                visual,
+                visible
+        );
+    }
+
+    public CanvasObject toggledVisibility() {
+        return withVisible(!visible);
     }
 
     public Vec2d scaledSize() {
@@ -79,9 +97,6 @@ public record CanvasObject(
                 && Math.abs(localPoint.y()) <= scaledSize.y() / 2.0;
     }
 
-    /**
-     * Retorna um bounds alinhado ao mundo contendo o objeto rotacionado.
-     */
     public Rectd bounds() {
         Vec2d topLeft = worldTopLeft();
         Vec2d topRight = worldTopRight();

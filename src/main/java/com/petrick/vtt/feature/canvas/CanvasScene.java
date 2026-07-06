@@ -34,7 +34,8 @@ public final class CanvasScene {
                         new Vec2d(1.0, 1.0)
                 ),
                 new Vec2d(100.0, 100.0),
-                new ColorVisual(0xFFFFFFFF)
+                new ColorVisual(0xFFFFFFFF),
+                true
         ));
 
         scene.addObject(new CanvasObject(
@@ -45,7 +46,8 @@ public final class CanvasScene {
                         new Vec2d(1.0, 1.0)
                 ),
                 new Vec2d(80.0, 80.0),
-                new ColorVisual(0xFFFFAA55)
+                new ColorVisual(0xFFFFAA55),
+                true
         ));
 
         scene.addObject(new CanvasObject(
@@ -56,7 +58,8 @@ public final class CanvasScene {
                         new Vec2d(1.0, 1.0)
                 ),
                 new Vec2d(120.0, 70.0),
-                new ColorVisual(0xFF55AAFF)
+                new ColorVisual(0xFF55AAFF),
+                true
         ));
 
         scene.addObject(new CanvasObject(
@@ -69,7 +72,8 @@ public final class CanvasScene {
                 new Vec2d(96.0, 96.0),
                 new TextureVisual(
                         assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID)
-                )
+                ),
+                true
         ));
 
         return scene;
@@ -163,6 +167,20 @@ public final class CanvasScene {
 
             if (object != null) {
                 replaceObject(object.rotatedBy(deltaDegrees));
+            }
+        }
+    }
+
+    public void toggleObjectsVisibility(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.toggledVisibility());
             }
         }
     }

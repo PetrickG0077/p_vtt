@@ -152,7 +152,8 @@ public final class VTTScreen extends Screen {
                         new Vec2d(1.0, 1.0)
                 ),
                 tokenSize,
-                new TextureVisual(assetRef)
+                new TextureVisual(assetRef),
+                true
         );
 
         scene.addObject(token);
@@ -361,6 +362,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             inputController.deleteSelectedObjects();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_V) {
+            inputController.toggleSelectedObjectsVisibility();
             return true;
         }
 

@@ -177,6 +177,10 @@ public final class InputController {
         toolController.selectSelectTool();
     }
 
+    public void toggleSelectedObjectsVisibility() {
+        scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
+    }
+
     private ToolContext createToolContext(RenderState renderState) {
         return new ToolContext(
                 camera,

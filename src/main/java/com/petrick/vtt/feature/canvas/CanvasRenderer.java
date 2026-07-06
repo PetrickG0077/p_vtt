@@ -51,6 +51,10 @@ public final class CanvasRenderer {
             SelectionManager selectionManager
     ) {
         for (CanvasObject object : scene.getObjects()) {
+            if (!object.visible()) {
+                continue;
+            }
+
             renderObject(context, object);
 
             if (selectionManager.isSelected(object.id())) {

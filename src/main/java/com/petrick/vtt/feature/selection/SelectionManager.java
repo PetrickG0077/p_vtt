@@ -75,7 +75,7 @@ public final class SelectionManager {
 
     public void addObjectsInside(CanvasScene scene, Rectd worldBounds) {
         for (CanvasObject object : scene.getObjects()) {
-            if (object.bounds().intersects(worldBounds)) {
+            if (object.visible() && object.bounds().intersects(worldBounds)) {
                 select(object.id());
             }
         }
@@ -86,6 +86,10 @@ public final class SelectionManager {
 
         for (int i = objects.size() - 1; i >= 0; i--) {
             CanvasObject object = objects.get(i);
+
+            if (!object.visible()) {
+                continue;
+            }
 
             if (object.containsWorldPoint(worldPosition)) {
                 return object;
