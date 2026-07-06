@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import net.minecraft.client.gui.Font;
+import com.petrick.vtt.feature.canvas.CanvasObjectState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -196,6 +197,7 @@ public final class SelectionInspectorOverlay {
         y += LINE_HEIGHT;
 
         y = renderVisualInfo(context, font, object, x, y);
+        y = renderStateList(context, font, object, x, y);
 
         drawLine(
                 context,
@@ -225,6 +227,62 @@ public final class SelectionInspectorOverlay {
                 y,
                 TEXT_COLOR
         );
+    }
+
+    private int renderStateList(
+            VRenderContext context,
+            Font font,
+            CanvasObject object,
+            int x,
+            int y
+    ) {
+        drawLine(
+                context,
+                font,
+                "States:",
+                x,
+                y,
+                MUTED_TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        int maxVisibleStates = 5;
+        int index = 0;
+
+        for (CanvasObjectState state : object.states().values()) {
+            if (index >= maxVisibleStates) {
+                int remaining = object.states().size() - maxVisibleStates;
+
+                drawLine(
+                        context,
+                        font,
+                        "... +" + remaining + " more",
+                        x,
+                        y,
+                        MUTED_TEXT_COLOR
+                );
+                y += LINE_HEIGHT;
+                break;
+            }
+
+            boolean active = state.id().equals(object.activeStateId());
+
+            String prefix = active ? "> " : "  ";
+
+            drawLine(
+                    context,
+                    font,
+                    prefix + state.id() + " - " + state.displayName(),
+                    x,
+                    y,
+                    active ? TITLE_COLOR : TEXT_COLOR
+            );
+
+            y += LINE_HEIGHT;
+            index++;
+        }
+
+        return y;
     }
 
     private int renderVisualInfo(
@@ -393,7 +451,15 @@ public final class SelectionInspectorOverlay {
         }
 
         if (selectedObjects.size() == 1) {
-            return 20;
+            CanvasObject object = selectedObjects.get(0);
+            int visibleStates = Math.min(object.states().size(), 5);
+            int extraStateLines = 1 + visibleStates;
+
+            if (object.states().size() > 5) {
+                extraStateLines++;
+            }
+
+            return 20 + extraStateLines;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;

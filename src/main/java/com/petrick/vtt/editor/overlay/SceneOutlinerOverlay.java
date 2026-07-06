@@ -89,7 +89,10 @@ public final class SceneOutlinerOverlay {
                     + "["
                     + layerIndex
                     + "] "
-                    + object.displayName();
+                    + object.displayName()
+                    + " {"
+                    + object.activeStateId()
+                    + "}";
 
             int color;
 
