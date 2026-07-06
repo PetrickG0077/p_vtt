@@ -44,6 +44,10 @@ public final class ToolController {
         setActiveTool(selectTool);
     }
 
+    public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
+        return activeTool.getCursor(context, mouseX, mouseY);
+    }
+
     public void render(VRenderContext renderContext, ToolContext toolContext) {
         activeTool.render(renderContext, toolContext);
     }

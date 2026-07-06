@@ -1,20 +1,19 @@
 package com.petrick.vtt.editor.screen;
 
 import com.petrick.vtt.core.render.RenderState;
-import com.petrick.vtt.feature.camera.Camera2D;
-import com.petrick.vtt.feature.canvas.CanvasRenderer;
-import com.petrick.vtt.feature.viewport.Viewport;
-import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
+import com.petrick.vtt.feature.camera.Camera2D;
+import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
+import com.petrick.vtt.feature.viewport.Viewport;
+import com.petrick.vtt.platform.client.CursorManager;
+import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
-
-import java.util.Locale;
 
 /**
  * Tela principal do Virtual Tabletop.
@@ -25,15 +24,15 @@ public final class VTTScreen extends Screen {
 
     private final Camera2D camera;
 
+    private final CanvasScene scene;
+
+    private final SelectionManager selectionManager;
+
     private final CanvasRenderer canvasRenderer;
 
     private final InputController inputController;
 
     private final DebugOverlay debugOverlay;
-
-    private final CanvasScene scene;
-
-    private final SelectionManager selectionManager;
 
     private Viewport viewport;
 
@@ -69,6 +68,8 @@ public final class VTTScreen extends Screen {
                 this.width,
                 this.height
         );
+
+        updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context, scene, selectionManager);
@@ -114,7 +115,20 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private void updateCursor(int mouseX, int mouseY) {
+        if (renderState == null) {
+            CursorManager.reset();
+            return;
+        }
+
+        CursorManager.apply(inputController.getCursor(mouseX, mouseY, renderState));
+    }
+
     private int getKeyboardModifiers() {
+        if (this.minecraft == null) {
+            return 0;
+        }
+
         long window = this.minecraft.getWindow().getWindow();
 
         int modifiers = 0;
@@ -197,7 +211,13 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
-        if (renderState != null && inputController.mouseScrolled(mouseX, mouseY, scrollX, scrollY, renderState)) {
+        if (renderState != null && inputController.mouseScrolled(
+                mouseX,
+                mouseY,
+                scrollX,
+                scrollY,
+                renderState
+        )) {
             return true;
         }
 
@@ -217,6 +237,12 @@ public final class VTTScreen extends Screen {
         }
 
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public void removed() {
+        CursorManager.reset();
+        super.removed();
     }
 
     @Override

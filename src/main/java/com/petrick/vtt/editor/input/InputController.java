@@ -123,6 +123,15 @@ public final class InputController {
         toolController.render(renderContext, context);
     }
 
+    public com.petrick.vtt.editor.tool.EditorCursor getCursor(
+            double mouseX,
+            double mouseY,
+            RenderState renderState
+    ) {
+        ToolContext context = createToolContext(renderState);
+        return toolController.getCursor(context, mouseX, mouseY);
+    }
+
     public String getActiveToolId() {
         return toolController.getActiveToolId();
     }

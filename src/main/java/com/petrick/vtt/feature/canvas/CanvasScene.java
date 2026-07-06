@@ -86,6 +86,17 @@ public final class CanvasScene {
         }
     }
 
+    public void replaceObjectById(String objectId, CanvasObject replacement) {
+        for (int i = 0; i < objects.size(); i++) {
+            CanvasObject object = objects.get(i);
+
+            if (object.id().equals(objectId)) {
+                objects.set(i, replacement);
+                return;
+            }
+        }
+    }
+
     public void moveObjects(Set<String> objectIds, Vec2d worldDelta) {
         for (String objectId : objectIds) {
             CanvasObject object = findObjectById(objectId);

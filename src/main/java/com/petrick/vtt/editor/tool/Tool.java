@@ -9,6 +9,10 @@ public interface Tool {
 
     String getId();
 
+    default EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
+        return EditorCursor.DEFAULT;
+    }
+
     default void render(VRenderContext renderContext, ToolContext toolContext) {
     }
 
