@@ -236,6 +236,16 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
+            inputController.scaleSelectedObjectsUp();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
+            inputController.scaleSelectedObjectsDown();
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 

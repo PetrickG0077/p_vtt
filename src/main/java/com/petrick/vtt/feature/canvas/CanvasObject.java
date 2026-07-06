@@ -25,12 +25,19 @@ public record CanvasObject(
         );
     }
 
+    public CanvasObject scaledBy(double factor) {
+        return new CanvasObject(
+                id,
+                transform.withScale(transform.scale().multiply(factor)),
+                size,
+                color
+        );
+    }
+
     /**
      * Retorna os limites atuais do objeto no mundo.
      *
      * Por enquanto isso ignora rotação.
-     * Quando implementarmos rotação visual de verdade, este método será
-     * substituído por uma lógica de bounding box rotacionada.
      */
     public Rectd bounds() {
         Vec2d scaledSize = new Vec2d(

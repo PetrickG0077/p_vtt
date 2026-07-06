@@ -106,4 +106,14 @@ public final class CanvasScene {
             }
         }
     }
+
+    public void scaleObjects(Set<String> objectIds, double factor) {
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.scaledBy(factor));
+            }
+        }
+    }
 }

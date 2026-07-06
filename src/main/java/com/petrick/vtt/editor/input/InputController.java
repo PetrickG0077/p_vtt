@@ -136,6 +136,20 @@ public final class InputController {
         return toolController.getActiveToolId();
     }
 
+    public void scaleSelectedObjectsUp() {
+        scene.scaleObjects(
+                selectionManager.getSelectedObjectIds(),
+                1.1
+        );
+    }
+
+    public void scaleSelectedObjectsDown() {
+        scene.scaleObjects(
+                selectionManager.getSelectedObjectIds(),
+                0.9
+        );
+    }
+
     public void selectHandTool() {
         toolController.selectHandTool();
     }
