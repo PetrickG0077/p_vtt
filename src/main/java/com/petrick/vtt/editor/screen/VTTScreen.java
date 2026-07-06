@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.screen;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
+import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
@@ -34,6 +35,8 @@ public final class VTTScreen extends Screen {
 
     private final DebugOverlay debugOverlay;
 
+    private final SelectionInspectorOverlay selectionInspectorOverlay;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -47,6 +50,7 @@ public final class VTTScreen extends Screen {
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
         this.debugOverlay = new DebugOverlay();
+        this.selectionInspectorOverlay = new SelectionInspectorOverlay();
     }
 
     @Override
@@ -76,6 +80,7 @@ public final class VTTScreen extends Screen {
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
         debugOverlay.render(context, this.font, camera, inputController.getActiveToolId());
+        selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
