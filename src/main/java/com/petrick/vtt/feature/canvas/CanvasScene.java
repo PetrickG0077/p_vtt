@@ -5,8 +5,8 @@ import com.petrick.vtt.core.transform.Transform2D;
 
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
-import net.minecraft.resources.ResourceLocation;
-import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.DebugAssets;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,7 +23,7 @@ public final class CanvasScene {
 
     private final List<CanvasObject> objects = new ArrayList<>();
 
-    public static CanvasScene createDebugScene() {
+    public static CanvasScene createDebugScene(AssetRegistry assetRegistry) {
         CanvasScene scene = new CanvasScene();
 
         scene.addObject(new CanvasObject(
@@ -68,12 +68,7 @@ public final class CanvasScene {
                 ),
                 new Vec2d(96.0, 96.0),
                 new TextureVisual(
-                        new BuiltInTextureAssetRef(
-                                "debug/test_token",
-                                ResourceLocation.fromNamespaceAndPath("vtt", "textures/gui/test_token.png"),
-                                64,
-                                64
-                        )
+                        assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID)
                 )
         ));
 

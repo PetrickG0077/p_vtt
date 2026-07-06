@@ -16,7 +16,13 @@ import java.util.Locale;
  */
 public final class DebugOverlay {
 
-    public void render(VRenderContext context, Font font, Camera2D camera, String activeToolId) {
+    public void render(
+            VRenderContext context,
+            Font font,
+            Camera2D camera,
+            String activeToolId,
+            int assetCount
+    ) {
         GuiGraphics graphics = context.graphics();
 
         graphics.drawString(
@@ -58,12 +64,22 @@ public final class DebugOverlay {
                 58,
                 0xFFAAAAAA
         );
+
         graphics.drawString(
                 font,
                 "Tool: " + activeToolId,
                 10,
                 70,
                 0xFFAAAAAA
+        );
+
+        context.graphics().drawString(
+                font,
+                "Assets: " + assetCount,
+                15,
+                80,
+                0xFFAAAAAA,
+                false
         );
     }
 

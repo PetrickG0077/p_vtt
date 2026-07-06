@@ -13,6 +13,8 @@ import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.DebugAssets;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -37,6 +39,8 @@ public final class VTTScreen extends Screen {
 
     private final SelectionInspectorOverlay selectionInspectorOverlay;
 
+    private final AssetRegistry assetRegistry;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -45,7 +49,11 @@ public final class VTTScreen extends Screen {
         super(Component.literal("Virtual Tabletop"));
 
         this.camera = new Camera2D();
-        this.scene = CanvasScene.createDebugScene();
+
+        this.assetRegistry = new AssetRegistry();
+        DebugAssets.registerAll(assetRegistry);
+
+        this.scene = CanvasScene.createDebugScene(assetRegistry);
         this.selectionManager = new SelectionManager();
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
@@ -79,7 +87,13 @@ public final class VTTScreen extends Screen {
         canvasRenderer.render(context, scene, selectionManager);
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
-        debugOverlay.render(context, this.font, camera, inputController.getActiveToolId());
+        debugOverlay.render(
+                context,
+                this.font,
+                camera,
+                inputController.getActiveToolId(),
+                assetRegistry.size()
+        );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
     }
 
