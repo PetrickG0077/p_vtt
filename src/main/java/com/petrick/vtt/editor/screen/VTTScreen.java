@@ -21,7 +21,7 @@ import com.petrick.vtt.feature.asset.AssetRegistry;
 import net.minecraft.network.chat.Component;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.asset.AssetRef;
-import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.TokenDefinition;
@@ -60,6 +60,10 @@ public final class VTTScreen extends Screen {
 
     private final TokenDefinitionRegistry tokenDefinitionRegistry;
 
+    private final TokenCatalogOverlay tokenCatalogOverlay;
+
+    private TokenDefinition draggingTokenDefinition;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -84,6 +88,7 @@ public final class VTTScreen extends Screen {
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
         this.debugOverlay = new DebugOverlay();
+        this.tokenCatalogOverlay = new TokenCatalogOverlay();
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
@@ -125,6 +130,7 @@ public final class VTTScreen extends Screen {
         );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         assetCatalogOverlay.render(context, this.font, assetRegistry);
+        tokenCatalogOverlay.render(context, this.font, tokenDefinitionRegistry);
         sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
 
         if (draggingAsset != null) {
@@ -135,6 +141,20 @@ public final class VTTScreen extends Screen {
                     mouseX,
                     mouseY
             );
+        }
+
+        if (draggingTokenDefinition != null) {
+            tokenCatalogOverlay.renderDragPreview(
+                    context,
+                    this.font,
+                    draggingTokenDefinition,
+                    mouseX,
+                    mouseY
+            );
+        }
+
+        if (renamingObjectId != null) {
+            renderRenameDialog(context);
         }
 
         if (renamingObjectId != null) {
@@ -154,6 +174,31 @@ public final class VTTScreen extends Screen {
         TokenDefinition definition = tokenDefinitionRegistry.getRequired(
                 DebugTokenDefinitions.TEST_TOKEN_DEFINITION_ID
         );
+
+        CanvasObject token = TokenFactory.createCanvasObject(
+                definition,
+                objectId,
+                worldPosition
+        );
+
+        scene.addObject(token);
+
+        selectionManager.selectOnly(objectId);
+        inputController.selectSelectTool();
+    }
+
+    private void createTokenFromDraggedTokenDefinition(
+            double mouseX,
+            double mouseY,
+            TokenDefinition definition
+    ) {
+        if (renderState == null) {
+            return;
+        }
+
+        Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+
+        String objectId = scene.createUniqueObjectId("token");
 
         CanvasObject token = TokenFactory.createCanvasObject(
                 definition,
@@ -335,6 +380,18 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            var clickedTokenDefinition = tokenCatalogOverlay.findTokenDefinitionAt(
+                    tokenDefinitionRegistry,
+                    this.height,
+                    mouseX,
+                    mouseY
+            );
+
+            if (clickedTokenDefinition.isPresent()) {
+                this.draggingTokenDefinition = clickedTokenDefinition.get();
+                return true;
+            }
+
             var clickedAsset = assetCatalogOverlay.findAssetAt(
                     assetRegistry,
                     this.height,
@@ -380,6 +437,12 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingTokenDefinition != null) {
+            createTokenFromDraggedTokenDefinition(mouseX, mouseY, draggingTokenDefinition);
+            this.draggingTokenDefinition = null;
+            return true;
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingAsset != null) {
             createTokenFromDraggedAsset(mouseX, mouseY, draggingAsset);
             this.draggingAsset = null;
@@ -407,6 +470,10 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (draggingTokenDefinition != null || draggingAsset != null) {
+            return true;
+        }
+
         if (renderState != null && inputController.mouseDragged(
                 mouseX,
                 mouseY,
