@@ -1,5 +1,6 @@
 package com.petrick.vtt.feature.canvas.visual;
 
+import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -16,6 +17,8 @@ import com.petrick.vtt.platform.render.VRenderContext;
  * - futuramente AssetRef/cache
  */
 public final class CanvasVisualRenderer {
+
+    private static final int MISSING_TEXTURE_COLOR = 0xFFFF00FF;
 
     public void render(
             VRenderContext context,
@@ -60,21 +63,53 @@ public final class CanvasVisualRenderer {
             int right,
             int bottom
     ) {
+        if (visual.assetRef() instanceof BuiltInTextureAssetRef builtInTexture) {
+            renderBuiltInTexture(context, builtInTexture, left, top, right, bottom);
+            return;
+        }
+
+        renderMissingTexture(context, left, top, right, bottom);
+    }
+
+    private void renderBuiltInTexture(
+            VRenderContext context,
+            BuiltInTextureAssetRef asset,
+            int left,
+            int top,
+            int right,
+            int bottom
+    ) {
         int drawWidth = right - left;
         int drawHeight = bottom - top;
 
         context.graphics().blit(
-                visual.texture(),
+                asset.texture(),
                 left,
                 top,
                 drawWidth,
                 drawHeight,
                 0.0F,
                 0.0F,
-                visual.textureWidth(),
-                visual.textureHeight(),
-                visual.textureWidth(),
-                visual.textureHeight()
+                asset.textureWidth(),
+                asset.textureHeight(),
+                asset.textureWidth(),
+                asset.textureHeight()
+        );
+    }
+
+    private void renderMissingTexture(
+            VRenderContext context,
+            int left,
+            int top,
+            int right,
+            int bottom
+    ) {
+        context.graphics().fill(
+                left,
+                top,
+                right,
+                bottom,
+                MISSING_TEXTURE_COLOR
         );
     }
 }

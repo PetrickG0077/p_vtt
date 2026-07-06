@@ -6,6 +6,7 @@ import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import net.minecraft.resources.ResourceLocation;
+import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -67,9 +68,12 @@ public final class CanvasScene {
                 ),
                 new Vec2d(96.0, 96.0),
                 new TextureVisual(
-                        ResourceLocation.fromNamespaceAndPath("vtt", "textures/gui/test_token.png"),
-                        64,
-                        64
+                        new BuiltInTextureAssetRef(
+                                "debug/test_token",
+                                ResourceLocation.fromNamespaceAndPath("vtt", "textures/gui/test_token.png"),
+                                64,
+                                64
+                        )
                 )
         ));
 

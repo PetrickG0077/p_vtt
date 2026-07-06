@@ -1,16 +1,15 @@
 package com.petrick.vtt.feature.canvas.visual;
 
-import net.minecraft.resources.ResourceLocation;
+import com.petrick.vtt.feature.asset.AssetRef;
 
 /**
  * Visual baseado em textura.
  *
- * Nesta fase inicial, aponta para uma textura interna do mod.
- * Futuramente isso será trocado por AssetRef/cache.
+ * Nesta fase, ele aponta para um AssetRef.
+ * O AssetRef ainda pode ser uma textura interna do mod,
+ * mas futuramente poderá apontar para imagens importadas/cacheadas.
  */
 public record TextureVisual(
-        ResourceLocation texture,
-        int textureWidth,
-        int textureHeight
+        AssetRef assetRef
 ) implements CanvasVisual {
 }
