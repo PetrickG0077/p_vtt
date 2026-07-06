@@ -5,6 +5,9 @@ import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.feature.canvas.visual.ColorVisual;
+import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import net.minecraft.client.gui.Font;
 
 import java.util.ArrayList;
@@ -171,6 +174,8 @@ public final class SelectionInspectorOverlay {
         );
         y += LINE_HEIGHT;
 
+        y = renderVisualInfo(context, font, object, x, y);
+
         drawLine(
                 context,
                 font,
@@ -199,6 +204,98 @@ public final class SelectionInspectorOverlay {
                 y,
                 TEXT_COLOR
         );
+    }
+
+    private int renderVisualInfo(
+            VRenderContext context,
+            Font font,
+            CanvasObject object,
+            int x,
+            int y
+    ) {
+        if (object.visual() instanceof ColorVisual colorVisual) {
+            drawLine(
+                    context,
+                    font,
+                    "Visual: Color",
+                    x,
+                    y,
+                    TEXT_COLOR
+            );
+            y += LINE_HEIGHT;
+
+            drawLine(
+                    context,
+                    font,
+                    "Color: #" + String.format(Locale.ROOT, "%08X", colorVisual.color()),
+                    x,
+                    y,
+                    TEXT_COLOR
+            );
+            y += LINE_HEIGHT;
+
+            return y;
+        }
+
+        if (object.visual() instanceof TextureVisual textureVisual) {
+            drawLine(
+                    context,
+                    font,
+                    "Visual: Texture",
+                    x,
+                    y,
+                    TEXT_COLOR
+            );
+            y += LINE_HEIGHT;
+
+            drawLine(
+                    context,
+                    font,
+                    "Asset: " + textureVisual.assetRef().id(),
+                    x,
+                    y,
+                    TEXT_COLOR
+            );
+            y += LINE_HEIGHT;
+
+            if (textureVisual.assetRef() instanceof BuiltInTextureAssetRef builtInTexture) {
+                drawLine(
+                        context,
+                        font,
+                        "Asset Type: Built-in",
+                        x,
+                        y,
+                        TEXT_COLOR
+                );
+                y += LINE_HEIGHT;
+
+                drawLine(
+                        context,
+                        font,
+                        "Texture Size: "
+                                + builtInTexture.textureWidth()
+                                + "x"
+                                + builtInTexture.textureHeight(),
+                        x,
+                        y,
+                        TEXT_COLOR
+                );
+                y += LINE_HEIGHT;
+            }
+
+            return y;
+        }
+
+        drawLine(
+                context,
+                font,
+                "Visual: Unknown",
+                x,
+                y,
+                MUTED_TEXT_COLOR
+        );
+
+        return y + LINE_HEIGHT;
     }
 
     private void renderMultipleObjectsInfo(
@@ -264,7 +361,7 @@ public final class SelectionInspectorOverlay {
         }
 
         if (selectedObjects.size() == 1) {
-            return 13;
+            return 18;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;
