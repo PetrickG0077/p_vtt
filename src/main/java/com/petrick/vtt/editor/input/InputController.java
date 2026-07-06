@@ -180,6 +180,22 @@ public final class InputController {
         }
     }
 
+    public void bringSelectedObjectsForward() {
+        scene.bringObjectsForward(selectionManager.getSelectedObjectIds());
+    }
+
+    public void sendSelectedObjectsBackward() {
+        scene.sendObjectsBackward(selectionManager.getSelectedObjectIds());
+    }
+
+    public void bringSelectedObjectsToFront() {
+        scene.bringObjectsToFront(selectionManager.getSelectedObjectIds());
+    }
+
+    public void sendSelectedObjectsToBack() {
+        scene.sendObjectsToBack(selectionManager.getSelectedObjectIds());
+    }
+
     public void deleteSelectedObjects() {
         scene.removeObjects(selectionManager.getSelectedObjectIds());
         selectionManager.clearSelection();

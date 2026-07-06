@@ -6,7 +6,6 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -149,10 +148,7 @@ public final class SceneOutlinerOverlay {
     }
 
     private List<CanvasObject> getSortedObjects(CanvasScene scene) {
-        return scene.getObjects()
-                .stream()
-                .sorted(Comparator.comparing(CanvasObject::id))
-                .toList();
+        return scene.getObjects();
     }
 
     private void renderPanelBackground(

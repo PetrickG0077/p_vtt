@@ -397,6 +397,26 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_PAGE_UP) {
+            inputController.bringSelectedObjectsForward();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
+            inputController.sendSelectedObjectsBackward();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_HOME) {
+            inputController.bringSelectedObjectsToFront();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_END) {
+            inputController.sendSelectedObjectsToBack();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_V) {
             inputController.toggleSelectedObjectsVisibility();
             return true;

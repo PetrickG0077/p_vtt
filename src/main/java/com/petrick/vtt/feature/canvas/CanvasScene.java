@@ -212,6 +212,86 @@ public final class CanvasScene {
         }
     }
 
+    public void bringObjectsForward(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        for (int i = objects.size() - 2; i >= 0; i--) {
+            CanvasObject object = objects.get(i);
+
+            if (objectIds.contains(object.id())) {
+                CanvasObject nextObject = objects.get(i + 1);
+
+                if (!objectIds.contains(nextObject.id())) {
+                    objects.set(i, nextObject);
+                    objects.set(i + 1, object);
+                }
+            }
+        }
+    }
+
+    public void sendObjectsBackward(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        for (int i = 1; i < objects.size(); i++) {
+            CanvasObject object = objects.get(i);
+
+            if (objectIds.contains(object.id())) {
+                CanvasObject previousObject = objects.get(i - 1);
+
+                if (!objectIds.contains(previousObject.id())) {
+                    objects.set(i, previousObject);
+                    objects.set(i - 1, object);
+                }
+            }
+        }
+    }
+
+    public void bringObjectsToFront(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        java.util.List<CanvasObject> selectedObjects = new java.util.ArrayList<>();
+        java.util.List<CanvasObject> otherObjects = new java.util.ArrayList<>();
+
+        for (CanvasObject object : objects) {
+            if (objectIds.contains(object.id())) {
+                selectedObjects.add(object);
+            } else {
+                otherObjects.add(object);
+            }
+        }
+
+        objects.clear();
+        objects.addAll(otherObjects);
+        objects.addAll(selectedObjects);
+    }
+
+    public void sendObjectsToBack(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        java.util.List<CanvasObject> selectedObjects = new java.util.ArrayList<>();
+        java.util.List<CanvasObject> otherObjects = new java.util.ArrayList<>();
+
+        for (CanvasObject object : objects) {
+            if (objectIds.contains(object.id())) {
+                selectedObjects.add(object);
+            } else {
+                otherObjects.add(object);
+            }
+        }
+
+        objects.clear();
+        objects.addAll(selectedObjects);
+        objects.addAll(otherObjects);
+    }
+
     public void resetObjectsScaleAndRotation(Set<String> objectIds) {
         if (objectIds == null || objectIds.isEmpty()) {
             return;
