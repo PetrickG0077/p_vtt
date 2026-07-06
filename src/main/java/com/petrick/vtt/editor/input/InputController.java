@@ -164,6 +164,11 @@ public final class InputController {
         );
     }
 
+    public void deleteSelectedObjects() {
+        scene.removeObjects(selectionManager.getSelectedObjectIds());
+        selectionManager.clearSelection();
+    }
+
     public void selectHandTool() {
         toolController.selectHandTool();
     }

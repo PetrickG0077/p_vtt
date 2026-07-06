@@ -359,6 +359,11 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            inputController.deleteSelectedObjects();
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 

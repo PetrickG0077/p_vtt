@@ -93,6 +93,18 @@ public final class CanvasScene {
         return null;
     }
 
+    public void removeObjectById(String objectId) {
+        objects.removeIf(object -> object.id().equals(objectId));
+    }
+
+    public void removeObjects(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        objects.removeIf(object -> objectIds.contains(object.id()));
+    }
+
     public String createUniqueObjectId(String prefix) {
         int index = 1;
 
