@@ -217,6 +217,13 @@ public final class InputController {
         scene.resetObjectsScaleAndRotation(selectionManager.getSelectedObjectIds());
     }
 
+    public void setSelectedObjectsActiveState(String stateId) {
+        scene.setObjectsActiveState(
+                selectionManager.getSelectedObjectIds(),
+                stateId
+        );
+    }
+
     private ToolContext createToolContext(RenderState renderState) {
         return new ToolContext(
                 camera,

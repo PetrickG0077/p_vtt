@@ -551,6 +551,21 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_1 || keyCode == GLFW.GLFW_KEY_KP_1) {
+            inputController.setSelectedObjectsActiveState("1");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_2 || keyCode == GLFW.GLFW_KEY_KP_2) {
+            inputController.setSelectedObjectsActiveState("2");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
+            inputController.setSelectedObjectsActiveState("3");
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 

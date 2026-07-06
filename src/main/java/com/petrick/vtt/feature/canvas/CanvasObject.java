@@ -5,63 +5,161 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Objeto temporário do canvas.
  *
- * Futuramente isso será substituído por entidades/tokens do ECS.
+ * Agora ele suporta múltiplos estados visuais.
+ * Futuramente isso será convertido para entidades/componentes do ECS.
  */
 public record CanvasObject(
         String id,
         String displayName,
         Transform2D transform,
         Vec2d size,
-        CanvasVisual visual,
+        Map<String, CanvasObjectState> states,
+        String activeStateId,
         boolean visible
 ) {
 
-    public CanvasObject movedBy(Vec2d delta) {
-        return new CanvasObject(
+    public static final String DEFAULT_STATE_ID = "default";
+
+    public CanvasObject {
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("Object id cannot be null or blank");
+        }
+
+        if (displayName == null || displayName.isBlank()) {
+            throw new IllegalArgumentException("Object display name cannot be null or blank");
+        }
+
+        if (transform == null) {
+            throw new IllegalArgumentException("Transform cannot be null");
+        }
+
+        if (size == null) {
+            throw new IllegalArgumentException("Size cannot be null");
+        }
+
+        if (states == null || states.isEmpty()) {
+            throw new IllegalArgumentException("Object must have at least one state");
+        }
+
+        if (activeStateId == null || activeStateId.isBlank()) {
+            throw new IllegalArgumentException("Active state id cannot be null or blank");
+        }
+
+        if (!states.containsKey(activeStateId)) {
+            throw new IllegalArgumentException("Active state does not exist: " + activeStateId);
+        }
+
+        states = Collections.unmodifiableMap(new LinkedHashMap<>(states));
+    }
+
+    /**
+     * Construtor de compatibilidade.
+     *
+     * Permite criar objetos com um único visual,
+     * que automaticamente vira o estado "default".
+     */
+    public CanvasObject(
+            String id,
+            String displayName,
+            Transform2D transform,
+            Vec2d size,
+            CanvasVisual visual,
+            boolean visible
+    ) {
+        this(
                 id,
                 displayName,
-                transform.movedBy(delta),
+                transform,
                 size,
-                visual,
+                createSingleStateMap(visual),
+                DEFAULT_STATE_ID,
                 visible
         );
     }
 
-    public CanvasObject scaledBy(double factor) {
+    private static Map<String, CanvasObjectState> createSingleStateMap(CanvasVisual visual) {
+        Map<String, CanvasObjectState> states = new LinkedHashMap<>();
+
+        states.put(
+                DEFAULT_STATE_ID,
+                new CanvasObjectState(
+                        DEFAULT_STATE_ID,
+                        "Default",
+                        visual
+                )
+        );
+
+        return states;
+    }
+
+    public CanvasObjectState currentState() {
+        return states.get(activeStateId);
+    }
+
+    public CanvasVisual currentVisual() {
+        return currentState().visual();
+    }
+
+    public CanvasObject withActiveState(String stateId) {
+        if (stateId == null || stateId.isBlank()) {
+            return this;
+        }
+
+        if (!states.containsKey(stateId)) {
+            return this;
+        }
+
         return new CanvasObject(
                 id,
                 displayName,
-                transform.withScale(transform.scale().multiply(factor)),
+                transform,
                 size,
-                visual,
+                states,
+                stateId,
                 visible
+        );
+    }
+
+    public CanvasObject withTransform(Transform2D transform) {
+        return new CanvasObject(
+                id,
+                displayName,
+                transform,
+                size,
+                states,
+                activeStateId,
+                visible
+        );
+    }
+
+    public CanvasObject movedBy(Vec2d delta) {
+        return withTransform(transform.movedBy(delta));
+    }
+
+    public CanvasObject scaledBy(double factor) {
+        return withTransform(
+                transform.withScale(transform.scale().multiply(factor))
         );
     }
 
     public CanvasObject rotatedBy(double deltaDegrees) {
-        return new CanvasObject(
-                id,
-                displayName,
-                transform.rotatedBy(deltaDegrees),
-                size,
-                visual,
-                visible
+        return withTransform(
+                transform.rotatedBy(deltaDegrees)
         );
     }
 
     public CanvasObject resetScaleAndRotation() {
-        return new CanvasObject(
-                id,
-                displayName,
+        return withTransform(
                 transform
                         .withRotation(0.0)
-                        .withScale(new Vec2d(1.0, 1.0)),
-                size,
-                visual,
-                visible
+                        .withScale(new Vec2d(1.0, 1.0))
         );
     }
 
@@ -71,7 +169,8 @@ public record CanvasObject(
                 displayName,
                 transform,
                 size,
-                visual,
+                states,
+                activeStateId,
                 visible
         );
     }
@@ -86,7 +185,8 @@ public record CanvasObject(
                 displayName,
                 transform,
                 size,
-                visual,
+                states,
+                activeStateId,
                 visible
         );
     }
@@ -97,7 +197,8 @@ public record CanvasObject(
                 displayName + " Copy",
                 transform.movedBy(offset),
                 size,
-                visual,
+                states,
+                activeStateId,
                 visible
         );
     }

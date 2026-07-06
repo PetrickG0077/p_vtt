@@ -234,7 +234,18 @@ public final class SelectionInspectorOverlay {
             int x,
             int y
     ) {
-        if (object.visual() instanceof ColorVisual colorVisual) {
+        drawLine(
+                context,
+                font,
+                "State: " + object.currentState().displayName()
+                        + " (" + object.activeStateId() + ")",
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        if (object.currentVisual() instanceof ColorVisual colorVisual) {
             drawLine(
                     context,
                     font,
@@ -258,7 +269,7 @@ public final class SelectionInspectorOverlay {
             return y;
         }
 
-        if (object.visual() instanceof TextureVisual textureVisual) {
+        if (object.currentVisual() instanceof TextureVisual textureVisual) {
             drawLine(
                     context,
                     font,
@@ -382,7 +393,7 @@ public final class SelectionInspectorOverlay {
         }
 
         if (selectedObjects.size() == 1) {
-            return 19;
+            return 20;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;

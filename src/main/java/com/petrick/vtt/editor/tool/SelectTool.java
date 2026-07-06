@@ -304,13 +304,8 @@ public final class SelectTool implements Tool {
         double deltaAngle = currentMouseAngle - rotationStartMouseAngle;
         double newRotation = rotationStartObjectRotation + deltaAngle;
 
-        CanvasObject rotatedObject = new CanvasObject(
-                currentObject.id(),
-                currentObject.displayName(),
-                currentObject.transform().withRotation(newRotation),
-                currentObject.size(),
-                currentObject.visual(),
-                currentObject.visible()
+        CanvasObject rotatedObject = currentObject.withTransform(
+                currentObject.transform().withRotation(newRotation)
         );
 
         context.scene().replaceObjectById(currentObject.id(), rotatedObject);
@@ -395,15 +390,10 @@ public final class SelectTool implements Tool {
             return;
         }
 
-        CanvasObject resizedObject = new CanvasObject(
-                currentObject.id(),
-                currentObject.displayName(),
+        CanvasObject resizedObject = currentObject.withTransform(
                 currentObject.transform()
                         .withPosition(newCenter)
-                        .withScale(newScale),
-                currentObject.size(),
-                currentObject.visual(),
-                currentObject.visible()
+                        .withScale(newScale)
         );
 
         context.scene().replaceObjectById(currentObject.id(), resizedObject);

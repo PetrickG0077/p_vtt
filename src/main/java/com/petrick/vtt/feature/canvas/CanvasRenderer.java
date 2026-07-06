@@ -102,7 +102,7 @@ public final class CanvasRenderer {
 
         visualRenderer.render(
                 context,
-                object.visual(),
+                object.currentVisual(),
                 left,
                 top,
                 right,

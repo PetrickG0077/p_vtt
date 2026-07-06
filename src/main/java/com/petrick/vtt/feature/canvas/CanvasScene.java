@@ -7,6 +7,8 @@ import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.DebugAssets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -65,6 +67,35 @@ public final class CanvasScene {
                 true
         ));
 
+        Map<String, CanvasObjectState> tokenStates = new LinkedHashMap<>();
+
+        tokenStates.put(
+                "1",
+                new CanvasObjectState(
+                        "1",
+                        "Normal",
+                        new TextureVisual(assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID))
+                )
+        );
+
+        tokenStates.put(
+                "2",
+                new CanvasObjectState(
+                        "2",
+                        "Injured",
+                        new ColorVisual(0xFFFF5555)
+                )
+        );
+
+        tokenStates.put(
+                "3",
+                new CanvasObjectState(
+                        "3",
+                        "Dead",
+                        new ColorVisual(0xFF555555)
+                )
+        );
+
         scene.addObject(new CanvasObject(
                 "texture_test",
                 "Bingus Test Token",
@@ -74,9 +105,8 @@ public final class CanvasScene {
                         new Vec2d(1.0, 1.0)
                 ),
                 new Vec2d(96.0, 96.0),
-                new TextureVisual(
-                        assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID)
-                ),
+                tokenStates,
+                "1",
                 true
         ));
 
@@ -89,6 +119,24 @@ public final class CanvasScene {
 
     public List<CanvasObject> getObjects() {
         return Collections.unmodifiableList(objects);
+    }
+
+    public void setObjectsActiveState(Set<String> objectIds, String stateId) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        if (stateId == null || stateId.isBlank()) {
+            return;
+        }
+
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.withActiveState(stateId));
+            }
+        }
     }
 
     public CanvasObject findObjectById(String objectId) {
