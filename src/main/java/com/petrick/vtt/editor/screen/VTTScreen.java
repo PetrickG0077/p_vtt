@@ -7,6 +7,7 @@ import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
+import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
@@ -51,6 +52,8 @@ public final class VTTScreen extends Screen {
 
     private final AssetCatalogOverlay assetCatalogOverlay;
 
+    private final SceneOutlinerOverlay sceneOutlinerOverlay;
+
     private final VTTSession session;
 
     private Viewport viewport;
@@ -72,6 +75,7 @@ public final class VTTScreen extends Screen {
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
         this.debugOverlay = new DebugOverlay();
+        this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
     }
@@ -111,6 +115,7 @@ public final class VTTScreen extends Screen {
         );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         assetCatalogOverlay.render(context, this.font, assetRegistry);
+        sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
         if (draggingAsset != null) {
             assetCatalogOverlay.renderDragPreview(
                     context,
@@ -247,6 +252,23 @@ public final class VTTScreen extends Screen {
 
             if (clickedAsset.isPresent()) {
                 this.draggingAsset = clickedAsset.get();
+                return true;
+            }
+
+            var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
+                    scene,
+                    mouseX,
+                    mouseY
+            );
+
+            if (clickedObjectId.isPresent()) {
+                if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                    selectionManager.toggle(clickedObjectId.get());
+                } else {
+                    selectionManager.selectOnly(clickedObjectId.get());
+                }
+
+                inputController.selectSelectTool();
                 return true;
             }
         }
