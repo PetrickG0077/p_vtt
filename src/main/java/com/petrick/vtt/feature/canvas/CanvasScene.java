@@ -184,4 +184,18 @@ public final class CanvasScene {
             }
         }
     }
+
+    public void resetObjectsScaleAndRotation(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.resetScaleAndRotation());
+            }
+        }
+    }
 }

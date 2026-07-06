@@ -62,6 +62,18 @@ public record CanvasObject(
         return withVisible(!visible);
     }
 
+    public CanvasObject resetScaleAndRotation() {
+        return new CanvasObject(
+                id,
+                transform
+                        .withRotation(0.0)
+                        .withScale(new Vec2d(1.0, 1.0)),
+                size,
+                visual,
+                visible
+        );
+    }
+
     public Vec2d scaledSize() {
         return new Vec2d(
                 size.x() * transform.scale().x(),

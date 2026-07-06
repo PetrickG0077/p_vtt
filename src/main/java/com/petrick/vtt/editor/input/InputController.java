@@ -181,6 +181,10 @@ public final class InputController {
         scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
     }
 
+    public void resetSelectedObjectsScaleAndRotation() {
+        scene.resetObjectsScaleAndRotation(selectionManager.getSelectedObjectIds());
+    }
+
     private ToolContext createToolContext(RenderState renderState) {
         return new ToolContext(
                 camera,
