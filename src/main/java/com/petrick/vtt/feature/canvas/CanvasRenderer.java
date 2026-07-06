@@ -27,6 +27,14 @@ public final class CanvasRenderer {
 
     private static final int HANDLE_SIZE = 6;
 
+    private static final int ROTATION_HANDLE_COLOR = 0xFFFFFFFF;
+
+    private static final int ROTATION_HANDLE_BORDER_COLOR = 0xFF0099FF;
+
+    private static final int ROTATION_HANDLE_SIZE = 6;
+
+    private static final double ROTATION_HANDLE_DISTANCE = 24.0;
+
     private final CanvasVisualRenderer visualRenderer;
 
     private final GridRenderer gridRenderer;
@@ -60,6 +68,7 @@ public final class CanvasRenderer {
             if (selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
                 renderSelectionHandles(context, object);
+                renderRotationHandle(context, object);
             }
         }
     }
@@ -143,6 +152,60 @@ public final class CanvasRenderer {
         renderHandle(context, context.renderState().worldToScreen(object.worldTopRight()));
         renderHandle(context, context.renderState().worldToScreen(object.worldBottomLeft()));
         renderHandle(context, context.renderState().worldToScreen(object.worldBottomRight()));
+    }
+
+    private void renderRotationHandle(VRenderContext context, CanvasObject object) {
+        Vec2d screenPosition = getRotationHandleScreenPosition(context, object);
+
+        int centerX = (int) Math.round(screenPosition.x());
+        int centerY = (int) Math.round(screenPosition.y());
+
+        int half = ROTATION_HANDLE_SIZE / 2;
+
+        int left = centerX - half;
+        int top = centerY - half;
+        int right = centerX + half;
+        int bottom = centerY + half;
+
+        context.graphics().fill(
+                left,
+                top,
+                right,
+                bottom,
+                ROTATION_HANDLE_COLOR
+        );
+
+        context.graphics().hLine(left, right, top, ROTATION_HANDLE_BORDER_COLOR);
+        context.graphics().hLine(left, right, bottom, ROTATION_HANDLE_BORDER_COLOR);
+        context.graphics().vLine(left, top, bottom, ROTATION_HANDLE_BORDER_COLOR);
+        context.graphics().vLine(right, top, bottom, ROTATION_HANDLE_BORDER_COLOR);
+    }
+
+    private Vec2d getRotationHandleScreenPosition(VRenderContext context, CanvasObject object) {
+        Vec2d center = context.renderState().worldToScreen(object.transform().position());
+
+        Vec2d topCenterWorld = getTopCenterWorld(object);
+        Vec2d topCenter = context.renderState().worldToScreen(topCenterWorld);
+
+        Vec2d direction = topCenter.subtract(center);
+
+        if (direction.length() <= 0.0001) {
+            direction = new Vec2d(0.0, -1.0);
+        } else {
+            direction = direction.normalize();
+        }
+
+        return topCenter.add(direction.multiply(ROTATION_HANDLE_DISTANCE));
+    }
+
+    private Vec2d getTopCenterWorld(CanvasObject object) {
+        Vec2d topLeft = object.worldTopLeft();
+        Vec2d topRight = object.worldTopRight();
+
+        return new Vec2d(
+                (topLeft.x() + topRight.x()) / 2.0,
+                (topLeft.y() + topRight.y()) / 2.0
+        );
     }
 
     private void renderHandle(VRenderContext context, Vec2d screenCenter) {

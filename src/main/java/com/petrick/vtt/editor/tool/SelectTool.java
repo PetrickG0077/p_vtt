@@ -9,15 +9,15 @@ import org.lwjgl.glfw.GLFW;
 /**
  * Ferramenta de seleção.
  *
+ * Funções:
  * - Clique simples seleciona um objeto.
  * - Ctrl + clique adiciona/remove objetos da seleção.
- * - Shift + arrastar cria uma caixa de seleção.
+ * - Shift + arrastar cria caixa de seleção.
  * - Ctrl + Shift + arrastar adiciona objetos à seleção atual.
  * - Arrastar objeto selecionado move todos os objetos selecionados.
- * - Arrastar handles redimensiona o objeto.
- * - Shift + arrastar handle redimensiona proporcionalmente.
- *
- * Agora os handles e o resize respeitam a rotação do objeto.
+ * - Arrastar handles dos cantos redimensiona o objeto.
+ * - Shift + arrastar handle dos cantos redimensiona proporcionalmente.
+ * - Arrastar handle de rotação gira o objeto.
  */
 public final class SelectTool implements Tool {
 
@@ -26,6 +26,10 @@ public final class SelectTool implements Tool {
     private static final int LEFT_MOUSE_BUTTON = 0;
 
     private static final int HANDLE_HIT_SIZE = 10;
+
+    private static final int ROTATION_HANDLE_HIT_SIZE = 14;
+
+    private static final double ROTATION_HANDLE_DISTANCE = 24.0;
 
     private static final double MIN_OBJECT_SIZE = 10.0;
 
@@ -54,6 +58,16 @@ public final class SelectTool implements Tool {
     private CanvasObject resizeOriginalObject;
 
     private Vec2d resizeAnchorWorld;
+
+    private boolean rotating;
+
+    private String rotatingObjectId;
+
+    private CanvasObject rotateOriginalObject;
+
+    private double rotationStartMouseAngle;
+
+    private double rotationStartObjectRotation;
 
     @Override
     public String getId() {
@@ -89,7 +103,12 @@ public final class SelectTool implements Tool {
         HandleHit handleHit = findHandleHitAt(context, mouseX, mouseY);
 
         if (handleHit != null) {
-            beginResize(context, handleHit);
+            if (handleHit.handle() == SelectionHandle.ROTATION) {
+                beginRotation(context, handleHit, worldPosition);
+            } else {
+                beginResize(context, handleHit);
+            }
+
             return true;
         }
 
@@ -134,6 +153,11 @@ public final class SelectTool implements Tool {
     ) {
         if (button != LEFT_MOUSE_BUTTON) {
             return false;
+        }
+
+        if (rotating) {
+            endRotation();
+            return true;
         }
 
         if (resizing) {
@@ -181,6 +205,11 @@ public final class SelectTool implements Tool {
     ) {
         if (button != LEFT_MOUSE_BUTTON) {
             return false;
+        }
+
+        if (rotating) {
+            rotateObject(context, mouseX, mouseY);
+            return true;
         }
 
         if (resizing) {
@@ -234,6 +263,63 @@ public final class SelectTool implements Tool {
         renderContext.graphics().hLine(left, right, bottom, SELECTION_BORDER_COLOR);
         renderContext.graphics().vLine(left, top, bottom, SELECTION_BORDER_COLOR);
         renderContext.graphics().vLine(right, top, bottom, SELECTION_BORDER_COLOR);
+    }
+
+    private void beginRotation(ToolContext context, HandleHit handleHit, Vec2d mouseWorldPosition) {
+        CanvasObject object = context.scene().findObjectById(handleHit.objectId());
+
+        if (object == null) {
+            return;
+        }
+
+        this.rotating = true;
+        this.rotatingObjectId = object.id();
+        this.rotateOriginalObject = object;
+        this.rotationStartObjectRotation = object.transform().rotationDegrees();
+        this.rotationStartMouseAngle = angleFromCenter(object, mouseWorldPosition);
+    }
+
+    private void endRotation() {
+        this.rotating = false;
+        this.rotatingObjectId = null;
+        this.rotateOriginalObject = null;
+        this.rotationStartMouseAngle = 0.0;
+        this.rotationStartObjectRotation = 0.0;
+    }
+
+    private void rotateObject(ToolContext context, double mouseX, double mouseY) {
+        if (rotateOriginalObject == null || rotatingObjectId == null) {
+            return;
+        }
+
+        CanvasObject currentObject = context.scene().findObjectById(rotatingObjectId);
+
+        if (currentObject == null) {
+            return;
+        }
+
+        Vec2d mouseWorld = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+
+        double currentMouseAngle = angleFromCenter(rotateOriginalObject, mouseWorld);
+        double deltaAngle = currentMouseAngle - rotationStartMouseAngle;
+        double newRotation = rotationStartObjectRotation + deltaAngle;
+
+        CanvasObject rotatedObject = new CanvasObject(
+                currentObject.id(),
+                currentObject.transform().withRotation(newRotation),
+                currentObject.size(),
+                currentObject.visual(),
+                currentObject.visible()
+        );
+
+        context.scene().replaceObjectById(currentObject.id(), rotatedObject);
+    }
+
+    private double angleFromCenter(CanvasObject object, Vec2d worldPosition) {
+        Vec2d center = object.transform().position();
+        Vec2d delta = worldPosition.subtract(center);
+
+        return Math.toDegrees(Math.atan2(delta.y(), delta.x()));
     }
 
     private void beginResize(ToolContext context, HandleHit handleHit) {
@@ -327,6 +413,7 @@ public final class SelectTool implements Tool {
             case TOP_RIGHT -> object.worldBottomLeft();
             case BOTTOM_LEFT -> object.worldTopRight();
             case BOTTOM_RIGHT -> object.worldTopLeft();
+            case ROTATION -> object.transform().position();
         };
     }
 
@@ -334,6 +421,7 @@ public final class SelectTool implements Tool {
         return switch (handle) {
             case TOP_LEFT, BOTTOM_LEFT -> -1;
             case TOP_RIGHT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
         };
     }
 
@@ -341,6 +429,7 @@ public final class SelectTool implements Tool {
         return switch (handle) {
             case TOP_LEFT, TOP_RIGHT -> -1;
             case BOTTOM_LEFT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
         };
     }
 
@@ -393,8 +482,18 @@ public final class SelectTool implements Tool {
         Vec2d mouse = new Vec2d(mouseX, mouseY);
 
         for (CanvasObject object : context.scene().getObjects()) {
+            if (!object.visible()) {
+                continue;
+            }
+
             if (!context.selectionManager().isSelected(object.id())) {
                 continue;
+            }
+
+            Vec2d rotationHandle = getRotationHandleScreenPosition(context, object);
+
+            if (isPointInsideRotationHandle(mouse, rotationHandle)) {
+                return new HandleHit(object.id(), SelectionHandle.ROTATION);
             }
 
             Vec2d topLeft = context.renderState().worldToScreen(object.worldTopLeft());
@@ -422,8 +521,44 @@ public final class SelectTool implements Tool {
         return null;
     }
 
+    private Vec2d getRotationHandleScreenPosition(ToolContext context, CanvasObject object) {
+        Vec2d center = context.renderState().worldToScreen(object.transform().position());
+
+        Vec2d topCenterWorld = getTopCenterWorld(object);
+        Vec2d topCenter = context.renderState().worldToScreen(topCenterWorld);
+
+        Vec2d direction = topCenter.subtract(center);
+
+        if (direction.length() <= 0.0001) {
+            direction = new Vec2d(0.0, -1.0);
+        } else {
+            direction = direction.normalize();
+        }
+
+        return topCenter.add(direction.multiply(ROTATION_HANDLE_DISTANCE));
+    }
+
+    private Vec2d getTopCenterWorld(CanvasObject object) {
+        Vec2d topLeft = object.worldTopLeft();
+        Vec2d topRight = object.worldTopRight();
+
+        return new Vec2d(
+                (topLeft.x() + topRight.x()) / 2.0,
+                (topLeft.y() + topRight.y()) / 2.0
+        );
+    }
+
     private static boolean isPointInsideHandle(Vec2d point, Vec2d handleCenter) {
         double half = HANDLE_HIT_SIZE / 2.0;
+
+        return point.x() >= handleCenter.x() - half
+                && point.x() <= handleCenter.x() + half
+                && point.y() >= handleCenter.y() - half
+                && point.y() <= handleCenter.y() + half;
+    }
+
+    private static boolean isPointInsideRotationHandle(Vec2d point, Vec2d handleCenter) {
+        double half = ROTATION_HANDLE_HIT_SIZE / 2.0;
 
         return point.x() >= handleCenter.x() - half
                 && point.x() <= handleCenter.x() + half

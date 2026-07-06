@@ -1,7 +1,7 @@
 package com.petrick.vtt.editor.tool;
 
 /**
- * Representa os cantos usados para redimensionar uma seleção.
+ * Representa os handles usados para manipular uma seleção.
  */
 public enum SelectionHandle {
 
@@ -11,7 +11,9 @@ public enum SelectionHandle {
 
     BOTTOM_LEFT(EditorCursor.RESIZE_NESW),
 
-    BOTTOM_RIGHT(EditorCursor.RESIZE_NWSE);
+    BOTTOM_RIGHT(EditorCursor.RESIZE_NWSE),
+
+    ROTATION(EditorCursor.DEFAULT);
 
     private final EditorCursor cursor;
 
