@@ -305,4 +305,18 @@ public final class CanvasScene {
             }
         }
     }
+
+    public int getObjectLayerIndex(String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return -1;
+        }
+
+        for (int i = 0; i < objects.size(); i++) {
+            if (objects.get(i).id().equals(objectId)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 }

@@ -80,10 +80,12 @@ public final class SceneOutlinerOverlay {
 
             boolean selected = selectionManager.isSelected(object.id());
 
+            int layerIndex = scene.getObjectLayerIndex(object.id());
+
             String selectedPrefix = selected ? "> " : "  ";
             String visibilityPrefix = object.visible() ? "[V] " : "[H] ";
-            String text = selectedPrefix + visibilityPrefix + object.id();
-
+            String text = selectedPrefix + visibilityPrefix + "[" + layerIndex + "] " + object.id();
+            
             int color;
 
             if (selected) {

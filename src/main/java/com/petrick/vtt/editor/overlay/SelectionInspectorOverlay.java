@@ -79,7 +79,7 @@ public final class SelectionInspectorOverlay {
         textY += LINE_HEIGHT + 4;
 
         if (selectedObjects.size() == 1) {
-            renderSingleObjectInfo(context, font, selectedObjects.getFirst(), textX, textY);
+            renderSingleObjectInfo(context, font, scene, selectedObjects.getFirst(), textX, textY);
         } else {
             renderMultipleObjectsInfo(context, font, selectedObjects, textX, textY);
         }
@@ -105,6 +105,7 @@ public final class SelectionInspectorOverlay {
     private void renderSingleObjectInfo(
             VRenderContext context,
             Font font,
+            CanvasScene scene,
             CanvasObject object,
             int x,
             int y
@@ -112,6 +113,16 @@ public final class SelectionInspectorOverlay {
         Rectd bounds = object.bounds();
 
         drawLine(context, font, "ID: " + object.id(), x, y, TEXT_COLOR);
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
+                "Layer: " + scene.getObjectLayerIndex(object.id()),
+                x,
+                y,
+                TEXT_COLOR
+        );
         y += LINE_HEIGHT;
 
         drawLine(
@@ -361,7 +372,7 @@ public final class SelectionInspectorOverlay {
         }
 
         if (selectedObjects.size() == 1) {
-            return 18;
+            return 16;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;
