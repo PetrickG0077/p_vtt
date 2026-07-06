@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.screen;
 
 import com.petrick.vtt.VTT;
+import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.input.InputController;
@@ -42,6 +43,8 @@ public final class VTTScreen extends Screen {
 
     private final AssetRegistry assetRegistry;
 
+    private final AssetCatalogOverlay assetCatalogOverlay;
+
     private final VTTSession session;
 
     private Viewport viewport;
@@ -62,6 +65,7 @@ public final class VTTScreen extends Screen {
         this.inputController = new InputController(camera, scene, selectionManager);
         this.debugOverlay = new DebugOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
+        this.assetCatalogOverlay = new AssetCatalogOverlay();
     }
 
     @Override
@@ -98,6 +102,7 @@ public final class VTTScreen extends Screen {
                 assetRegistry.size()
         );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
+        assetCatalogOverlay.render(context, this.font, assetRegistry);
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
