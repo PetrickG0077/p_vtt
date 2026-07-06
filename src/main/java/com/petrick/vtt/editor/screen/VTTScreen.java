@@ -392,6 +392,11 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_D && (modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
+            inputController.duplicateSelectedObjects();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_V) {
             inputController.toggleSelectedObjectsVisibility();
             return true;

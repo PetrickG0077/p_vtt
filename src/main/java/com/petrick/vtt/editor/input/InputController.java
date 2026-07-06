@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
+import java.util.Set;
 
 /**
  * Controla os inputs principais do VTT.
@@ -162,6 +163,21 @@ public final class InputController {
                 selectionManager.getSelectedObjectIds(),
                 15.0
         );
+    }
+
+    public void duplicateSelectedObjects() {
+        Set<String> duplicatedIds = scene.duplicateObjects(
+                selectionManager.getSelectedObjectIds(),
+                new Vec2d(32.0, 32.0)
+        );
+
+        if (!duplicatedIds.isEmpty()) {
+            selectionManager.clearSelection();
+
+            for (String duplicatedId : duplicatedIds) {
+                selectionManager.select(duplicatedId);
+            }
+        }
     }
 
     public void deleteSelectedObjects() {

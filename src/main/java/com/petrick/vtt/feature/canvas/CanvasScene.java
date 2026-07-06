@@ -171,6 +171,33 @@ public final class CanvasScene {
         }
     }
 
+    public Set<String> duplicateObjects(Set<String> objectIds, Vec2d offset) {
+        Set<String> duplicatedIds = new java.util.LinkedHashSet<>();
+
+        if (objectIds == null || objectIds.isEmpty()) {
+            return duplicatedIds;
+        }
+
+        java.util.List<String> idsToDuplicate = new java.util.ArrayList<>(objectIds);
+
+        for (String objectId : idsToDuplicate) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object == null) {
+                continue;
+            }
+
+            String duplicateId = createUniqueObjectId(object.id() + "_copy");
+
+            CanvasObject duplicate = object.duplicatedAs(duplicateId, offset);
+
+            addObject(duplicate);
+            duplicatedIds.add(duplicateId);
+        }
+
+        return duplicatedIds;
+    }
+
     public void toggleObjectsVisibility(Set<String> objectIds) {
         if (objectIds == null || objectIds.isEmpty()) {
             return;

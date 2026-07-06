@@ -48,6 +48,16 @@ public record CanvasObject(
         );
     }
 
+    public CanvasObject duplicatedAs(String newId, Vec2d offset) {
+        return new CanvasObject(
+                newId,
+                transform.movedBy(offset),
+                size,
+                visual,
+                visible
+        );
+    }
+
     public CanvasObject withVisible(boolean visible) {
         return new CanvasObject(
                 id,
