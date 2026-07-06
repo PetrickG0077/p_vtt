@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -31,6 +32,8 @@ public final class TokenCatalogOverlay {
 
     private static final int MAX_VISIBLE_TOKENS = 8;
 
+    private static final int MAX_VISIBLE_STATES = 5;
+
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
     private static final int PANEL_BORDER = 0xFFAA66FF;
@@ -40,6 +43,8 @@ public final class TokenCatalogOverlay {
     private static final int TEXT_COLOR = 0xFFDDDDDD;
 
     private static final int MUTED_TEXT_COLOR = 0xFFAAAAAA;
+
+    private static final int HOVER_TEXT_COLOR = 0xFFFFDD88;
 
     private static final int DRAG_PREVIEW_BACKGROUND = 0xCC000000;
 
@@ -52,7 +57,14 @@ public final class TokenCatalogOverlay {
     ) {
         List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
 
-        int panelHeight = calculatePanelHeight(definitions.size());
+        Optional<TokenDefinition> hoveredDefinition = findTokenDefinitionAt(
+                tokenDefinitionRegistry,
+                context.screenHeight(),
+                context.mouseX(),
+                context.mouseY()
+        );
+
+        int panelHeight = calculatePanelHeight(definitions.size(), hoveredDefinition.orElse(null));
 
         int x = PANEL_X;
         int y = getPanelY(context.screenHeight(), panelHeight);
@@ -85,6 +97,10 @@ public final class TokenCatalogOverlay {
         for (int i = 0; i < visibleDefinitions; i++) {
             TokenDefinition definition = definitions.get(i);
 
+            boolean hovered = hoveredDefinition
+                    .map(tokenDefinition -> tokenDefinition.id().equals(definition.id()))
+                    .orElse(false);
+
             String text = "- " + definition.displayName()
                     + " {"
                     + definition.states().size()
@@ -96,7 +112,7 @@ public final class TokenCatalogOverlay {
                     text,
                     textX,
                     textY,
-                    TEXT_COLOR
+                    hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
             );
 
             textY += LINE_HEIGHT;
@@ -113,6 +129,13 @@ public final class TokenCatalogOverlay {
                     textY,
                     MUTED_TEXT_COLOR
             );
+
+            textY += LINE_HEIGHT;
+        }
+
+        if (hoveredDefinition.isPresent()) {
+            textY += 6;
+            renderTokenDetails(context, font, hoveredDefinition.get(), textX, textY);
         }
     }
 
@@ -166,7 +189,7 @@ public final class TokenCatalogOverlay {
             return Optional.empty();
         }
 
-        int panelHeight = calculatePanelHeight(definitions.size());
+        int panelHeight = calculatePanelHeight(definitions.size(), null);
 
         int panelX = PANEL_X;
         int panelY = getPanelY(screenHeight, panelHeight);
@@ -195,6 +218,79 @@ public final class TokenCatalogOverlay {
         return Optional.empty();
     }
 
+    private void renderTokenDetails(
+            VRenderContext context,
+            Font font,
+            TokenDefinition definition,
+            int x,
+            int y
+    ) {
+        drawLine(context, font, "Details:", x, y, TITLE_COLOR);
+        y += LINE_HEIGHT;
+
+        drawLine(context, font, "ID: " + definition.id(), x, y, MUTED_TEXT_COLOR);
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
+                "Size: "
+                        + formatNumber(definition.defaultSize().x())
+                        + "x"
+                        + formatNumber(definition.defaultSize().y()),
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
+                "Default State: " + definition.defaultStateId(),
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        drawLine(context, font, "States:", x, y, MUTED_TEXT_COLOR);
+        y += LINE_HEIGHT;
+
+        int index = 0;
+
+        for (CanvasObjectState state : definition.states().values()) {
+            if (index >= MAX_VISIBLE_STATES) {
+                int remaining = definition.states().size() - MAX_VISIBLE_STATES;
+
+                drawLine(
+                        context,
+                        font,
+                        "... +" + remaining + " more",
+                        x,
+                        y,
+                        MUTED_TEXT_COLOR
+                );
+
+                return;
+            }
+
+            String prefix = state.id().equals(definition.defaultStateId()) ? "> " : "  ";
+
+            drawLine(
+                    context,
+                    font,
+                    prefix + state.id() + " - " + state.displayName(),
+                    x,
+                    y,
+                    state.id().equals(definition.defaultStateId()) ? HOVER_TEXT_COLOR : TEXT_COLOR
+            );
+
+            y += LINE_HEIGHT;
+            index++;
+        }
+    }
+
     private List<TokenDefinition> getSortedDefinitions(TokenDefinitionRegistry tokenDefinitionRegistry) {
         List<TokenDefinition> definitions = new ArrayList<>(tokenDefinitionRegistry.getAll());
 
@@ -203,13 +299,23 @@ public final class TokenCatalogOverlay {
         return definitions;
     }
 
-    private int calculatePanelHeight(int tokenCount) {
+    private int calculatePanelHeight(int tokenCount, TokenDefinition hoveredDefinition) {
         int visibleDefinitions = Math.min(tokenCount, MAX_VISIBLE_TOKENS);
 
         int lines = 3 + visibleDefinitions;
 
         if (tokenCount > MAX_VISIBLE_TOKENS) {
             lines++;
+        }
+
+        if (hoveredDefinition != null) {
+            int visibleStates = Math.min(hoveredDefinition.states().size(), MAX_VISIBLE_STATES);
+
+            lines += 6 + visibleStates;
+
+            if (hoveredDefinition.states().size() > MAX_VISIBLE_STATES) {
+                lines++;
+            }
         }
 
         return PADDING * 2 + lines * LINE_HEIGHT + 8;
@@ -256,5 +362,13 @@ public final class TokenCatalogOverlay {
                 color,
                 false
         );
+    }
+
+    private String formatNumber(double value) {
+        if (Math.floor(value) == value) {
+            return Integer.toString((int) value);
+        }
+
+        return String.format(java.util.Locale.ROOT, "%.2f", value);
     }
 }
