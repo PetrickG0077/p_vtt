@@ -3,6 +3,10 @@ package com.petrick.vtt.feature.canvas;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 
+import com.petrick.vtt.feature.canvas.visual.ColorVisual;
+import com.petrick.vtt.feature.canvas.visual.TextureVisual;
+import net.minecraft.resources.ResourceLocation;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -24,34 +28,49 @@ public final class CanvasScene {
         scene.addObject(new CanvasObject(
                 "object_1",
                 new Transform2D(
-                        new Vec2d(0, 0),
+                        new Vec2d(0.0, 0.0),
                         0.0,
                         new Vec2d(1.0, 1.0)
                 ),
-                new Vec2d(100, 100),
-                0xFFFFFFFF
+                new Vec2d(100.0, 100.0),
+                new ColorVisual(0xFFFFFFFF)
         ));
 
         scene.addObject(new CanvasObject(
                 "object_2",
                 new Transform2D(
-                        new Vec2d(190, 0),
+                        new Vec2d(190.0, 0.0),
                         0.0,
                         new Vec2d(1.0, 1.0)
                 ),
-                new Vec2d(80, 80),
-                0xFFFFAA55
+                new Vec2d(80.0, 80.0),
+                new ColorVisual(0xFFFFAA55)
         ));
 
         scene.addObject(new CanvasObject(
                 "object_3",
                 new Transform2D(
-                        new Vec2d(-160, 135),
+                        new Vec2d(-160.0, 135.0),
                         0.0,
                         new Vec2d(1.0, 1.0)
                 ),
-                new Vec2d(120, 70),
-                0xFF55AAFF
+                new Vec2d(120.0, 70.0),
+                new ColorVisual(0xFF55AAFF)
+        ));
+
+        scene.addObject(new CanvasObject(
+                "texture_test",
+                new Transform2D(
+                        new Vec2d(0.0, -180.0),
+                        0.0,
+                        new Vec2d(1.0, 1.0)
+                ),
+                new Vec2d(96.0, 96.0),
+                new TextureVisual(
+                        ResourceLocation.fromNamespaceAndPath("vtt", "textures/gui/test_token.png"),
+                        64,
+                        64
+                )
         ));
 
         return scene;

@@ -3,6 +3,7 @@ package com.petrick.vtt.feature.canvas;
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
+import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 
 /**
  * Objeto temporário do canvas.
@@ -13,7 +14,7 @@ public record CanvasObject(
         String id,
         Transform2D transform,
         Vec2d size,
-        int color
+        CanvasVisual visual
 ) {
 
     public CanvasObject movedBy(Vec2d delta) {
@@ -21,7 +22,7 @@ public record CanvasObject(
                 id,
                 transform.movedBy(delta),
                 size,
-                color
+                visual
         );
     }
 
@@ -30,7 +31,7 @@ public record CanvasObject(
                 id,
                 transform.withScale(transform.scale().multiply(factor)),
                 size,
-                color
+                visual
         );
     }
 
@@ -39,7 +40,7 @@ public record CanvasObject(
                 id,
                 transform.rotatedBy(deltaDegrees),
                 size,
-                color
+                visual
         );
     }
 
@@ -72,15 +73,14 @@ public record CanvasObject(
 
     public boolean containsWorldPoint(Vec2d worldPoint) {
         Vec2d localPoint = worldToLocal(worldPoint);
+        Vec2d scaledSize = scaledSize();
 
-        return Math.abs(localPoint.x()) <= scaledSize().x() / 2.0
-                && Math.abs(localPoint.y()) <= scaledSize().y() / 2.0;
+        return Math.abs(localPoint.x()) <= scaledSize.x() / 2.0
+                && Math.abs(localPoint.y()) <= scaledSize.y() / 2.0;
     }
 
     /**
      * Retorna um bounds alinhado ao mundo contendo o objeto rotacionado.
-     *
-     * Esse método é útil para seleção por caixa e culling simples.
      */
     public Rectd bounds() {
         Vec2d topLeft = worldTopLeft();

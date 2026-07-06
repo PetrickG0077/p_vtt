@@ -106,7 +106,7 @@ public final class VTTScreen extends Screen {
 
         graphics.drawCenteredString(
                 this.font,
-                "Sprint 1 - VTT Canvas",
+                "Sprint 2 - Tokens & Assets",
                 this.width / 2,
                 this.height / 2,
                 0xFFAAAAAA

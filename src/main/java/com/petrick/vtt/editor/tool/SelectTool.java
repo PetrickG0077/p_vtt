@@ -314,7 +314,7 @@ public final class SelectTool implements Tool {
                         .withPosition(newCenter)
                         .withScale(newScale),
                 currentObject.size(),
-                currentObject.color()
+                currentObject.visual()
         );
 
         context.scene().replaceObjectById(currentObject.id(), resizedObject);
