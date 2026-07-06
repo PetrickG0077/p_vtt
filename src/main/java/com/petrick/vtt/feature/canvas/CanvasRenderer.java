@@ -4,8 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.grid.GridRenderer;
-import com.petrick.vtt.feature.canvas.visual.ColorVisual;
-import com.petrick.vtt.feature.canvas.visual.TextureVisual;
+import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 
@@ -28,10 +27,13 @@ public final class CanvasRenderer {
 
     private static final int HANDLE_SIZE = 6;
 
+    private final CanvasVisualRenderer visualRenderer;
+
     private final GridRenderer gridRenderer;
 
     public CanvasRenderer() {
         this.gridRenderer = new GridRenderer();
+        this.visualRenderer = new CanvasVisualRenderer();
     }
 
     public void render(
@@ -85,70 +87,16 @@ public final class CanvasRenderer {
                 Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees())
         );
 
-        renderVisual(context, object, left, top, right, bottom);
-
-        poseStack.popPose();
-    }
-
-    private void renderVisual(
-            VRenderContext context,
-            CanvasObject object,
-            int left,
-            int top,
-            int right,
-            int bottom
-    ) {
-        if (object.visual() instanceof ColorVisual colorVisual) {
-            renderColorVisual(context, colorVisual, left, top, right, bottom);
-            return;
-        }
-
-        if (object.visual() instanceof TextureVisual textureVisual) {
-            renderTextureVisual(context, textureVisual, left, top, right, bottom);
-        }
-    }
-
-    private void renderColorVisual(
-            VRenderContext context,
-            ColorVisual visual,
-            int left,
-            int top,
-            int right,
-            int bottom
-    ) {
-        context.graphics().fill(
+        visualRenderer.render(
+                context,
+                object.visual(),
                 left,
                 top,
                 right,
-                bottom,
-                visual.color()
+                bottom
         );
-    }
 
-    private void renderTextureVisual(
-            VRenderContext context,
-            TextureVisual visual,
-            int left,
-            int top,
-            int right,
-            int bottom
-    ) {
-        int drawWidth = right - left;
-        int drawHeight = bottom - top;
-
-        context.graphics().blit(
-                visual.texture(),
-                left,
-                top,
-                drawWidth,
-                drawHeight,
-                0.0F,
-                0.0F,
-                visual.textureWidth(),
-                visual.textureHeight(),
-                visual.textureWidth(),
-                visual.textureHeight()
-        );
+        poseStack.popPose();
     }
 
     private void renderSelectionBorder(VRenderContext context, CanvasObject object) {
