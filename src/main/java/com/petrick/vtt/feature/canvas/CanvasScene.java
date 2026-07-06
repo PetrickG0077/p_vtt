@@ -93,6 +93,16 @@ public final class CanvasScene {
         return null;
     }
 
+    public String createUniqueObjectId(String prefix) {
+        int index = 1;
+
+        while (findObjectById(prefix + "_" + index) != null) {
+            index++;
+        }
+
+        return prefix + "_" + index;
+    }
+
     public void replaceObject(CanvasObject replacement) {
         for (int i = 0; i < objects.size(); i++) {
             CanvasObject object = objects.get(i);

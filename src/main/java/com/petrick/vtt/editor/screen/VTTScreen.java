@@ -18,6 +18,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import net.minecraft.network.chat.Component;
+import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.core.transform.Transform2D;
+import com.petrick.vtt.feature.asset.AssetRef;
+import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.feature.canvas.CanvasObject;
+import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -50,6 +56,8 @@ public final class VTTScreen extends Screen {
     private Viewport viewport;
 
     private RenderState renderState;
+
+    private AssetRef draggingAsset;
 
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
@@ -103,6 +111,54 @@ public final class VTTScreen extends Screen {
         );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         assetCatalogOverlay.render(context, this.font, assetRegistry);
+        if (draggingAsset != null) {
+            assetCatalogOverlay.renderDragPreview(
+                    context,
+                    this.font,
+                    draggingAsset,
+                    mouseX,
+                    mouseY
+            );
+        }
+    }
+
+    private Vec2d getDefaultTokenSize(AssetRef assetRef) {
+        if (assetRef instanceof BuiltInTextureAssetRef builtInTexture) {
+            return new Vec2d(
+                    builtInTexture.textureWidth(),
+                    builtInTexture.textureHeight()
+            );
+        }
+
+        return new Vec2d(96.0, 96.0);
+    }
+
+    private void createTokenFromDraggedAsset(double mouseX, double mouseY, AssetRef assetRef) {
+        if (renderState == null) {
+            return;
+        }
+
+        Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+
+        Vec2d tokenSize = getDefaultTokenSize(assetRef);
+
+        String objectId = scene.createUniqueObjectId("token");
+
+        CanvasObject token = new CanvasObject(
+                objectId,
+                new Transform2D(
+                        worldPosition,
+                        0.0,
+                        new Vec2d(1.0, 1.0)
+                ),
+                tokenSize,
+                new TextureVisual(assetRef)
+        );
+
+        scene.addObject(token);
+
+        selectionManager.selectOnly(objectId);
+        inputController.selectSelectTool();
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
@@ -180,6 +236,20 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            var clickedAsset = assetCatalogOverlay.findAssetAt(
+                    assetRegistry,
+                    this.height,
+                    mouseX,
+                    mouseY
+            );
+
+            if (clickedAsset.isPresent()) {
+                this.draggingAsset = clickedAsset.get();
+                return true;
+            }
+        }
+
         if (renderState != null && inputController.mouseClicked(
                 mouseX,
                 mouseY,
@@ -195,6 +265,12 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingAsset != null) {
+            createTokenFromDraggedAsset(mouseX, mouseY, draggingAsset);
+            this.draggingAsset = null;
+            return true;
+        }
+
         if (renderState != null && inputController.mouseReleased(
                 mouseX,
                 mouseY,
