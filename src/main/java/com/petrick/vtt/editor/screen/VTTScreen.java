@@ -24,8 +24,10 @@ import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.canvas.CanvasObject;
-import com.petrick.vtt.feature.canvas.visual.TextureVisual;
+import com.petrick.vtt.feature.canvas.CanvasObjectState;
+import com.petrick.vtt.feature.canvas.CanvasObjectStateFactory;
 import org.lwjgl.glfw.GLFW;
+import java.util.Map;
 
 /**
  * Tela principal do Virtual Tabletop.
@@ -158,6 +160,9 @@ public final class VTTScreen extends Screen {
 
         String objectId = scene.createUniqueObjectId("token");
 
+        Map<String, CanvasObjectState> tokenStates =
+                CanvasObjectStateFactory.createTestTokenStates(assetRef);
+
         CanvasObject token = new CanvasObject(
                 objectId,
                 assetRef.id(),
@@ -167,7 +172,8 @@ public final class VTTScreen extends Screen {
                         new Vec2d(1.0, 1.0)
                 ),
                 tokenSize,
-                new TextureVisual(assetRef),
+                tokenStates,
+                "1",
                 true
         );
 

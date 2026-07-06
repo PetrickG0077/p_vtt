@@ -4,10 +4,8 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
-import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.DebugAssets;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import java.util.ArrayList;
@@ -67,34 +65,10 @@ public final class CanvasScene {
                 true
         ));
 
-        Map<String, CanvasObjectState> tokenStates = new LinkedHashMap<>();
-
-        tokenStates.put(
-                "1",
-                new CanvasObjectState(
-                        "1",
-                        "Normal",
-                        new TextureVisual(assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID))
-                )
-        );
-
-        tokenStates.put(
-                "2",
-                new CanvasObjectState(
-                        "2",
-                        "Injured",
-                        new ColorVisual(0xFFFF5555)
-                )
-        );
-
-        tokenStates.put(
-                "3",
-                new CanvasObjectState(
-                        "3",
-                        "Dead",
-                        new ColorVisual(0xFF555555)
-                )
-        );
+        Map<String, CanvasObjectState> tokenStates =
+                CanvasObjectStateFactory.createTestTokenStates(
+                        assetRegistry.getRequired(DebugAssets.TEST_TOKEN_ID)
+                );
 
         scene.addObject(new CanvasObject(
                 "texture_test",
