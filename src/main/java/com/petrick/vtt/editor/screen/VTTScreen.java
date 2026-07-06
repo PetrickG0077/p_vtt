@@ -20,14 +20,14 @@ import net.minecraft.client.gui.screens.Screen;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import net.minecraft.network.chat.Component;
 import com.petrick.vtt.core.math.Vec2d;
-import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.canvas.CanvasObject;
-import com.petrick.vtt.feature.canvas.CanvasObjectState;
-import com.petrick.vtt.feature.canvas.CanvasObjectStateFactory;
+import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.feature.token.TokenDefinition;
+import com.petrick.vtt.feature.token.TokenFactory;
+import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import org.lwjgl.glfw.GLFW;
-import java.util.Map;
 
 /**
  * Tela principal do Virtual Tabletop.
@@ -58,6 +58,8 @@ public final class VTTScreen extends Screen {
 
     private final VTTSession session;
 
+    private final TokenDefinitionRegistry tokenDefinitionRegistry;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -75,6 +77,7 @@ public final class VTTScreen extends Screen {
 
         this.camera = new Camera2D();
         this.assetRegistry = session.getAssetRegistry();
+        this.tokenDefinitionRegistry = session.getTokenDefinitionRegistry();
         this.scene = session.getCanvasScene();
 
         this.selectionManager = new SelectionManager();
@@ -117,7 +120,8 @@ public final class VTTScreen extends Screen {
                 this.font,
                 camera,
                 inputController.getActiveToolId(),
-                assetRegistry.size()
+                assetRegistry.size(),
+                tokenDefinitionRegistry.size()
         );
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         assetCatalogOverlay.render(context, this.font, assetRegistry);
@@ -138,17 +142,6 @@ public final class VTTScreen extends Screen {
         }
     }
 
-    private Vec2d getDefaultTokenSize(AssetRef assetRef) {
-        if (assetRef instanceof BuiltInTextureAssetRef builtInTexture) {
-            return new Vec2d(
-                    builtInTexture.textureWidth(),
-                    builtInTexture.textureHeight()
-            );
-        }
-
-        return new Vec2d(96.0, 96.0);
-    }
-
     private void createTokenFromDraggedAsset(double mouseX, double mouseY, AssetRef assetRef) {
         if (renderState == null) {
             return;
@@ -156,25 +149,16 @@ public final class VTTScreen extends Screen {
 
         Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
 
-        Vec2d tokenSize = getDefaultTokenSize(assetRef);
-
         String objectId = scene.createUniqueObjectId("token");
 
-        Map<String, CanvasObjectState> tokenStates =
-                CanvasObjectStateFactory.createTestTokenStates(assetRef);
+        TokenDefinition definition = tokenDefinitionRegistry.getRequired(
+                DebugTokenDefinitions.TEST_TOKEN_DEFINITION_ID
+        );
 
-        CanvasObject token = new CanvasObject(
+        CanvasObject token = TokenFactory.createCanvasObject(
+                definition,
                 objectId,
-                assetRef.id(),
-                new Transform2D(
-                        worldPosition,
-                        0.0,
-                        new Vec2d(1.0, 1.0)
-                ),
-                tokenSize,
-                tokenStates,
-                "1",
-                true
+                worldPosition
         );
 
         scene.addObject(token);

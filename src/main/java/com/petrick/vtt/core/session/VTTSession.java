@@ -3,25 +3,19 @@ package com.petrick.vtt.core.session;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.token.DebugTokenDefinitions;
+import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 
 /**
  * Representa uma sessão ativa do VTT.
  *
  * Por enquanto ela existe apenas em memória.
- * Isso significa que ela persiste enquanto o Minecraft está aberto,
- * mas ainda não é salva em disco.
- *
- * Futuramente, esta classe pode guardar:
- * - tabletop atual
- * - tokens
- * - assets
- * - permissões
- * - estado de fog of war
- * - cenas/mapas
  */
 public final class VTTSession {
 
     private final AssetRegistry assetRegistry;
+
+    private final TokenDefinitionRegistry tokenDefinitionRegistry;
 
     private final CanvasScene canvasScene;
 
@@ -29,11 +23,18 @@ public final class VTTSession {
         this.assetRegistry = new AssetRegistry();
         DebugAssets.registerAll(assetRegistry);
 
+        this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
+        DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
+
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
     }
 
     public AssetRegistry getAssetRegistry() {
         return assetRegistry;
+    }
+
+    public TokenDefinitionRegistry getTokenDefinitionRegistry() {
+        return tokenDefinitionRegistry;
     }
 
     public CanvasScene getCanvasScene() {
