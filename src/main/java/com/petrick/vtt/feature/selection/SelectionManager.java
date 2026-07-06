@@ -87,7 +87,7 @@ public final class SelectionManager {
         for (int i = objects.size() - 1; i >= 0; i--) {
             CanvasObject object = objects.get(i);
 
-            if (object.bounds().contains(worldPosition)) {
+            if (object.containsWorldPoint(worldPosition)) {
                 return object;
             }
         }

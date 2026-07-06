@@ -2,7 +2,6 @@ package com.petrick.vtt.editor.tool;
 
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
-import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.platform.render.VRenderContext;
 import org.lwjgl.glfw.GLFW;
@@ -17,6 +16,8 @@ import org.lwjgl.glfw.GLFW;
  * - Arrastar objeto selecionado move todos os objetos selecionados.
  * - Arrastar handles redimensiona o objeto.
  * - Shift + arrastar handle redimensiona proporcionalmente.
+ *
+ * Agora os handles e o resize respeitam a rotação do objeto.
  */
 public final class SelectTool implements Tool {
 
@@ -50,9 +51,9 @@ public final class SelectTool implements Tool {
 
     private SelectionHandle resizingHandle;
 
-    private Rectd resizeOriginalBounds;
+    private CanvasObject resizeOriginalObject;
 
-    private Vec2d resizeOriginalSize;
+    private Vec2d resizeAnchorWorld;
 
     @Override
     public String getId() {
@@ -245,113 +246,100 @@ public final class SelectTool implements Tool {
         this.resizing = true;
         this.resizingObjectId = object.id();
         this.resizingHandle = handleHit.handle();
-        this.resizeOriginalBounds = object.bounds();
-        this.resizeOriginalSize = object.size();
+        this.resizeOriginalObject = object;
+        this.resizeAnchorWorld = getOppositeCorner(object, resizingHandle);
     }
 
     private void endResize() {
         this.resizing = false;
         this.resizingObjectId = null;
         this.resizingHandle = null;
-        this.resizeOriginalBounds = null;
-        this.resizeOriginalSize = null;
+        this.resizeOriginalObject = null;
+        this.resizeAnchorWorld = null;
     }
 
     private void resizeObject(ToolContext context, double mouseX, double mouseY, boolean proportional) {
-        CanvasObject object = context.scene().findObjectById(resizingObjectId);
-
-        if (object == null || resizeOriginalBounds == null || resizeOriginalSize == null) {
+        if (resizeOriginalObject == null || resizeAnchorWorld == null || resizingHandle == null) {
             return;
         }
 
         Vec2d mouseWorld = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
 
-        Vec2d anchor = getOppositeCorner(resizeOriginalBounds, resizingHandle);
-        Rectd newBounds = createBoundsFromAnchor(anchor, mouseWorld, resizingHandle, proportional);
+        double rotation = resizeOriginalObject.transform().rotationDegrees();
 
-        double newWidth = Math.max(MIN_OBJECT_SIZE, newBounds.width());
-        double newHeight = Math.max(MIN_OBJECT_SIZE, newBounds.height());
-
-        Vec2d newCenter = new Vec2d(
-                newBounds.x() + newWidth / 2.0,
-                newBounds.y() + newHeight / 2.0
+        Vec2d localDelta = rotate(
+                mouseWorld.subtract(resizeAnchorWorld),
+                -rotation
         );
 
-        Vec2d newScale = new Vec2d(
-                newWidth / resizeOriginalSize.x(),
-                newHeight / resizeOriginalSize.y()
-        );
-
-        Transform2D newTransform = object.transform()
-                .withPosition(newCenter)
-                .withScale(newScale);
-
-        CanvasObject resizedObject = new CanvasObject(
-                object.id(),
-                newTransform,
-                object.size(),
-                object.color()
-        );
-
-        context.scene().replaceObjectById(object.id(), resizedObject);
-    }
-
-    private Rectd createBoundsFromAnchor(
-            Vec2d anchor,
-            Vec2d current,
-            SelectionHandle handle,
-            boolean proportional
-    ) {
-        double dx = current.x() - anchor.x();
-        double dy = current.y() - anchor.y();
+        double newWidth = Math.max(MIN_OBJECT_SIZE, Math.abs(localDelta.x()));
+        double newHeight = Math.max(MIN_OBJECT_SIZE, Math.abs(localDelta.y()));
 
         if (proportional) {
-            double aspectRatio = resizeOriginalBounds.width() / resizeOriginalBounds.height();
+            double aspectRatio = resizeOriginalObject.size().x() / resizeOriginalObject.size().y();
 
-            double absDx = Math.abs(dx);
-            double absDy = Math.abs(dy);
-
-            if (absDx / Math.max(absDy, 0.0001) > aspectRatio) {
-                dx = Math.signum(dx) * absDy * aspectRatio;
+            if (newWidth / newHeight > aspectRatio) {
+                newWidth = newHeight * aspectRatio;
             } else {
-                dy = Math.signum(dy) * (absDx / aspectRatio);
+                newHeight = newWidth / aspectRatio;
             }
         }
 
-        double minX = Math.min(anchor.x(), anchor.x() + dx);
-        double minY = Math.min(anchor.y(), anchor.y() + dy);
-        double maxX = Math.max(anchor.x(), anchor.x() + dx);
-        double maxY = Math.max(anchor.y(), anchor.y() + dy);
+        int signX = getHandleSignX(resizingHandle);
+        int signY = getHandleSignY(resizingHandle);
 
-        double width = Math.max(MIN_OBJECT_SIZE, maxX - minX);
-        double height = Math.max(MIN_OBJECT_SIZE, maxY - minY);
-
-        if (handle == SelectionHandle.TOP_LEFT || handle == SelectionHandle.BOTTOM_LEFT) {
-            minX = maxX - width;
-        } else {
-            maxX = minX + width;
-        }
-
-        if (handle == SelectionHandle.TOP_LEFT || handle == SelectionHandle.TOP_RIGHT) {
-            minY = maxY - height;
-        } else {
-            maxY = minY + height;
-        }
-
-        return new Rectd(
-                minX,
-                minY,
-                maxX - minX,
-                maxY - minY
+        Vec2d centerOffsetLocal = new Vec2d(
+                signX * newWidth / 2.0,
+                signY * newHeight / 2.0
         );
+
+        Vec2d newCenter = resizeAnchorWorld.add(
+                rotate(centerOffsetLocal, rotation)
+        );
+
+        Vec2d newScale = new Vec2d(
+                newWidth / resizeOriginalObject.size().x(),
+                newHeight / resizeOriginalObject.size().y()
+        );
+
+        CanvasObject currentObject = context.scene().findObjectById(resizingObjectId);
+
+        if (currentObject == null) {
+            return;
+        }
+
+        CanvasObject resizedObject = new CanvasObject(
+                currentObject.id(),
+                currentObject.transform()
+                        .withPosition(newCenter)
+                        .withScale(newScale),
+                currentObject.size(),
+                currentObject.color()
+        );
+
+        context.scene().replaceObjectById(currentObject.id(), resizedObject);
     }
 
-    private Vec2d getOppositeCorner(Rectd bounds, SelectionHandle handle) {
+    private Vec2d getOppositeCorner(CanvasObject object, SelectionHandle handle) {
         return switch (handle) {
-            case TOP_LEFT -> new Vec2d(bounds.right(), bounds.bottom());
-            case TOP_RIGHT -> new Vec2d(bounds.left(), bounds.bottom());
-            case BOTTOM_LEFT -> new Vec2d(bounds.right(), bounds.top());
-            case BOTTOM_RIGHT -> new Vec2d(bounds.left(), bounds.top());
+            case TOP_LEFT -> object.worldBottomRight();
+            case TOP_RIGHT -> object.worldBottomLeft();
+            case BOTTOM_LEFT -> object.worldTopRight();
+            case BOTTOM_RIGHT -> object.worldTopLeft();
+        };
+    }
+
+    private static int getHandleSignX(SelectionHandle handle) {
+        return switch (handle) {
+            case TOP_LEFT, BOTTOM_LEFT -> -1;
+            case TOP_RIGHT, BOTTOM_RIGHT -> 1;
+        };
+    }
+
+    private static int getHandleSignY(SelectionHandle handle) {
+        return switch (handle) {
+            case TOP_LEFT, TOP_RIGHT -> -1;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> 1;
         };
     }
 
@@ -403,17 +391,15 @@ public final class SelectTool implements Tool {
     private HandleHit findHandleHitAt(ToolContext context, double mouseX, double mouseY) {
         Vec2d mouse = new Vec2d(mouseX, mouseY);
 
-        for (var object : context.scene().getObjects()) {
+        for (CanvasObject object : context.scene().getObjects()) {
             if (!context.selectionManager().isSelected(object.id())) {
                 continue;
             }
 
-            Rectd bounds = object.bounds();
-
-            Vec2d topLeft = context.renderState().worldToScreen(bounds.position());
-            Vec2d topRight = context.renderState().worldToScreen(new Vec2d(bounds.right(), bounds.top()));
-            Vec2d bottomLeft = context.renderState().worldToScreen(new Vec2d(bounds.left(), bounds.bottom()));
-            Vec2d bottomRight = context.renderState().worldToScreen(new Vec2d(bounds.right(), bounds.bottom()));
+            Vec2d topLeft = context.renderState().worldToScreen(object.worldTopLeft());
+            Vec2d topRight = context.renderState().worldToScreen(object.worldTopRight());
+            Vec2d bottomLeft = context.renderState().worldToScreen(object.worldBottomLeft());
+            Vec2d bottomRight = context.renderState().worldToScreen(object.worldBottomRight());
 
             if (isPointInsideHandle(mouse, topLeft)) {
                 return new HandleHit(object.id(), SelectionHandle.TOP_LEFT);
@@ -442,6 +428,18 @@ public final class SelectTool implements Tool {
                 && point.x() <= handleCenter.x() + half
                 && point.y() >= handleCenter.y() - half
                 && point.y() <= handleCenter.y() + half;
+    }
+
+    private static Vec2d rotate(Vec2d point, double degrees) {
+        double radians = Math.toRadians(degrees);
+
+        double cos = Math.cos(radians);
+        double sin = Math.sin(radians);
+
+        return new Vec2d(
+                point.x() * cos - point.y() * sin,
+                point.x() * sin + point.y() * cos
+        );
     }
 
     private static boolean isShiftDown(int modifiers) {

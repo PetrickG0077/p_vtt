@@ -43,23 +43,98 @@ public record CanvasObject(
         );
     }
 
-    /**
-     * Retorna os limites atuais do objeto no mundo.
-     *
-     * Por enquanto isso ignora rotação.
-     * A rotação visual já funciona, mas a seleção ainda usa bounds simples.
-     */
-    public Rectd bounds() {
-        Vec2d scaledSize = new Vec2d(
+    public Vec2d scaledSize() {
+        return new Vec2d(
                 size.x() * transform.scale().x(),
                 size.y() * transform.scale().y()
         );
+    }
+
+    public Vec2d worldTopLeft() {
+        Vec2d scaledSize = scaledSize();
+        return localToWorld(new Vec2d(-scaledSize.x() / 2.0, -scaledSize.y() / 2.0));
+    }
+
+    public Vec2d worldTopRight() {
+        Vec2d scaledSize = scaledSize();
+        return localToWorld(new Vec2d(scaledSize.x() / 2.0, -scaledSize.y() / 2.0));
+    }
+
+    public Vec2d worldBottomLeft() {
+        Vec2d scaledSize = scaledSize();
+        return localToWorld(new Vec2d(-scaledSize.x() / 2.0, scaledSize.y() / 2.0));
+    }
+
+    public Vec2d worldBottomRight() {
+        Vec2d scaledSize = scaledSize();
+        return localToWorld(new Vec2d(scaledSize.x() / 2.0, scaledSize.y() / 2.0));
+    }
+
+    public boolean containsWorldPoint(Vec2d worldPoint) {
+        Vec2d localPoint = worldToLocal(worldPoint);
+
+        return Math.abs(localPoint.x()) <= scaledSize().x() / 2.0
+                && Math.abs(localPoint.y()) <= scaledSize().y() / 2.0;
+    }
+
+    /**
+     * Retorna um bounds alinhado ao mundo contendo o objeto rotacionado.
+     *
+     * Esse método é útil para seleção por caixa e culling simples.
+     */
+    public Rectd bounds() {
+        Vec2d topLeft = worldTopLeft();
+        Vec2d topRight = worldTopRight();
+        Vec2d bottomLeft = worldBottomLeft();
+        Vec2d bottomRight = worldBottomRight();
+
+        double minX = Math.min(
+                Math.min(topLeft.x(), topRight.x()),
+                Math.min(bottomLeft.x(), bottomRight.x())
+        );
+
+        double minY = Math.min(
+                Math.min(topLeft.y(), topRight.y()),
+                Math.min(bottomLeft.y(), bottomRight.y())
+        );
+
+        double maxX = Math.max(
+                Math.max(topLeft.x(), topRight.x()),
+                Math.max(bottomLeft.x(), bottomRight.x())
+        );
+
+        double maxY = Math.max(
+                Math.max(topLeft.y(), topRight.y()),
+                Math.max(bottomLeft.y(), bottomRight.y())
+        );
 
         return new Rectd(
-                transform.position().x() - scaledSize.x() / 2.0,
-                transform.position().y() - scaledSize.y() / 2.0,
-                scaledSize.x(),
-                scaledSize.y()
+                minX,
+                minY,
+                maxX - minX,
+                maxY - minY
+        );
+    }
+
+    private Vec2d localToWorld(Vec2d localPoint) {
+        Vec2d rotated = rotate(localPoint, transform.rotationDegrees());
+        return transform.position().add(rotated);
+    }
+
+    private Vec2d worldToLocal(Vec2d worldPoint) {
+        Vec2d translated = worldPoint.subtract(transform.position());
+        return rotate(translated, -transform.rotationDegrees());
+    }
+
+    private static Vec2d rotate(Vec2d point, double degrees) {
+        double radians = Math.toRadians(degrees);
+
+        double cos = Math.cos(radians);
+        double sin = Math.sin(radians);
+
+        return new Vec2d(
+                point.x() * cos - point.y() * sin,
+                point.x() * sin + point.y() * cos
         );
     }
 }
