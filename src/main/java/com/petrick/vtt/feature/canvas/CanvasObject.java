@@ -18,6 +18,7 @@ import java.util.Map;
 public record CanvasObject(
         String id,
         String displayName,
+        String sourceTokenDefinitionId,
         Transform2D transform,
         Vec2d size,
         Map<String, CanvasObjectState> states,
@@ -76,6 +77,7 @@ public record CanvasObject(
         this(
                 id,
                 displayName,
+                null,
                 transform,
                 size,
                 createSingleStateMap(visual),
@@ -119,6 +121,7 @@ public record CanvasObject(
         return new CanvasObject(
                 id,
                 displayName,
+                sourceTokenDefinitionId,
                 transform,
                 size,
                 states,
@@ -131,6 +134,7 @@ public record CanvasObject(
         return new CanvasObject(
                 id,
                 displayName,
+                sourceTokenDefinitionId,
                 transform,
                 size,
                 states,
@@ -167,6 +171,7 @@ public record CanvasObject(
         return new CanvasObject(
                 id,
                 displayName,
+                sourceTokenDefinitionId,
                 transform,
                 size,
                 states,
@@ -183,6 +188,7 @@ public record CanvasObject(
         return new CanvasObject(
                 id,
                 displayName,
+                sourceTokenDefinitionId,
                 transform,
                 size,
                 states,
@@ -195,6 +201,7 @@ public record CanvasObject(
         return new CanvasObject(
                 newId,
                 displayName + " Copy",
+                sourceTokenDefinitionId,
                 transform.movedBy(offset),
                 size,
                 states,
@@ -292,5 +299,9 @@ public record CanvasObject(
                 point.x() * cos - point.y() * sin,
                 point.x() * sin + point.y() * cos
         );
+    }
+
+    public boolean hasSourceTokenDefinition() {
+        return sourceTokenDefinitionId != null && !sourceTokenDefinitionId.isBlank();
     }
 }

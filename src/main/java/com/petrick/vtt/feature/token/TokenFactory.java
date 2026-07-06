@@ -24,6 +24,7 @@ public final class TokenFactory {
         return new CanvasObject(
                 objectId,
                 definition.displayName(),
+                definition.id(),
                 new Transform2D(
                         worldPosition,
                         0.0,

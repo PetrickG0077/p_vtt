@@ -72,7 +72,8 @@ public final class CanvasScene {
 
         scene.addObject(new CanvasObject(
                 "texture_test",
-                "Bingus Test Token",
+                "Test Token",
+                null,
                 new Transform2D(
                         new Vec2d(0.0, -180.0),
                         0.0,

@@ -139,6 +139,19 @@ public final class SelectionInspectorOverlay {
         drawLine(
                 context,
                 font,
+                "Source Token: "
+                        + (object.hasSourceTokenDefinition()
+                        ? object.sourceTokenDefinitionId()
+                        : "None"),
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
                 "Position: " + formatVec(object.transform().position()),
                 x,
                 y,
