@@ -246,6 +246,16 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_Q) {
+            inputController.rotateSelectedObjectsLeft();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_E) {
+            inputController.rotateSelectedObjectsRight();
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 

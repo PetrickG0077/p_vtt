@@ -34,6 +34,14 @@ public record Transform2D(
         );
     }
 
+    public Transform2D rotatedBy(double deltaDegrees) {
+        return new Transform2D(
+                position,
+                rotationDegrees + deltaDegrees,
+                scale
+        );
+    }
+
     public Transform2D withPosition(Vec2d position) {
         return new Transform2D(
                 position,

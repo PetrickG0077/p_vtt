@@ -116,4 +116,14 @@ public final class CanvasScene {
             }
         }
     }
+
+    public void rotateObjects(Set<String> objectIds, double deltaDegrees) {
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object != null) {
+                replaceObject(object.rotatedBy(deltaDegrees));
+            }
+        }
+    }
 }

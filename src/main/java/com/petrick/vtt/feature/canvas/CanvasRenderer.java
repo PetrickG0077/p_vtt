@@ -1,5 +1,7 @@
 package com.petrick.vtt.feature.canvas;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.grid.GridRenderer;
@@ -56,26 +58,41 @@ public final class CanvasRenderer {
     }
 
     private void renderObject(VRenderContext context, CanvasObject object) {
-        Rectd bounds = object.bounds();
+        Vec2d screenCenter = context.renderState().worldToScreen(object.transform().position());
 
-        Vec2d topLeft = context.renderState().worldToScreen(bounds.position());
-        Vec2d bottomRight = context.renderState().worldToScreen(new Vec2d(
-                bounds.right(),
-                bounds.bottom()
-        ));
+        double zoom = context.renderState().getCamera().getZoom();
 
-        int x1 = (int) Math.round(topLeft.x());
-        int y1 = (int) Math.round(topLeft.y());
-        int x2 = (int) Math.round(bottomRight.x());
-        int y2 = (int) Math.round(bottomRight.y());
+        double width = object.size().x() * object.transform().scale().x() * zoom;
+        double height = object.size().y() * object.transform().scale().y() * zoom;
+
+        int left = (int) Math.round(-width / 2.0);
+        int top = (int) Math.round(-height / 2.0);
+        int right = (int) Math.round(width / 2.0);
+        int bottom = (int) Math.round(height / 2.0);
+
+        PoseStack poseStack = context.graphics().pose();
+
+        poseStack.pushPose();
+
+        poseStack.translate(
+                screenCenter.x(),
+                screenCenter.y(),
+                0.0
+        );
+
+        poseStack.mulPose(
+                Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees())
+        );
 
         context.graphics().fill(
-                x1,
-                y1,
-                x2,
-                y2,
+                left,
+                top,
+                right,
+                bottom,
                 object.color()
         );
+
+        poseStack.popPose();
     }
 
     private void renderSelectionBorder(VRenderContext context, Rectd worldBounds) {

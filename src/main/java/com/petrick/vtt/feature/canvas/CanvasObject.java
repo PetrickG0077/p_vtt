@@ -34,10 +34,20 @@ public record CanvasObject(
         );
     }
 
+    public CanvasObject rotatedBy(double deltaDegrees) {
+        return new CanvasObject(
+                id,
+                transform.rotatedBy(deltaDegrees),
+                size,
+                color
+        );
+    }
+
     /**
      * Retorna os limites atuais do objeto no mundo.
      *
      * Por enquanto isso ignora rotação.
+     * A rotação visual já funciona, mas a seleção ainda usa bounds simples.
      */
     public Rectd bounds() {
         Vec2d scaledSize = new Vec2d(

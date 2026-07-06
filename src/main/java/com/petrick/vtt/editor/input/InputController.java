@@ -150,6 +150,20 @@ public final class InputController {
         );
     }
 
+    public void rotateSelectedObjectsLeft() {
+        scene.rotateObjects(
+                selectionManager.getSelectedObjectIds(),
+                -15.0
+        );
+    }
+
+    public void rotateSelectedObjectsRight() {
+        scene.rotateObjects(
+                selectionManager.getSelectedObjectIds(),
+                15.0
+        );
+    }
+
     public void selectHandTool() {
         toolController.selectHandTool();
     }
