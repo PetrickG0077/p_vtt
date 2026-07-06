@@ -306,6 +306,7 @@ public final class SelectTool implements Tool {
 
         CanvasObject rotatedObject = new CanvasObject(
                 currentObject.id(),
+                currentObject.displayName(),
                 currentObject.transform().withRotation(newRotation),
                 currentObject.size(),
                 currentObject.visual(),
@@ -396,6 +397,7 @@ public final class SelectTool implements Tool {
 
         CanvasObject resizedObject = new CanvasObject(
                 currentObject.id(),
+                currentObject.displayName(),
                 currentObject.transform()
                         .withPosition(newCenter)
                         .withScale(newScale),

@@ -128,6 +128,16 @@ public final class SelectionInspectorOverlay {
         drawLine(
                 context,
                 font,
+                "Name: " + object.displayName(),
+                x,
+                y,
+                TEXT_COLOR
+        );
+        y += LINE_HEIGHT;
+
+        drawLine(
+                context,
+                font,
                 "Position: " + formatVec(object.transform().position()),
                 x,
                 y,
@@ -372,7 +382,7 @@ public final class SelectionInspectorOverlay {
         }
 
         if (selectedObjects.size() == 1) {
-            return 16;
+            return 19;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;

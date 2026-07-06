@@ -151,6 +151,7 @@ public final class VTTScreen extends Screen {
 
         CanvasObject token = new CanvasObject(
                 objectId,
+                assetRef.id(),
                 new Transform2D(
                         worldPosition,
                         0.0,

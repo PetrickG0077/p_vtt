@@ -12,6 +12,7 @@ import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
  */
 public record CanvasObject(
         String id,
+        String displayName,
         Transform2D transform,
         Vec2d size,
         CanvasVisual visual,
@@ -21,6 +22,7 @@ public record CanvasObject(
     public CanvasObject movedBy(Vec2d delta) {
         return new CanvasObject(
                 id,
+                displayName,
                 transform.movedBy(delta),
                 size,
                 visual,
@@ -31,6 +33,7 @@ public record CanvasObject(
     public CanvasObject scaledBy(double factor) {
         return new CanvasObject(
                 id,
+                displayName,
                 transform.withScale(transform.scale().multiply(factor)),
                 size,
                 visual,
@@ -41,6 +44,7 @@ public record CanvasObject(
     public CanvasObject rotatedBy(double deltaDegrees) {
         return new CanvasObject(
                 id,
+                displayName,
                 transform.rotatedBy(deltaDegrees),
                 size,
                 visual,
@@ -48,10 +52,13 @@ public record CanvasObject(
         );
     }
 
-    public CanvasObject duplicatedAs(String newId, Vec2d offset) {
+    public CanvasObject resetScaleAndRotation() {
         return new CanvasObject(
-                newId,
-                transform.movedBy(offset),
+                id,
+                displayName,
+                transform
+                        .withRotation(0.0)
+                        .withScale(new Vec2d(1.0, 1.0)),
                 size,
                 visual,
                 visible
@@ -61,6 +68,7 @@ public record CanvasObject(
     public CanvasObject withVisible(boolean visible) {
         return new CanvasObject(
                 id,
+                displayName,
                 transform,
                 size,
                 visual,
@@ -72,12 +80,22 @@ public record CanvasObject(
         return withVisible(!visible);
     }
 
-    public CanvasObject resetScaleAndRotation() {
+    public CanvasObject withDisplayName(String displayName) {
         return new CanvasObject(
                 id,
-                transform
-                        .withRotation(0.0)
-                        .withScale(new Vec2d(1.0, 1.0)),
+                displayName,
+                transform,
+                size,
+                visual,
+                visible
+        );
+    }
+
+    public CanvasObject duplicatedAs(String newId, Vec2d offset) {
+        return new CanvasObject(
+                newId,
+                displayName + " Copy",
+                transform.movedBy(offset),
                 size,
                 visual,
                 visible

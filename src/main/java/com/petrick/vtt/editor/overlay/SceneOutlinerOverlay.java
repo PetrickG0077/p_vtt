@@ -84,8 +84,13 @@ public final class SceneOutlinerOverlay {
 
             String selectedPrefix = selected ? "> " : "  ";
             String visibilityPrefix = object.visible() ? "[V] " : "[H] ";
-            String text = selectedPrefix + visibilityPrefix + "[" + layerIndex + "] " + object.id();
-            
+            String text = selectedPrefix
+                    + visibilityPrefix
+                    + "["
+                    + layerIndex
+                    + "] "
+                    + object.displayName();
+
             int color;
 
             if (selected) {
