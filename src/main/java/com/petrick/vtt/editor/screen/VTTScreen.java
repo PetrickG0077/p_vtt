@@ -62,6 +62,10 @@ public final class VTTScreen extends Screen {
 
     private AssetRef draggingAsset;
 
+    private String renamingObjectId;
+
+    private String renameBuffer;
+
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
 
@@ -116,6 +120,7 @@ public final class VTTScreen extends Screen {
         selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         assetCatalogOverlay.render(context, this.font, assetRegistry);
         sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
+
         if (draggingAsset != null) {
             assetCatalogOverlay.renderDragPreview(
                     context,
@@ -124,6 +129,10 @@ public final class VTTScreen extends Screen {
                     mouseX,
                     mouseY
             );
+        }
+
+        if (renamingObjectId != null) {
+            renderRenameDialog(context);
         }
     }
 
@@ -166,6 +175,98 @@ public final class VTTScreen extends Screen {
 
         selectionManager.selectOnly(objectId);
         inputController.selectSelectTool();
+    }
+
+    private void beginRenameSelectedObject() {
+        if (selectionManager.getSelectedObjectIds().size() != 1) {
+            return;
+        }
+
+        String selectedObjectId = selectionManager.getSelectedObjectIds()
+                .iterator()
+                .next();
+
+        CanvasObject object = scene.findObjectById(selectedObjectId);
+
+        if (object == null) {
+            return;
+        }
+
+        this.renamingObjectId = object.id();
+        this.renameBuffer = object.displayName();
+    }
+
+    private void confirmRename() {
+        if (renamingObjectId == null || renameBuffer == null) {
+            return;
+        }
+
+        scene.renameObject(renamingObjectId, renameBuffer);
+
+        this.renamingObjectId = null;
+        this.renameBuffer = null;
+    }
+
+    private void cancelRename() {
+        this.renamingObjectId = null;
+        this.renameBuffer = null;
+    }
+
+    private boolean isRenaming() {
+        return renamingObjectId != null;
+    }
+
+    private void renderRenameDialog(VRenderContext context) {
+        int width = 300;
+        int height = 70;
+
+        int x = context.screenWidth() / 2 - width / 2;
+        int y = context.screenHeight() / 2 - height / 2 + 70;
+
+        int background = 0xDD000000;
+        int border = 0xFF66CCFF;
+        int textColor = 0xFFFFFFFF;
+        int mutedColor = 0xFFAAAAAA;
+
+        context.graphics().fill(
+                x,
+                y,
+                x + width,
+                y + height,
+                background
+        );
+
+        context.graphics().hLine(x, x + width, y, border);
+        context.graphics().hLine(x, x + width, y + height, border);
+        context.graphics().vLine(x, y, y + height, border);
+        context.graphics().vLine(x + width, y, y + height, border);
+
+        context.graphics().drawString(
+                this.font,
+                "Rename Object",
+                x + 10,
+                y + 10,
+                textColor,
+                false
+        );
+
+        context.graphics().drawString(
+                this.font,
+                renameBuffer + "_",
+                x + 10,
+                y + 28,
+                textColor,
+                false
+        );
+
+        context.graphics().drawString(
+                this.font,
+                "Enter: confirm   Esc: cancel",
+                x + 10,
+                y + 48,
+                mutedColor,
+                false
+        );
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
@@ -353,6 +454,28 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (isRenaming()) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmRename();
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                cancelRename();
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!renameBuffer.isEmpty()) {
+                    renameBuffer = renameBuffer.substring(0, renameBuffer.length() - 1);
+                }
+
+                return true;
+            }
+
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_H) {
             inputController.selectHandTool();
             return true;
@@ -385,6 +508,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_R) {
             inputController.resetSelectedObjectsScaleAndRotation();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_N) {
+            beginRenameSelectedObject();
             return true;
         }
 
@@ -430,6 +558,23 @@ public final class VTTScreen extends Screen {
     public void removed() {
         CursorManager.reset();
         super.removed();
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (isRenaming()) {
+            if (isAllowedRenameCharacter(codePoint) && renameBuffer.length() < 48) {
+                renameBuffer += codePoint;
+            }
+
+            return true;
+        }
+
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    private boolean isAllowedRenameCharacter(char character) {
+        return character >= 32 && character != 127;
     }
 
     @Override

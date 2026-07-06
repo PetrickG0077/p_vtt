@@ -296,6 +296,22 @@ public final class CanvasScene {
         objects.addAll(otherObjects);
     }
 
+    public void renameObject(String objectId, String displayName) {
+        if (objectId == null || objectId.isBlank()) {
+            return;
+        }
+
+        if (displayName == null || displayName.isBlank()) {
+            return;
+        }
+
+        CanvasObject object = findObjectById(objectId);
+
+        if (object != null) {
+            replaceObject(object.withDisplayName(displayName.trim()));
+        }
+    }
+
     public void resetObjectsScaleAndRotation(Set<String> objectIds) {
         if (objectIds == null || objectIds.isEmpty()) {
             return;
