@@ -23,7 +23,8 @@ public final class DebugOverlay {
             String activeToolId,
             int assetCount,
             int tokenDefinitionCount,
-            int libraryFileCount
+            int libraryFileCount,
+            long animatedImageCount
     ) {
         GuiGraphics graphics = context.graphics();
 
@@ -98,6 +99,15 @@ public final class DebugOverlay {
                 "Library Files: " + libraryFileCount,
                 15,
                 100,
+                0xFFAAAAAA,
+                false
+        );
+
+        context.graphics().drawString(
+                font,
+                "Animated Images: " + animatedImageCount,
+                15,
+                110,
                 0xFFAAAAAA,
                 false
         );

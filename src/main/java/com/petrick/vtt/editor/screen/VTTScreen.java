@@ -157,7 +157,8 @@ public final class VTTScreen extends Screen {
                     inputController.getActiveToolId(),
                     assetRegistry.size(),
                     tokenDefinitionRegistry.size(),
-                    session.getAssetLibraryScanResult().totalCount()
+                    session.getAssetLibraryScanResult().totalCount(),
+                    session.getAssetLibraryScanResult().animatedImageCount()
             );
         }
 

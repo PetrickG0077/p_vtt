@@ -39,4 +39,10 @@ public record AssetLibraryScanResult(
                 .filter(entry -> entry.fileType() == AssetLibraryFileType.UNKNOWN)
                 .count();
     }
+
+    public long animatedImageCount() {
+        return entries.stream()
+                .filter(entry -> entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE)
+                .count();
+    }
 }

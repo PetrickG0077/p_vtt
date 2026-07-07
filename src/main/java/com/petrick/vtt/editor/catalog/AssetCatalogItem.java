@@ -65,6 +65,7 @@ public sealed interface AssetCatalogItem
         public String typeName() {
             return switch (entry.fileType()) {
                 case IMAGE -> "Library Image";
+                case ANIMATED_IMAGE -> "Animated Image";
                 case DOCUMENT -> "Library Document";
                 case UNKNOWN -> "Library File";
             };
