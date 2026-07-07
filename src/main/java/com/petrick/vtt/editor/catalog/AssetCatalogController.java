@@ -20,12 +20,18 @@ public final class AssetCatalogController {
 
     private final AssetCatalogSelection selection;
 
+    private int scrollOffset;
+
     public AssetCatalogController(AssetCatalogSelection selection) {
         if (selection == null) {
             throw new IllegalArgumentException("AssetCatalogSelection cannot be null");
         }
 
         this.selection = selection;
+    }
+
+    public int getScrollOffset() {
+        return scrollOffset;
     }
 
     public boolean mouseClicked(
@@ -41,11 +47,14 @@ public final class AssetCatalogController {
             return false;
         }
 
+        scrollOffset = overlay.clampScrollOffset(registry, scrollOffset);
+
         Optional<AssetRef> clickedAsset = overlay.findAssetAt(
                 registry,
                 screenHeight,
                 mouseX,
-                mouseY
+                mouseY,
+                scrollOffset
         );
 
         if (clickedAsset.isPresent()) {
@@ -58,6 +67,32 @@ public final class AssetCatalogController {
         }
 
         return false;
+    }
+
+    public boolean mouseScrolled(
+            AssetCatalogOverlay overlay,
+            AssetRegistry registry,
+            boolean catalogVisible,
+            int screenHeight,
+            double mouseX,
+            double mouseY,
+            double scrollY
+    ) {
+        if (!catalogVisible) {
+            return false;
+        }
+
+        if (!overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+            return false;
+        }
+
+        scrollOffset = overlay.scroll(
+                registry,
+                scrollOffset,
+                scrollY
+        );
+
+        return true;
     }
 
     public AssetCatalogSelection getSelection() {
