@@ -1,20 +1,13 @@
 package com.petrick.vtt.editor.catalog;
 
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
-import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 
 import java.util.Optional;
 
 /**
  * Controla as interações do Asset Catalog.
- *
- * Responsabilidades:
- * - selecionar AssetRef
- * - limpar seleção ao clicar fora
- *
- * O Asset Catalog é apenas visualização/inspeção.
- * Ele não cria objetos no canvas e não inicia drag.
  */
 public final class AssetCatalogController {
 
@@ -30,13 +23,10 @@ public final class AssetCatalogController {
         this.selection = selection;
     }
 
-    public int getScrollOffset() {
-        return scrollOffset;
-    }
-
     public boolean mouseClicked(
             AssetCatalogOverlay overlay,
             AssetRegistry registry,
+            AssetLibraryScanResult libraryScanResult,
             boolean catalogVisible,
             int screenHeight,
             double mouseX,
@@ -47,22 +37,27 @@ public final class AssetCatalogController {
             return false;
         }
 
-        scrollOffset = overlay.clampScrollOffset(registry, scrollOffset);
-
-        Optional<AssetRef> clickedAsset = overlay.findAssetAt(
+        scrollOffset = overlay.clampScrollOffset(
                 registry,
+                libraryScanResult,
+                scrollOffset
+        );
+
+        Optional<AssetCatalogItem> clickedItem = overlay.findItemAt(
+                registry,
+                libraryScanResult,
                 screenHeight,
                 mouseX,
                 mouseY,
                 scrollOffset
         );
 
-        if (clickedAsset.isPresent()) {
-            selection.select(clickedAsset.get().id());
+        if (clickedItem.isPresent()) {
+            selection.select(clickedItem.get().id());
             return true;
         }
 
-        if (!overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+        if (!overlay.containsPoint(screenHeight, mouseX, mouseY)) {
             selection.clear();
         }
 
@@ -72,6 +67,7 @@ public final class AssetCatalogController {
     public boolean mouseScrolled(
             AssetCatalogOverlay overlay,
             AssetRegistry registry,
+            AssetLibraryScanResult libraryScanResult,
             boolean catalogVisible,
             int screenHeight,
             double mouseX,
@@ -82,17 +78,22 @@ public final class AssetCatalogController {
             return false;
         }
 
-        if (!overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+        if (!overlay.containsPoint(screenHeight, mouseX, mouseY)) {
             return false;
         }
 
         scrollOffset = overlay.scroll(
                 registry,
+                libraryScanResult,
                 scrollOffset,
                 scrollY
         );
 
         return true;
+    }
+
+    public int getScrollOffset() {
+        return scrollOffset;
     }
 
     public AssetCatalogSelection getSelection() {

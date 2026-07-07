@@ -1,44 +1,42 @@
 package com.petrick.vtt.editor.catalog;
 
 /**
- * Guarda qual AssetRef está selecionado no Asset Catalog.
+ * Guarda qual item está selecionado no Asset Catalog.
  *
- * Por enquanto isso é apenas estado do editor.
- * Futuramente pode ser usado para:
- * - inspecionar assets
- * - escolher imagem para estados de token
- * - escolher imagem para mapas/mesas
+ * O item pode ser:
+ * - asset registrado;
+ * - arquivo detectado na biblioteca.
  */
 public final class AssetCatalogSelection {
 
-    private String selectedAssetId;
+    private String selectedItemId;
 
-    public String getSelectedAssetId() {
-        return selectedAssetId;
+    public String getSelectedItemId() {
+        return selectedItemId;
     }
 
     public boolean hasSelection() {
-        return selectedAssetId != null && !selectedAssetId.isBlank();
+        return selectedItemId != null && !selectedItemId.isBlank();
     }
 
-    public boolean isSelected(String assetId) {
-        if (assetId == null) {
+    public boolean isSelected(String itemId) {
+        if (itemId == null) {
             return false;
         }
 
-        return assetId.equals(selectedAssetId);
+        return itemId.equals(selectedItemId);
     }
 
-    public void select(String assetId) {
-        if (assetId == null || assetId.isBlank()) {
+    public void select(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
             clear();
             return;
         }
 
-        this.selectedAssetId = assetId;
+        this.selectedItemId = itemId;
     }
 
     public void clear() {
-        this.selectedAssetId = null;
+        this.selectedItemId = null;
     }
 }

@@ -170,6 +170,7 @@ public final class VTTScreen extends Screen {
                     context,
                     this.font,
                     assetRegistry,
+                    session.getAssetLibraryScanResult(),
                     assetCatalogSelection,
                     assetCatalogController.getScrollOffset()
             );
@@ -311,6 +312,7 @@ public final class VTTScreen extends Screen {
                     assetCatalogController.mouseClicked(
                             assetCatalogOverlay,
                             assetRegistry,
+                            session.getAssetLibraryScanResult(),
                             panelVisibility.isAssetCatalogVisible(),
                             this.height,
                             mouseX,
@@ -421,6 +423,7 @@ public final class VTTScreen extends Screen {
         if (assetCatalogController.mouseScrolled(
                 assetCatalogOverlay,
                 assetRegistry,
+                session.getAssetLibraryScanResult(),
                 panelVisibility.isAssetCatalogVisible(),
                 this.height,
                 mouseX,
