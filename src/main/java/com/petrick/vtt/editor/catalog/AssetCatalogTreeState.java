@@ -10,7 +10,13 @@ public final class AssetCatalogTreeState {
 
     private final Set<String> expandedFolderIds = new HashSet<>();
 
+    private boolean allFoldersExpanded;
+
     public boolean isExpanded(String folderId) {
+        if (allFoldersExpanded) {
+            return true;
+        }
+
         return expandedFolderIds.contains(folderId);
     }
 
@@ -36,13 +42,28 @@ public final class AssetCatalogTreeState {
         }
 
         if (isExpanded(folderId)) {
+            allFoldersExpanded = false;
             collapse(folderId);
         } else {
             expand(folderId);
         }
     }
 
+    public void expandAll() {
+        allFoldersExpanded = true;
+    }
+
+    public void collapseAll() {
+        allFoldersExpanded = false;
+        expandedFolderIds.clear();
+    }
+
+    public boolean isAllFoldersExpanded() {
+        return allFoldersExpanded;
+    }
+
     public void clear() {
+        allFoldersExpanded = false;
         expandedFolderIds.clear();
     }
 }

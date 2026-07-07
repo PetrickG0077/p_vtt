@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.catalog;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
 
@@ -31,6 +32,10 @@ public final class AssetCatalogController {
         this.selection = selection;
         this.treeState = new AssetCatalogTreeState();
 
+        expandDefaultFolders();
+    }
+
+    private void expandDefaultFolders() {
         treeState.expand("folder:root/built-in");
         treeState.expand("folder:root/tokens");
         treeState.expand("folder:root/maps");
@@ -148,9 +153,20 @@ public final class AssetCatalogController {
     }
 
     public boolean keyPressed(int keyCode, int modifiers) {
-        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F
-                && (modifiers & org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL) != 0) {
+        boolean controlDown = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+
+        if (keyCode == GLFW.GLFW_KEY_F && controlDown) {
             searchActive = true;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_RIGHT && controlDown) {
+            expandAllFolders();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_LEFT && controlDown) {
+            collapseAllFolders();
             return true;
         }
 
@@ -158,13 +174,12 @@ public final class AssetCatalogController {
             return false;
         }
 
-        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER
-                || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             searchActive = false;
             return true;
         }
 
-        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             searchQuery = "";
             searchActive = false;
             scrollOffset = 0;
@@ -172,7 +187,7 @@ public final class AssetCatalogController {
             return true;
         }
 
-        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE) {
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             if (!searchQuery.isEmpty()) {
                 searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
                 scrollOffset = 0;
@@ -201,6 +216,19 @@ public final class AssetCatalogController {
 
     private boolean isAllowedSearchCharacter(char character) {
         return character >= 32 && character != 127;
+    }
+
+    public void expandAllFolders() {
+        treeState.expandAll();
+        scrollOffset = 0;
+        selection.clear();
+    }
+
+    public void collapseAllFolders() {
+        treeState.collapseAll();
+        expandDefaultFolders();
+        scrollOffset = 0;
+        selection.clear();
     }
 
     public int getScrollOffset() {

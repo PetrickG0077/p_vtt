@@ -680,7 +680,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (assetCatalogController.keyPressed(keyCode, modifiers)) {
+        if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) {
             return true;
         }
 
