@@ -499,6 +499,7 @@ public final class AssetCatalogOverlay {
             renderLibraryFileDetails(
                     context,
                     font,
+                    thumbnailRegistry,
                     libraryFile.entry(),
                     textX,
                     textY
@@ -536,6 +537,7 @@ public final class AssetCatalogOverlay {
     private void renderLibraryFileDetails(
             VRenderContext context,
             Font font,
+            AssetThumbnailRegistry thumbnailRegistry,
             AssetLibraryEntry entry,
             int x,
             int y
@@ -547,6 +549,20 @@ public final class AssetCatalogOverlay {
         y += LINE_HEIGHT;
 
         drawLine(context, font, "Ext: " + entry.extension(), x, y, TEXT_COLOR);
+        y += LINE_HEIGHT;
+
+        String thumbnailStatus = thumbnailRegistry.contains(entry.id())
+                ? "Loaded"
+                : "Unavailable";
+
+        drawLine(
+                context,
+                font,
+                "Thumbnail: " + thumbnailStatus,
+                x,
+                y,
+                thumbnailRegistry.contains(entry.id()) ? TEXT_COLOR : MUTED_TEXT_COLOR
+        );
     }
 
     private int calculateDetailsPopupHeight(AssetCatalogItem item) {
@@ -557,7 +573,7 @@ public final class AssetCatalogOverlay {
         if (item instanceof AssetCatalogItem.RegisteredAsset) {
             lines += 2;
         } else if (item instanceof AssetCatalogItem.LibraryFile) {
-            lines += 3;
+            lines += 4;
         }
 
         return PADDING * 2 + previewHeight + lines * LINE_HEIGHT;
