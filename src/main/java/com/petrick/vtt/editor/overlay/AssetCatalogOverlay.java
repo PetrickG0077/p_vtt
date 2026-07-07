@@ -3,6 +3,10 @@ package com.petrick.vtt.editor.overlay;
 import com.petrick.vtt.editor.catalog.AssetCatalogFilter;
 import com.petrick.vtt.editor.catalog.AssetCatalogItem;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
+import com.petrick.vtt.editor.catalog.AssetCatalogTreeBuilder;
+import com.petrick.vtt.editor.catalog.AssetCatalogTreeNode;
+import com.petrick.vtt.editor.catalog.AssetCatalogTreeState;
+import com.petrick.vtt.editor.catalog.AssetCatalogVisibleRow;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
@@ -19,15 +23,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Painel que lista assets disponíveis.
+ * Painel que lista assets disponíveis em forma de árvore.
  *
  * Mostra:
  * - assets registrados em memória;
- * - arquivos detectados na biblioteca real.
- *
- * Possui:
- * - seleção;
- * - popup de detalhes;
+ * - arquivos detectados na biblioteca real;
+ * - pastas expansíveis/recolhíveis;
  * - scroll interno;
  * - filtro por tipo;
  * - miniatura real quando disponível.
@@ -42,11 +43,13 @@ public final class AssetCatalogOverlay {
 
     private static final int LINE_HEIGHT = 10;
 
-    private static final int ASSET_ROW_HEIGHT = 26;
+    private static final int ROW_HEIGHT = 26;
 
     private static final int THUMBNAIL_SIZE = 20;
 
     private static final int POPUP_PREVIEW_SIZE = 48;
+
+    private static final int INDENT_WIDTH = 10;
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
@@ -60,6 +63,8 @@ public final class AssetCatalogOverlay {
 
     private static final int HOVER_TEXT_COLOR = 0xFFFFDD88;
 
+    private static final int FOLDER_TEXT_COLOR = 0xFFFFCC66;
+
     private static final int SELECTED_ROW_BACKGROUND = 0x55FFAA33;
 
     private static final int HOVERED_ROW_BACKGROUND = 0x33222222;
@@ -70,6 +75,8 @@ public final class AssetCatalogOverlay {
 
     private static final int MAX_ITEM_NAME_LENGTH = 33;
 
+    private final AssetCatalogTreeBuilder treeBuilder = new AssetCatalogTreeBuilder();
+
     public void render(
             VRenderContext context,
             Font font,
@@ -78,6 +85,7 @@ public final class AssetCatalogOverlay {
             AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogSelection selection,
             AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
             int scrollOffset
     ) {
         List<AssetCatalogItem> items = getCatalogItems(
@@ -86,10 +94,18 @@ public final class AssetCatalogOverlay {
                 filter
         );
 
-        Optional<AssetCatalogItem> hoveredItem = findItemAt(
+        AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
+
+        List<AssetCatalogVisibleRow> rows = treeBuilder.flattenVisibleRows(
+                root,
+                treeState
+        );
+
+        Optional<AssetCatalogVisibleRow> hoveredRow = findRowAt(
                 assetRegistry,
                 libraryScanResult,
                 filter,
+                treeState,
                 context.screenHeight(),
                 context.mouseX(),
                 context.mouseY(),
@@ -97,8 +113,8 @@ public final class AssetCatalogOverlay {
         );
 
         AssetCatalogItem detailsItem = resolveDetailsItem(
-                items,
-                hoveredItem,
+                rows,
+                hoveredRow,
                 selection
         );
 
@@ -123,53 +139,56 @@ public final class AssetCatalogOverlay {
         );
         textY += LINE_HEIGHT + 4;
 
-        if (items.isEmpty()) {
+        if (rows.isEmpty()) {
             drawLine(context, font, "No assets found", textX, textY, MUTED_TEXT_COLOR);
             return;
         }
 
-        int maxVisibleItems = calculateMaxVisibleItems();
+        int maxVisibleRows = calculateMaxVisibleRows();
 
         int firstVisibleIndex = clampFirstVisibleIndex(
                 scrollOffset,
-                items.size(),
-                maxVisibleItems
+                rows.size(),
+                maxVisibleRows
         );
 
-        int visibleItems = Math.min(
-                maxVisibleItems,
-                items.size() - firstVisibleIndex
+        int visibleRows = Math.min(
+                maxVisibleRows,
+                rows.size() - firstVisibleIndex
         );
 
-        for (int i = 0; i < visibleItems; i++) {
-            AssetCatalogItem item = items.get(firstVisibleIndex + i);
+        for (int i = 0; i < visibleRows; i++) {
+            AssetCatalogVisibleRow row = rows.get(firstVisibleIndex + i);
 
-            boolean hovered = hoveredItem
-                    .map(assetCatalogItem -> assetCatalogItem.id().equals(item.id()))
+            boolean hovered = hoveredRow
+                    .map(visibleRow -> visibleRow.node().id().equals(row.node().id()))
                     .orElse(false);
 
-            boolean selected = selection != null && selection.isSelected(item.id());
+            boolean selected = row.isItem()
+                    && selection != null
+                    && selection.isSelected(row.item().catalogItem().id());
 
-            renderItemRow(
+            renderTreeRow(
                     context,
                     font,
                     thumbnailRegistry,
-                    item,
+                    treeState,
+                    row,
                     textX,
                     textY,
                     hovered,
                     selected
             );
 
-            textY += ASSET_ROW_HEIGHT;
+            textY += ROW_HEIGHT;
         }
 
         renderScrollInfo(
                 context,
                 font,
-                items.size(),
+                rows.size(),
                 firstVisibleIndex,
-                maxVisibleItems,
+                maxVisibleRows,
                 textX,
                 y + PANEL_HEIGHT - PADDING - LINE_HEIGHT
         );
@@ -178,7 +197,7 @@ public final class AssetCatalogOverlay {
             int popupX;
             int popupY;
 
-            if (hoveredItem.isPresent()) {
+            if (hoveredRow.isPresent() && hoveredRow.get().isItem()) {
                 popupX = (int) Math.round(context.mouseX()) + 14;
                 popupY = (int) Math.round(context.mouseY())
                         - calculateDetailsPopupHeight(detailsItem)
@@ -187,10 +206,10 @@ public final class AssetCatalogOverlay {
                 popupX = x + PANEL_WIDTH + 8;
                 popupY = resolvePopupYForItem(
                         context,
-                        items,
+                        rows,
                         detailsItem,
                         firstVisibleIndex,
-                        maxVisibleItems
+                        maxVisibleRows
                 );
             }
 
@@ -205,11 +224,12 @@ public final class AssetCatalogOverlay {
         }
     }
 
-    private void renderItemRow(
+    private void renderTreeRow(
             VRenderContext context,
             Font font,
             AssetThumbnailRegistry thumbnailRegistry,
-            AssetCatalogItem item,
+            AssetCatalogTreeState treeState,
+            AssetCatalogVisibleRow row,
             int x,
             int y,
             boolean hovered,
@@ -224,10 +244,74 @@ public final class AssetCatalogOverlay {
                     x - 3,
                     y,
                     x + PANEL_WIDTH - PADDING * 2,
-                    y + ASSET_ROW_HEIGHT,
+                    y + ROW_HEIGHT,
                     rowBackground
             );
         }
+
+        int indentX = x + row.depth() * INDENT_WIDTH;
+
+        if (row.isFolder()) {
+            renderFolderRow(
+                    context,
+                    font,
+                    treeState,
+                    row.folder(),
+                    indentX,
+                    y,
+                    hovered
+            );
+            return;
+        }
+
+        renderItemRow(
+                context,
+                font,
+                thumbnailRegistry,
+                row.item(),
+                indentX,
+                y,
+                hovered,
+                selected,
+                row.depth()
+        );
+    }
+
+    private void renderFolderRow(
+            VRenderContext context,
+            Font font,
+            AssetCatalogTreeState treeState,
+            AssetCatalogTreeNode.Folder folder,
+            int x,
+            int y,
+            boolean hovered
+    ) {
+        String arrow = treeState.isExpanded(folder.id()) ? "▾" : "▸";
+
+        String text = arrow + " " + folder.displayName();
+
+        drawLine(
+                context,
+                font,
+                truncateText(text, MAX_ITEM_NAME_LENGTH),
+                x,
+                y + 8,
+                hovered ? HOVER_TEXT_COLOR : FOLDER_TEXT_COLOR
+        );
+    }
+
+    private void renderItemRow(
+            VRenderContext context,
+            Font font,
+            AssetThumbnailRegistry thumbnailRegistry,
+            AssetCatalogTreeNode.Item itemNode,
+            int x,
+            int y,
+            boolean hovered,
+            boolean selected,
+            int depth
+    ) {
+        AssetCatalogItem item = itemNode.catalogItem();
 
         int thumbnailX = x;
         int thumbnailY = y + 3;
@@ -244,10 +328,15 @@ public final class AssetCatalogOverlay {
 
         int textX = x + THUMBNAIL_SIZE + 8;
 
+        int maxNameLength = Math.max(
+                8,
+                MAX_ITEM_NAME_LENGTH - depth * 2
+        );
+
         drawLine(
                 context,
                 font,
-                truncateText(item.displayName(), MAX_ITEM_NAME_LENGTH),
+                truncateText(itemNode.displayName(), maxNameLength),
                 textX,
                 y + 3,
                 selected ? TITLE_COLOR : hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
@@ -334,24 +423,6 @@ public final class AssetCatalogOverlay {
         context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
     }
 
-    private String truncateText(String text, int maxLength) {
-        if (text == null) {
-            return "";
-        }
-
-        if (maxLength <= 3) {
-            return text.length() <= maxLength
-                    ? text
-                    : text.substring(0, maxLength);
-        }
-
-        if (text.length() <= maxLength) {
-            return text;
-        }
-
-        return text.substring(0, maxLength - 3) + "...";
-    }
-
     private void renderLibraryFilePlaceholder(
             VRenderContext context,
             AssetLibraryEntry entry,
@@ -376,10 +447,11 @@ public final class AssetCatalogOverlay {
         );
     }
 
-    public Optional<AssetCatalogItem> findItemAt(
+    public Optional<AssetCatalogVisibleRow> findRowAt(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
             int screenHeight,
             double mouseX,
             double mouseY,
@@ -391,7 +463,14 @@ public final class AssetCatalogOverlay {
                 filter
         );
 
-        if (items.isEmpty()) {
+        AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
+
+        List<AssetCatalogVisibleRow> rows = treeBuilder.flattenVisibleRows(
+                root,
+                treeState
+        );
+
+        if (rows.isEmpty()) {
             return Optional.empty();
         }
 
@@ -406,27 +485,27 @@ public final class AssetCatalogOverlay {
             return Optional.empty();
         }
 
-        int firstItemY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+        int firstRowY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
 
-        int maxVisibleItems = calculateMaxVisibleItems();
+        int maxVisibleRows = calculateMaxVisibleRows();
 
         int firstVisibleIndex = clampFirstVisibleIndex(
                 scrollOffset,
-                items.size(),
-                maxVisibleItems
+                rows.size(),
+                maxVisibleRows
         );
 
-        int visibleItems = Math.min(
-                maxVisibleItems,
-                items.size() - firstVisibleIndex
+        int visibleRows = Math.min(
+                maxVisibleRows,
+                rows.size() - firstVisibleIndex
         );
 
-        for (int i = 0; i < visibleItems; i++) {
-            int rowTop = firstItemY + i * ASSET_ROW_HEIGHT;
-            int rowBottom = rowTop + ASSET_ROW_HEIGHT;
+        for (int i = 0; i < visibleRows; i++) {
+            int rowTop = firstRowY + i * ROW_HEIGHT;
+            int rowBottom = rowTop + ROW_HEIGHT;
 
             if (mouseY >= rowTop && mouseY <= rowBottom) {
-                return Optional.of(items.get(firstVisibleIndex + i));
+                return Optional.of(rows.get(firstVisibleIndex + i));
             }
         }
 
@@ -451,6 +530,7 @@ public final class AssetCatalogOverlay {
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
             int currentScrollOffset,
             double scrollY
     ) {
@@ -462,6 +542,7 @@ public final class AssetCatalogOverlay {
                 assetRegistry,
                 libraryScanResult,
                 filter,
+                treeState,
                 newOffset
         );
     }
@@ -470,19 +551,41 @@ public final class AssetCatalogOverlay {
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
             int scrollOffset
     ) {
-        int itemCount = getCatalogItems(
+        int rowCount = getVisibleRows(
+                assetRegistry,
+                libraryScanResult,
+                filter,
+                treeState
+        ).size();
+
+        int maxVisibleRows = calculateMaxVisibleRows();
+
+        int maxScrollOffset = Math.max(0, rowCount - maxVisibleRows);
+
+        return Math.max(0, Math.min(scrollOffset, maxScrollOffset));
+    }
+
+    private List<AssetCatalogVisibleRow> getVisibleRows(
+            AssetRegistry assetRegistry,
+            AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState
+    ) {
+        List<AssetCatalogItem> items = getCatalogItems(
                 assetRegistry,
                 libraryScanResult,
                 filter
-        ).size();
+        );
 
-        int maxVisibleItems = calculateMaxVisibleItems();
+        AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
 
-        int maxScrollOffset = Math.max(0, itemCount - maxVisibleItems);
-
-        return Math.max(0, Math.min(scrollOffset, maxScrollOffset));
+        return treeBuilder.flattenVisibleRows(
+                root,
+                treeState
+        );
     }
 
     private void renderItemDetailsPopup(
@@ -622,25 +725,29 @@ public final class AssetCatalogOverlay {
 
     private int resolvePopupYForItem(
             VRenderContext context,
-            List<AssetCatalogItem> items,
+            List<AssetCatalogVisibleRow> rows,
             AssetCatalogItem detailsItem,
             int firstVisibleIndex,
-            int maxVisibleItems
+            int maxVisibleRows
     ) {
         int panelY = getPanelY(context, PANEL_HEIGHT);
 
-        int firstItemY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+        int firstRowY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
 
-        int visibleItems = Math.min(
-                maxVisibleItems,
-                items.size() - firstVisibleIndex
+        int visibleRows = Math.min(
+                maxVisibleRows,
+                rows.size() - firstVisibleIndex
         );
 
-        for (int i = 0; i < visibleItems; i++) {
-            AssetCatalogItem item = items.get(firstVisibleIndex + i);
+        for (int i = 0; i < visibleRows; i++) {
+            AssetCatalogVisibleRow row = rows.get(firstVisibleIndex + i);
 
-            if (item.id().equals(detailsItem.id())) {
-                return firstItemY + i * ASSET_ROW_HEIGHT;
+            if (!row.isItem()) {
+                continue;
+            }
+
+            if (row.item().catalogItem().id().equals(detailsItem.id())) {
+                return firstRowY + i * ROW_HEIGHT;
             }
         }
 
@@ -648,19 +755,21 @@ public final class AssetCatalogOverlay {
     }
 
     private AssetCatalogItem resolveDetailsItem(
-            List<AssetCatalogItem> items,
-            Optional<AssetCatalogItem> hoveredItem,
+            List<AssetCatalogVisibleRow> rows,
+            Optional<AssetCatalogVisibleRow> hoveredRow,
             AssetCatalogSelection selection
     ) {
-        if (hoveredItem.isPresent()) {
-            return hoveredItem.get();
+        if (hoveredRow.isPresent() && hoveredRow.get().isItem()) {
+            return hoveredRow.get().item().catalogItem();
         }
 
         if (selection == null || !selection.hasSelection()) {
             return null;
         }
 
-        return items.stream()
+        return rows.stream()
+                .filter(AssetCatalogVisibleRow::isItem)
+                .map(row -> row.item().catalogItem())
                 .filter(item -> item.id().equals(selection.getSelectedItemId()))
                 .findFirst()
                 .orElse(null);
@@ -696,22 +805,22 @@ public final class AssetCatalogOverlay {
                 .toList();
     }
 
-    private int calculateMaxVisibleItems() {
+    private int calculateMaxVisibleRows() {
         int headerHeight = PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
 
         int footerHeight = LINE_HEIGHT + PADDING;
 
         int availableHeight = PANEL_HEIGHT - headerHeight - footerHeight;
 
-        return Math.max(1, availableHeight / ASSET_ROW_HEIGHT);
+        return Math.max(1, availableHeight / ROW_HEIGHT);
     }
 
     private int clampFirstVisibleIndex(
             int scrollOffset,
-            int itemCount,
-            int maxVisibleItems
+            int rowCount,
+            int maxVisibleRows
     ) {
-        int maxScrollOffset = Math.max(0, itemCount - maxVisibleItems);
+        int maxScrollOffset = Math.max(0, rowCount - maxVisibleRows);
 
         return Math.max(0, Math.min(scrollOffset, maxScrollOffset));
     }
@@ -719,20 +828,20 @@ public final class AssetCatalogOverlay {
     private void renderScrollInfo(
             VRenderContext context,
             Font font,
-            int totalItems,
+            int totalRows,
             int firstVisibleIndex,
-            int maxVisibleItems,
+            int maxVisibleRows,
             int x,
             int y
     ) {
-        if (totalItems <= maxVisibleItems) {
+        if (totalRows <= maxVisibleRows) {
             drawLine(context, font, "Scroll: none", x, y, MUTED_TEXT_COLOR);
             return;
         }
 
         int lastVisibleIndex = Math.min(
-                totalItems,
-                firstVisibleIndex + maxVisibleItems
+                totalRows,
+                firstVisibleIndex + maxVisibleRows
         );
 
         drawLine(
@@ -743,11 +852,29 @@ public final class AssetCatalogOverlay {
                         + "-"
                         + lastVisibleIndex
                         + " / "
-                        + totalItems,
+                        + totalRows,
                 x,
                 y,
                 MUTED_TEXT_COLOR
         );
+    }
+
+    private String truncateText(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+
+        if (maxLength <= 3) {
+            return text.length() <= maxLength
+                    ? text
+                    : text.substring(0, maxLength);
+        }
+
+        if (text.length() <= maxLength) {
+            return text;
+        }
+
+        return text.substring(0, maxLength - 3) + "...";
     }
 
     private int getPanelX() {

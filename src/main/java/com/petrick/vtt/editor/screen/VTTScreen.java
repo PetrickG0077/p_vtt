@@ -177,6 +177,7 @@ public final class VTTScreen extends Screen {
                     session.getAssetThumbnailRegistry(),
                     assetCatalogSelection,
                     assetCatalogController.getFilter(),
+                    assetCatalogController.getTreeState(),
                     assetCatalogController.getScrollOffset()
             );
         }

@@ -13,9 +13,11 @@ public final class AssetCatalogController {
 
     private final AssetCatalogSelection selection;
 
-    private int scrollOffset;
+    private final AssetCatalogTreeState treeState;
 
     private AssetCatalogFilter filter = AssetCatalogFilter.ALL;
+
+    private int scrollOffset;
 
     public AssetCatalogController(AssetCatalogSelection selection) {
         if (selection == null) {
@@ -23,6 +25,19 @@ public final class AssetCatalogController {
         }
 
         this.selection = selection;
+        this.treeState = new AssetCatalogTreeState();
+
+        /*
+         * Por padrão abrimos as pastas principais conhecidas.
+         * Pastas criadas pelo usuário começam fechadas, para não poluir a lista.
+         */
+        treeState.expand("folder:root/built-in");
+        treeState.expand("folder:root/tokens");
+        treeState.expand("folder:root/maps");
+        treeState.expand("folder:root/portraits");
+        treeState.expand("folder:root/documents");
+        treeState.expand("folder:root/items");
+        treeState.expand("folder:root/misc");
     }
 
     public boolean mouseClicked(
@@ -43,22 +58,41 @@ public final class AssetCatalogController {
                 registry,
                 libraryScanResult,
                 filter,
+                treeState,
                 scrollOffset
         );
 
-        Optional<AssetCatalogItem> clickedItem = overlay.findItemAt(
+        Optional<AssetCatalogVisibleRow> clickedRow = overlay.findRowAt(
                 registry,
                 libraryScanResult,
                 filter,
+                treeState,
                 screenHeight,
                 mouseX,
                 mouseY,
                 scrollOffset
         );
 
-        if (clickedItem.isPresent()) {
-            selection.select(clickedItem.get().id());
-            return true;
+        if (clickedRow.isPresent()) {
+            AssetCatalogVisibleRow row = clickedRow.get();
+
+            if (row.isFolder()) {
+                treeState.toggle(row.folder().id());
+                selection.clear();
+                scrollOffset = overlay.clampScrollOffset(
+                        registry,
+                        libraryScanResult,
+                        filter,
+                        treeState,
+                        scrollOffset
+                );
+                return true;
+            }
+
+            if (row.isItem()) {
+                selection.select(row.item().catalogItem().id());
+                return true;
+            }
         }
 
         if (!overlay.containsPoint(screenHeight, mouseX, mouseY)) {
@@ -90,6 +124,7 @@ public final class AssetCatalogController {
                 registry,
                 libraryScanResult,
                 filter,
+                treeState,
                 scrollOffset,
                 scrollY
         );
@@ -101,17 +136,21 @@ public final class AssetCatalogController {
         return scrollOffset;
     }
 
+    public AssetCatalogSelection getSelection() {
+        return selection;
+    }
+
     public AssetCatalogFilter getFilter() {
         return filter;
+    }
+
+    public AssetCatalogTreeState getTreeState() {
+        return treeState;
     }
 
     public void cycleFilter() {
         filter = filter.next();
         scrollOffset = 0;
         selection.clear();
-    }
-
-    public AssetCatalogSelection getSelection() {
-        return selection;
     }
 }
