@@ -64,6 +64,16 @@ public final class VTTScreen extends Screen {
 
     private TokenDefinition draggingTokenDefinition;
 
+    private boolean showDebugOverlay = false;
+
+    private boolean showSelectionInspector = false;
+
+    private boolean showAssetCatalog = false;
+
+    private boolean showTokenCatalog = false;
+
+    private boolean showSceneOutliner = false;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -120,18 +130,32 @@ public final class VTTScreen extends Screen {
         canvasRenderer.render(context, scene, selectionManager);
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
-        debugOverlay.render(
-                context,
-                this.font,
-                camera,
-                inputController.getActiveToolId(),
-                assetRegistry.size(),
-                tokenDefinitionRegistry.size()
-        );
-        selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
-        assetCatalogOverlay.render(context, this.font, assetRegistry);
-        tokenCatalogOverlay.render(context, this.font, tokenDefinitionRegistry);
-        sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
+        if (showDebugOverlay) {
+            debugOverlay.render(
+                    context,
+                    this.font,
+                    camera,
+                    inputController.getActiveToolId(),
+                    assetRegistry.size(),
+                    tokenDefinitionRegistry.size()
+            );
+        }
+
+        if (showSelectionInspector) {
+            selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
+        }
+
+        if (showAssetCatalog) {
+            assetCatalogOverlay.render(context, this.font, assetRegistry);
+        }
+
+        if (showTokenCatalog) {
+            tokenCatalogOverlay.render(context, this.font, tokenDefinitionRegistry);
+        }
+
+        if (showSceneOutliner) {
+            sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
+        }
 
         if (draggingAsset != null) {
             assetCatalogOverlay.renderDragPreview(
@@ -327,7 +351,7 @@ public final class VTTScreen extends Screen {
 
         graphics.drawCenteredString(
                 this.font,
-                "Sprint 2 - Tokens & Assets",
+                "Sprint 2 - Tokens & Assets | F3-F7 Panels",
                 this.width / 2,
                 this.height / 2,
                 0xFFAAAAAA
@@ -380,45 +404,51 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            var clickedTokenDefinition = tokenCatalogOverlay.findTokenDefinitionAt(
-                    tokenDefinitionRegistry,
-                    this.height,
-                    mouseX,
-                    mouseY
-            );
+            if (showTokenCatalog) {
+                var clickedTokenDefinition = tokenCatalogOverlay.findTokenDefinitionAt(
+                        tokenDefinitionRegistry,
+                        this.height,
+                        mouseX,
+                        mouseY
+                );
 
-            if (clickedTokenDefinition.isPresent()) {
-                this.draggingTokenDefinition = clickedTokenDefinition.get();
-                return true;
-            }
-
-            var clickedAsset = assetCatalogOverlay.findAssetAt(
-                    assetRegistry,
-                    this.height,
-                    mouseX,
-                    mouseY
-            );
-
-            if (clickedAsset.isPresent()) {
-                this.draggingAsset = clickedAsset.get();
-                return true;
-            }
-
-            var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
-                    scene,
-                    mouseX,
-                    mouseY
-            );
-
-            if (clickedObjectId.isPresent()) {
-                if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
-                    selectionManager.toggle(clickedObjectId.get());
-                } else {
-                    selectionManager.selectOnly(clickedObjectId.get());
+                if (clickedTokenDefinition.isPresent()) {
+                    this.draggingTokenDefinition = clickedTokenDefinition.get();
+                    return true;
                 }
+            }
 
-                inputController.selectSelectTool();
-                return true;
+            if (showAssetCatalog) {
+                var clickedAsset = assetCatalogOverlay.findAssetAt(
+                        assetRegistry,
+                        this.height,
+                        mouseX,
+                        mouseY
+                );
+
+                if (clickedAsset.isPresent()) {
+                    this.draggingAsset = clickedAsset.get();
+                    return true;
+                }
+            }
+
+            if (showSceneOutliner) {
+                var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
+                        scene,
+                        mouseX,
+                        mouseY
+                );
+
+                if (clickedObjectId.isPresent()) {
+                    if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                        selectionManager.toggle(clickedObjectId.get());
+                    } else {
+                        selectionManager.selectOnly(clickedObjectId.get());
+                    }
+
+                    inputController.selectSelectTool();
+                    return true;
+                }
             }
         }
 
@@ -620,6 +650,31 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
             inputController.setSelectedObjectsActiveState("3");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F3) {
+            showDebugOverlay = !showDebugOverlay;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F4) {
+            showSelectionInspector = !showSelectionInspector;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F5) {
+            showAssetCatalog = !showAssetCatalog;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F6) {
+            showTokenCatalog = !showTokenCatalog;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F7) {
+            showSceneOutliner = !showSceneOutliner;
             return true;
         }
 
