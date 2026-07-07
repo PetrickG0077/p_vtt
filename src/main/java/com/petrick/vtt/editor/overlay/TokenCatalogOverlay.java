@@ -20,6 +20,11 @@ import java.util.Optional;
  * Diferente do AssetCatalog:
  * - AssetCatalog mostra imagens/assets brutos.
  * - TokenCatalog mostra tokens reutilizáveis com tamanho, nome e estados.
+ *
+ * Nesta versão:
+ * - a lista do catálogo permanece fixa;
+ * - os detalhes aparecem em um popup separado;
+ * - hover e seleção podem exibir o popup.
  */
 public final class TokenCatalogOverlay {
 
@@ -63,6 +68,10 @@ public final class TokenCatalogOverlay {
 
     private static final int DRAG_PREVIEW_BORDER = 0xFFAA66FF;
 
+    private static final int DETAILS_POPUP_WIDTH = 230;
+
+    private static final int DETAILS_POPUP_GAP = 8;
+
     private final CanvasVisualRenderer visualRenderer;
 
     public TokenCatalogOverlay() {
@@ -90,10 +99,7 @@ public final class TokenCatalogOverlay {
                 selection
         );
 
-        int panelHeight = calculatePanelHeight(
-                definitions.size(),
-                detailsDefinition
-        );
+        int panelHeight = calculatePanelHeight(definitions.size());
 
         int x = PANEL_X;
         int y = getPanelY(context.screenHeight(), panelHeight);
@@ -156,14 +162,53 @@ public final class TokenCatalogOverlay {
                     textY,
                     MUTED_TEXT_COLOR
             );
-
-            textY += LINE_HEIGHT;
         }
 
         if (detailsDefinition != null) {
-            textY += 6;
-            renderTokenDetails(context, font, detailsDefinition, textX, textY);
+            int popupX;
+            int popupY;
+
+            if (hoveredDefinition.isPresent()) {
+                popupX = (int) Math.round(context.mouseX()) + 14;
+                popupY = (int) Math.round(context.mouseY())
+                        - calculateDetailsPopupHeight(detailsDefinition)
+                        - 14;
+            } else {
+                popupX = x + PANEL_WIDTH + DETAILS_POPUP_GAP;
+                popupY = resolvePopupYForDefinition(
+                        context,
+                        definitions,
+                        detailsDefinition
+                );
+            }
+
+            renderTokenDetailsPopup(
+                    context,
+                    font,
+                    detailsDefinition,
+                    popupX,
+                    popupY
+            );
         }
+    }
+
+    public boolean containsPoint(
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int panelHeight = calculatePanelHeight(
+                tokenDefinitionRegistry.getAll().size()
+        );
+
+        int panelX = PANEL_X;
+        int panelY = getPanelY(screenHeight, panelHeight);
+
+        return mouseX >= panelX
+                && mouseX <= panelX + PANEL_WIDTH
+                && mouseY >= panelY
+                && mouseY <= panelY + panelHeight;
     }
 
     private void renderTokenRow(
@@ -319,13 +364,7 @@ public final class TokenCatalogOverlay {
             return Optional.empty();
         }
 
-        /*
-         * Importante:
-         * Aqui calculamos a altura SEM detailsDefinition.
-         * Isso evita o bug de hover piscando, porque o painel muda de tamanho
-         * quando os detalhes aparecem.
-         */
-        int panelHeight = calculatePanelHeight(definitions.size(), null);
+        int panelHeight = calculatePanelHeight(definitions.size());
 
         int panelX = PANEL_X;
         int panelY = getPanelY(screenHeight, panelHeight);
@@ -354,18 +393,34 @@ public final class TokenCatalogOverlay {
         return Optional.empty();
     }
 
-    private void renderTokenDetails(
+    private void renderTokenDetailsPopup(
             VRenderContext context,
             Font font,
             TokenDefinition definition,
             int x,
             int y
     ) {
-        drawLine(context, font, "Details:", x, y, TITLE_COLOR);
-        y += LINE_HEIGHT;
+        int popupHeight = calculateDetailsPopupHeight(definition);
 
-        drawLine(context, font, "ID: " + definition.id(), x, y, MUTED_TEXT_COLOR);
-        y += LINE_HEIGHT;
+        int clampedX = clampPopupX(x, DETAILS_POPUP_WIDTH, context.screenWidth());
+        int clampedY = clampPopupY(y, popupHeight, context.screenHeight());
+
+        renderPanelBackground(
+                context,
+                clampedX,
+                clampedY,
+                DETAILS_POPUP_WIDTH,
+                popupHeight
+        );
+
+        int textX = clampedX + PADDING;
+        int textY = clampedY + PADDING;
+
+        drawLine(context, font, "Details:", textX, textY, TITLE_COLOR);
+        textY += LINE_HEIGHT;
+
+        drawLine(context, font, "ID: " + definition.id(), textX, textY, MUTED_TEXT_COLOR);
+        textY += LINE_HEIGHT;
 
         drawLine(
                 context,
@@ -374,24 +429,24 @@ public final class TokenCatalogOverlay {
                         + formatNumber(definition.defaultSize().x())
                         + "x"
                         + formatNumber(definition.defaultSize().y()),
-                x,
-                y,
+                textX,
+                textY,
                 TEXT_COLOR
         );
-        y += LINE_HEIGHT;
+        textY += LINE_HEIGHT;
 
         drawLine(
                 context,
                 font,
                 "Default State: " + definition.defaultStateId(),
-                x,
-                y,
+                textX,
+                textY,
                 TEXT_COLOR
         );
-        y += LINE_HEIGHT;
+        textY += LINE_HEIGHT;
 
-        drawLine(context, font, "States:", x, y, MUTED_TEXT_COLOR);
-        y += LINE_HEIGHT;
+        drawLine(context, font, "States:", textX, textY, MUTED_TEXT_COLOR);
+        textY += LINE_HEIGHT;
 
         int index = 0;
 
@@ -403,8 +458,8 @@ public final class TokenCatalogOverlay {
                         context,
                         font,
                         "... +" + remaining + " more",
-                        x,
-                        y,
+                        textX,
+                        textY,
                         MUTED_TEXT_COLOR
                 );
 
@@ -419,14 +474,71 @@ public final class TokenCatalogOverlay {
                     context,
                     font,
                     prefix + state.id() + " - " + state.displayName(),
-                    x,
-                    y,
+                    textX,
+                    textY,
                     defaultState ? HOVER_TEXT_COLOR : TEXT_COLOR
             );
 
-            y += LINE_HEIGHT;
+            textY += LINE_HEIGHT;
             index++;
         }
+    }
+
+    private int resolvePopupYForDefinition(
+            VRenderContext context,
+            List<TokenDefinition> definitions,
+            TokenDefinition detailsDefinition
+    ) {
+        int panelHeight = calculatePanelHeight(definitions.size());
+        int panelY = getPanelY(context.screenHeight(), panelHeight);
+
+        int firstTokenY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+
+        int visibleDefinitions = Math.min(definitions.size(), MAX_VISIBLE_TOKENS);
+
+        for (int i = 0; i < visibleDefinitions; i++) {
+            TokenDefinition definition = definitions.get(i);
+
+            if (definition.id().equals(detailsDefinition.id())) {
+                return firstTokenY + i * TOKEN_ROW_HEIGHT;
+            }
+        }
+
+        return panelY;
+    }
+
+    private int calculateDetailsPopupHeight(TokenDefinition definition) {
+        int visibleStates = Math.min(definition.states().size(), MAX_VISIBLE_STATES);
+
+        int lines = 5 + visibleStates;
+
+        if (definition.states().size() > MAX_VISIBLE_STATES) {
+            lines++;
+        }
+
+        return PADDING * 2 + lines * LINE_HEIGHT;
+    }
+
+    private int clampPopupX(int popupX, int popupWidth, int screenWidth) {
+        int minX = 10;
+        int maxX = screenWidth - popupWidth - 10;
+
+        if (maxX < minX) {
+            return minX;
+        }
+
+        return Math.max(minX, Math.min(popupX, maxX));
+    }
+
+    private int clampPopupY(int popupY, int popupHeight, int screenHeight) {
+        int minY = 10;
+        int maxY = screenHeight - popupHeight - 10;
+
+        if (maxY < minY) {
+            return minY;
+        }
+
+        return Math.max(minY, Math.min(popupY, maxY));
     }
 
     private TokenDefinition resolveDetailsDefinition(
@@ -455,10 +567,7 @@ public final class TokenCatalogOverlay {
         return definitions;
     }
 
-    private int calculatePanelHeight(
-            int tokenCount,
-            TokenDefinition detailsDefinition
-    ) {
+    private int calculatePanelHeight(int tokenCount) {
         int visibleDefinitions = Math.min(tokenCount, MAX_VISIBLE_TOKENS);
 
         int headerHeight = PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
@@ -469,18 +578,6 @@ public final class TokenCatalogOverlay {
 
         if (tokenCount > MAX_VISIBLE_TOKENS) {
             extraHeight += LINE_HEIGHT;
-        }
-
-        if (detailsDefinition != null) {
-            int visibleStates = Math.min(detailsDefinition.states().size(), MAX_VISIBLE_STATES);
-
-            extraHeight += 6;
-            extraHeight += 5 * LINE_HEIGHT;
-            extraHeight += visibleStates * LINE_HEIGHT;
-
-            if (detailsDefinition.states().size() > MAX_VISIBLE_STATES) {
-                extraHeight += LINE_HEIGHT;
-            }
         }
 
         return headerHeight + tokenListHeight + extraHeight + PADDING + 8;

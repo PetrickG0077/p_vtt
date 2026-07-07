@@ -71,6 +71,16 @@ public final class VTTScreen extends Screen {
 
     private final TokenCatalogSelection tokenCatalogSelection;
 
+    private static final long TOKEN_DRAG_HOLD_DELAY_MS = 250L;
+
+    private static final double TOKEN_DRAG_MIN_DISTANCE = 6.0;
+
+    private long tokenDragStartTimeMs;
+
+    private double tokenDragStartMouseX;
+
+    private double tokenDragStartMouseY;
+
     private TokenDefinition draggingTokenDefinition;
 
     private Viewport viewport;
@@ -179,7 +189,7 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (draggingTokenDefinition != null) {
+        if (draggingTokenDefinition != null && shouldShowDraggedTokenPreview(mouseX, mouseY)) {
             tokenCatalogOverlay.renderDragPreview(
                     context,
                     this.font,
@@ -449,6 +459,36 @@ public final class VTTScreen extends Screen {
         inputController.selectSelectTool();
     }
 
+    private boolean shouldCreateDraggedToken(double mouseX, double mouseY) {
+        long heldTimeMs = System.currentTimeMillis() - tokenDragStartTimeMs;
+
+        if (heldTimeMs < TOKEN_DRAG_HOLD_DELAY_MS) {
+            return false;
+        }
+
+        double deltaX = mouseX - tokenDragStartMouseX;
+        double deltaY = mouseY - tokenDragStartMouseY;
+
+        double distanceSquared = deltaX * deltaX + deltaY * deltaY;
+
+        return distanceSquared >= TOKEN_DRAG_MIN_DISTANCE * TOKEN_DRAG_MIN_DISTANCE;
+    }
+
+    private boolean shouldShowDraggedTokenPreview(double mouseX, double mouseY) {
+        long heldTimeMs = System.currentTimeMillis() - tokenDragStartTimeMs;
+
+        if (heldTimeMs < TOKEN_DRAG_HOLD_DELAY_MS) {
+            return false;
+        }
+
+        double deltaX = mouseX - tokenDragStartMouseX;
+        double deltaY = mouseY - tokenDragStartMouseY;
+
+        double distanceSquared = deltaX * deltaX + deltaY * deltaY;
+
+        return distanceSquared >= TOKEN_DRAG_MIN_DISTANCE * TOKEN_DRAG_MIN_DISTANCE;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -464,9 +504,27 @@ public final class VTTScreen extends Screen {
                     TokenDefinition definition = clickedTokenDefinition.get();
 
                     tokenCatalogSelection.select(definition.id());
+
                     this.draggingTokenDefinition = definition;
+                    this.tokenDragStartTimeMs = System.currentTimeMillis();
+                    this.tokenDragStartMouseX = mouseX;
+                    this.tokenDragStartMouseY = mouseY;
 
                     return true;
+                }
+            }
+
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                boolean overTokenCatalog = panelVisibility.isTokenCatalogVisible()
+                        && tokenCatalogOverlay.containsPoint(
+                        tokenDefinitionRegistry,
+                        this.height,
+                        mouseX,
+                        mouseY
+                );
+
+                if (!overTokenCatalog) {
+                    tokenCatalogSelection.clear();
                 }
             }
 
@@ -520,7 +578,10 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingTokenDefinition != null) {
-            createTokenFromDraggedTokenDefinition(mouseX, mouseY, draggingTokenDefinition);
+            if (shouldCreateDraggedToken(mouseX, mouseY)) {
+                createTokenFromDraggedTokenDefinition(mouseX, mouseY, draggingTokenDefinition);
+            }
+
             this.draggingTokenDefinition = null;
             return true;
         }
