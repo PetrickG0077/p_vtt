@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.screen;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
+import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
@@ -68,6 +69,8 @@ public final class VTTScreen extends Screen {
 
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
+    private final TokenCatalogSelection tokenCatalogSelection;
+
     private TokenDefinition draggingTokenDefinition;
 
     private Viewport viewport;
@@ -96,6 +99,7 @@ public final class VTTScreen extends Screen {
         this.helpOverlay = new HelpOverlay();
         this.debugOverlay = new DebugOverlay();
         this.tokenCatalogOverlay = new TokenCatalogOverlay();
+        this.tokenCatalogSelection = new TokenCatalogSelection();
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
@@ -153,7 +157,12 @@ public final class VTTScreen extends Screen {
         }
 
         if (panelVisibility.isTokenCatalogVisible()) {
-            tokenCatalogOverlay.render(context, this.font, tokenDefinitionRegistry);
+            tokenCatalogOverlay.render(
+                    context,
+                    this.font,
+                    tokenDefinitionRegistry,
+                    tokenCatalogSelection
+            );
         }
 
         if (panelVisibility.isSceneOutlinerVisible()) {
@@ -416,7 +425,11 @@ public final class VTTScreen extends Screen {
                 );
 
                 if (clickedTokenDefinition.isPresent()) {
-                    this.draggingTokenDefinition = clickedTokenDefinition.get();
+                    TokenDefinition definition = clickedTokenDefinition.get();
+
+                    tokenCatalogSelection.select(definition.id());
+                    this.draggingTokenDefinition = definition;
+
                     return true;
                 }
             }

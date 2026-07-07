@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
@@ -54,6 +55,10 @@ public final class TokenCatalogOverlay {
 
     private static final int HOVER_TEXT_COLOR = 0xFFFFDD88;
 
+    private static final int SELECTED_ROW_BACKGROUND = 0x553399FF;
+
+    private static final int HOVERED_ROW_BACKGROUND = 0x33222222;
+
     private static final int DRAG_PREVIEW_BACKGROUND = 0xCC000000;
 
     private static final int DRAG_PREVIEW_BORDER = 0xFFAA66FF;
@@ -67,7 +72,8 @@ public final class TokenCatalogOverlay {
     public void render(
             VRenderContext context,
             Font font,
-            TokenDefinitionRegistry tokenDefinitionRegistry
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            TokenCatalogSelection selection
     ) {
         List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
 
@@ -78,7 +84,16 @@ public final class TokenCatalogOverlay {
                 context.mouseY()
         );
 
-        int panelHeight = calculatePanelHeight(definitions.size(), hoveredDefinition.orElse(null));
+        TokenDefinition detailsDefinition = resolveDetailsDefinition(
+                tokenDefinitionRegistry,
+                hoveredDefinition,
+                selection
+        );
+
+        int panelHeight = calculatePanelHeight(
+                definitions.size(),
+                detailsDefinition
+        );
 
         int x = PANEL_X;
         int y = getPanelY(context.screenHeight(), panelHeight);
@@ -115,13 +130,16 @@ public final class TokenCatalogOverlay {
                     .map(tokenDefinition -> tokenDefinition.id().equals(definition.id()))
                     .orElse(false);
 
+            boolean selected = selection != null && selection.isSelected(definition.id());
+
             renderTokenRow(
                     context,
                     font,
                     definition,
                     textX,
                     textY,
-                    hovered
+                    hovered,
+                    selected
             );
 
             textY += TOKEN_ROW_HEIGHT;
@@ -142,9 +160,9 @@ public final class TokenCatalogOverlay {
             textY += LINE_HEIGHT;
         }
 
-        if (hoveredDefinition.isPresent()) {
+        if (detailsDefinition != null) {
             textY += 6;
-            renderTokenDetails(context, font, hoveredDefinition.get(), textX, textY);
+            renderTokenDetails(context, font, detailsDefinition, textX, textY);
         }
     }
 
@@ -154,8 +172,23 @@ public final class TokenCatalogOverlay {
             TokenDefinition definition,
             int x,
             int y,
-            boolean hovered
+            boolean hovered,
+            boolean selected
     ) {
+        if (selected || hovered) {
+            int rowBackground = selected
+                    ? SELECTED_ROW_BACKGROUND
+                    : HOVERED_ROW_BACKGROUND;
+
+            context.graphics().fill(
+                    x - 3,
+                    y,
+                    x + PANEL_WIDTH - PADDING * 2,
+                    y + TOKEN_ROW_HEIGHT,
+                    rowBackground
+            );
+        }
+
         int thumbnailX = x;
         int thumbnailY = y + 2;
 
@@ -178,7 +211,7 @@ public final class TokenCatalogOverlay {
                 definition.displayName(),
                 textX,
                 titleY,
-                hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
+                selected ? TITLE_COLOR : hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
         );
 
         drawLine(
@@ -286,6 +319,12 @@ public final class TokenCatalogOverlay {
             return Optional.empty();
         }
 
+        /*
+         * Importante:
+         * Aqui calculamos a altura SEM detailsDefinition.
+         * Isso evita o bug de hover piscando, porque o painel muda de tamanho
+         * quando os detalhes aparecem.
+         */
         int panelHeight = calculatePanelHeight(definitions.size(), null);
 
         int panelX = PANEL_X;
@@ -390,6 +429,24 @@ public final class TokenCatalogOverlay {
         }
     }
 
+    private TokenDefinition resolveDetailsDefinition(
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            Optional<TokenDefinition> hoveredDefinition,
+            TokenCatalogSelection selection
+    ) {
+        if (hoveredDefinition.isPresent()) {
+            return hoveredDefinition.get();
+        }
+
+        if (selection == null || !selection.hasSelection()) {
+            return null;
+        }
+
+        return tokenDefinitionRegistry
+                .findById(selection.getSelectedTokenDefinitionId())
+                .orElse(null);
+    }
+
     private List<TokenDefinition> getSortedDefinitions(TokenDefinitionRegistry tokenDefinitionRegistry) {
         List<TokenDefinition> definitions = new ArrayList<>(tokenDefinitionRegistry.getAll());
 
@@ -398,7 +455,10 @@ public final class TokenCatalogOverlay {
         return definitions;
     }
 
-    private int calculatePanelHeight(int tokenCount, TokenDefinition hoveredDefinition) {
+    private int calculatePanelHeight(
+            int tokenCount,
+            TokenDefinition detailsDefinition
+    ) {
         int visibleDefinitions = Math.min(tokenCount, MAX_VISIBLE_TOKENS);
 
         int headerHeight = PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
@@ -411,14 +471,14 @@ public final class TokenCatalogOverlay {
             extraHeight += LINE_HEIGHT;
         }
 
-        if (hoveredDefinition != null) {
-            int visibleStates = Math.min(hoveredDefinition.states().size(), MAX_VISIBLE_STATES);
+        if (detailsDefinition != null) {
+            int visibleStates = Math.min(detailsDefinition.states().size(), MAX_VISIBLE_STATES);
 
             extraHeight += 6;
             extraHeight += 5 * LINE_HEIGHT;
             extraHeight += visibleStates * LINE_HEIGHT;
 
-            if (hoveredDefinition.states().size() > MAX_VISIBLE_STATES) {
+            if (detailsDefinition.states().size() > MAX_VISIBLE_STATES) {
                 extraHeight += LINE_HEIGHT;
             }
         }
