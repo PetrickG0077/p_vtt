@@ -8,6 +8,7 @@ import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
 import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
+import com.petrick.vtt.editor.catalog.AssetCatalogController;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
@@ -70,6 +71,8 @@ public final class VTTScreen extends Screen {
 
     private final AssetCatalogSelection assetCatalogSelection;
 
+    private final AssetCatalogController assetCatalogController;
+
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
     private final TokenCatalogSelection tokenCatalogSelection;
@@ -107,6 +110,7 @@ public final class VTTScreen extends Screen {
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
         this.assetCatalogSelection = new AssetCatalogSelection();
+        this.assetCatalogController = new AssetCatalogController(assetCatalogSelection);
         this.tokenCatalogOverlay = new TokenCatalogOverlay();
         this.tokenCatalogSelection = new TokenCatalogSelection();
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
@@ -300,18 +304,18 @@ public final class VTTScreen extends Screen {
                 return true;
             }
 
-            if (panelVisibility.isAssetCatalogVisible()) {
-                var clickedAsset = assetCatalogOverlay.findAssetAt(
-                        assetRegistry,
-                        this.height,
-                        mouseX,
-                        mouseY
-                );
+            boolean assetCatalogConsumedClick =
+                    assetCatalogController.mouseClicked(
+                            assetCatalogOverlay,
+                            assetRegistry,
+                            panelVisibility.isAssetCatalogVisible(),
+                            this.height,
+                            mouseX,
+                            mouseY
+                    );
 
-                if (clickedAsset.isPresent()) {
-                    assetCatalogSelection.select(clickedAsset.get().id());
-                    return true;
-                }
+            if (assetCatalogConsumedClick) {
+                return true;
             }
 
             if (panelVisibility.isSceneOutlinerVisible()) {
@@ -331,20 +335,6 @@ public final class VTTScreen extends Screen {
                     inputController.selectSelectTool();
                     return true;
                 }
-            }
-        }
-
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            boolean overAssetCatalog = panelVisibility.isAssetCatalogVisible()
-                    && assetCatalogOverlay.containsPoint(
-                    assetRegistry,
-                    this.height,
-                    mouseX,
-                    mouseY
-            );
-
-            if (!overAssetCatalog) {
-                assetCatalogSelection.clear();
             }
         }
 
