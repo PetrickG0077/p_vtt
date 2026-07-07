@@ -178,6 +178,8 @@ public final class VTTScreen extends Screen {
                     assetCatalogSelection,
                     assetCatalogController.getFilter(),
                     assetCatalogController.getTreeState(),
+                    assetCatalogController.getSearchQuery(),
+                    assetCatalogController.isSearchActive(),
                     assetCatalogController.getScrollOffset()
             );
         }
@@ -547,6 +549,10 @@ public final class VTTScreen extends Screen {
         return renamingObjectId != null;
     }
 
+    private boolean isAllowedRenameCharacter(char character) {
+        return character >= 32 && character != 127;
+    }
+
     private void renderRenameDialog(VRenderContext context) {
         int width = 300;
         int height = 70;
@@ -674,6 +680,10 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (assetCatalogController.keyPressed(keyCode, modifiers)) {
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             createSelectedTokenAtCameraCenter();
             return true;
@@ -772,6 +782,7 @@ public final class VTTScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (isRenaming()) {
@@ -782,11 +793,11 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        return super.charTyped(codePoint, modifiers);
-    }
+        if (assetCatalogController.charTyped(codePoint)) {
+            return true;
+        }
 
-    private boolean isAllowedRenameCharacter(char character) {
-        return character >= 32 && character != 127;
+        return super.charTyped(codePoint, modifiers);
     }
 
     @Override

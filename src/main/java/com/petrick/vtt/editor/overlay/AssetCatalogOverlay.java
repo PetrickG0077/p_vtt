@@ -25,17 +25,19 @@ import java.util.Optional;
 /**
  * Painel que lista assets disponíveis em forma de árvore.
  *
- * Mostra:
- * - assets registrados em memória;
- * - arquivos detectados na biblioteca real;
- * - pastas expansíveis/recolhíveis;
- * - scroll interno;
+ * Possui:
+ * - assets registrados;
+ * - arquivos da biblioteca;
+ * - árvore de pastas;
+ * - busca visual;
  * - filtro por tipo;
+ * - scroll interno;
+ * - popup de detalhes;
  * - miniatura real quando disponível.
  */
 public final class AssetCatalogOverlay {
 
-    private static final int PANEL_WIDTH = 210;
+    private static final int PANEL_WIDTH = 260;
 
     private static final int PANEL_HEIGHT = 150;
 
@@ -51,9 +53,19 @@ public final class AssetCatalogOverlay {
 
     private static final int INDENT_WIDTH = 10;
 
+    private static final int SEARCH_BOX_WIDTH = 105;
+
+    private static final int SEARCH_BOX_HEIGHT = 20;
+
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
     private static final int PANEL_BORDER = 0xFFFFAA33;
+
+    private static final int SEARCH_BORDER = 0xFFFF7733;
+
+    private static final int SEARCH_BORDER_INACTIVE = 0xFFAA6633;
+
+    private static final int SEARCH_BACKGROUND = 0xCC050505;
 
     private static final int TITLE_COLOR = 0xFFFFFFFF;
 
@@ -73,7 +85,7 @@ public final class AssetCatalogOverlay {
 
     private static final int SCROLL_STEP = 1;
 
-    private static final int MAX_ITEM_NAME_LENGTH = 33;
+    private static final int MAX_ITEM_NAME_LENGTH = 28;
 
     private final AssetCatalogTreeBuilder treeBuilder = new AssetCatalogTreeBuilder();
 
@@ -86,19 +98,23 @@ public final class AssetCatalogOverlay {
             AssetCatalogSelection selection,
             AssetCatalogFilter filter,
             AssetCatalogTreeState treeState,
+            String searchQuery,
+            boolean searchActive,
             int scrollOffset
     ) {
         List<AssetCatalogItem> items = getCatalogItems(
                 assetRegistry,
                 libraryScanResult,
-                filter
+                filter,
+                searchQuery
         );
 
         AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
 
-        List<AssetCatalogVisibleRow> rows = treeBuilder.flattenVisibleRows(
+        List<AssetCatalogVisibleRow> rows = flattenRowsForRender(
                 root,
-                treeState
+                treeState,
+                searchQuery
         );
 
         Optional<AssetCatalogVisibleRow> hoveredRow = findRowAt(
@@ -106,6 +122,7 @@ public final class AssetCatalogOverlay {
                 libraryScanResult,
                 filter,
                 treeState,
+                searchQuery,
                 context.screenHeight(),
                 context.mouseX(),
                 context.mouseY(),
@@ -127,6 +144,16 @@ public final class AssetCatalogOverlay {
         int textY = y + PADDING;
 
         drawLine(context, font, "Asset Catalog", textX, textY, TITLE_COLOR);
+
+        renderSearchBox(
+                context,
+                font,
+                searchQuery,
+                searchActive,
+                getSearchBoxX(),
+                getSearchBoxY(context.screenHeight())
+        );
+
         textY += LINE_HEIGHT + 4;
 
         drawLine(
@@ -173,6 +200,7 @@ public final class AssetCatalogOverlay {
                     font,
                     thumbnailRegistry,
                     treeState,
+                    searchQuery,
                     row,
                     textX,
                     textY,
@@ -224,11 +252,64 @@ public final class AssetCatalogOverlay {
         }
     }
 
+    private void renderSearchBox(
+            VRenderContext context,
+            Font font,
+            String searchQuery,
+            boolean searchActive,
+            int x,
+            int y
+    ) {
+        int borderColor = searchActive ? SEARCH_BORDER : SEARCH_BORDER_INACTIVE;
+
+        context.graphics().fill(
+                x,
+                y,
+                x + SEARCH_BOX_WIDTH,
+                y + SEARCH_BOX_HEIGHT,
+                SEARCH_BACKGROUND
+        );
+
+        context.graphics().hLine(x, x + SEARCH_BOX_WIDTH, y, borderColor);
+        context.graphics().hLine(x, x + SEARCH_BOX_WIDTH, y + SEARCH_BOX_HEIGHT, borderColor);
+        context.graphics().vLine(x, y, y + SEARCH_BOX_HEIGHT, borderColor);
+        context.graphics().vLine(x + SEARCH_BOX_WIDTH, y, y + SEARCH_BOX_HEIGHT, borderColor);
+
+        String text;
+
+        if (searchQuery == null || searchQuery.isBlank()) {
+            text = searchActive ? "_" : "Search";
+        } else {
+            text = searchActive ? searchQuery + "_" : searchQuery;
+        }
+
+        drawLine(
+                context,
+                font,
+                truncateText(text, 12),
+                x + 8,
+                y + 6,
+                searchQuery == null || searchQuery.isBlank()
+                        ? MUTED_TEXT_COLOR
+                        : TEXT_COLOR
+        );
+
+        drawLine(
+                context,
+                font,
+                "⌕",
+                x + SEARCH_BOX_WIDTH - 18,
+                y + 5,
+                searchActive ? SEARCH_BORDER : MUTED_TEXT_COLOR
+        );
+    }
+
     private void renderTreeRow(
             VRenderContext context,
             Font font,
             AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogTreeState treeState,
+            String searchQuery,
             AssetCatalogVisibleRow row,
             int x,
             int y,
@@ -256,6 +337,7 @@ public final class AssetCatalogOverlay {
                     context,
                     font,
                     treeState,
+                    searchQuery,
                     row.folder(),
                     indentX,
                     y,
@@ -281,12 +363,15 @@ public final class AssetCatalogOverlay {
             VRenderContext context,
             Font font,
             AssetCatalogTreeState treeState,
+            String searchQuery,
             AssetCatalogTreeNode.Folder folder,
             int x,
             int y,
             boolean hovered
     ) {
-        String arrow = treeState.isExpanded(folder.id()) ? "▾" : "▸";
+        boolean forceExpanded = searchQuery != null && !searchQuery.isBlank();
+
+        String arrow = forceExpanded || treeState.isExpanded(folder.id()) ? "▾" : "▸";
 
         String text = arrow + " " + folder.displayName();
 
@@ -452,22 +537,18 @@ public final class AssetCatalogOverlay {
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
             AssetCatalogTreeState treeState,
+            String searchQuery,
             int screenHeight,
             double mouseX,
             double mouseY,
             int scrollOffset
     ) {
-        List<AssetCatalogItem> items = getCatalogItems(
+        List<AssetCatalogVisibleRow> rows = getVisibleRows(
                 assetRegistry,
                 libraryScanResult,
-                filter
-        );
-
-        AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
-
-        List<AssetCatalogVisibleRow> rows = treeBuilder.flattenVisibleRows(
-                root,
-                treeState
+                filter,
+                treeState,
+                searchQuery
         );
 
         if (rows.isEmpty()) {
@@ -482,6 +563,10 @@ public final class AssetCatalogOverlay {
         }
 
         if (mouseY < panelY || mouseY > panelY + PANEL_HEIGHT) {
+            return Optional.empty();
+        }
+
+        if (isSearchBoxAt(screenHeight, mouseX, mouseY)) {
             return Optional.empty();
         }
 
@@ -526,11 +611,26 @@ public final class AssetCatalogOverlay {
                 && mouseY <= panelY + PANEL_HEIGHT;
     }
 
+    public boolean isSearchBoxAt(
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int x = getSearchBoxX();
+        int y = getSearchBoxY(screenHeight);
+
+        return mouseX >= x
+                && mouseX <= x + SEARCH_BOX_WIDTH
+                && mouseY >= y
+                && mouseY <= y + SEARCH_BOX_HEIGHT;
+    }
+
     public int scroll(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
             AssetCatalogTreeState treeState,
+            String searchQuery,
             int currentScrollOffset,
             double scrollY
     ) {
@@ -543,6 +643,7 @@ public final class AssetCatalogOverlay {
                 libraryScanResult,
                 filter,
                 treeState,
+                searchQuery,
                 newOffset
         );
     }
@@ -552,13 +653,15 @@ public final class AssetCatalogOverlay {
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
             AssetCatalogTreeState treeState,
+            String searchQuery,
             int scrollOffset
     ) {
         int rowCount = getVisibleRows(
                 assetRegistry,
                 libraryScanResult,
                 filter,
-                treeState
+                treeState,
+                searchQuery
         ).size();
 
         int maxVisibleRows = calculateMaxVisibleRows();
@@ -572,20 +675,66 @@ public final class AssetCatalogOverlay {
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
             AssetCatalogFilter filter,
-            AssetCatalogTreeState treeState
+            AssetCatalogTreeState treeState,
+            String searchQuery
     ) {
         List<AssetCatalogItem> items = getCatalogItems(
                 assetRegistry,
                 libraryScanResult,
-                filter
+                filter,
+                searchQuery
         );
 
         AssetCatalogTreeNode.Folder root = treeBuilder.build(items);
+
+        return flattenRowsForRender(
+                root,
+                treeState,
+                searchQuery
+        );
+    }
+
+    private List<AssetCatalogVisibleRow> flattenRowsForRender(
+            AssetCatalogTreeNode.Folder root,
+            AssetCatalogTreeState treeState,
+            String searchQuery
+    ) {
+        if (searchQuery != null && !searchQuery.isBlank()) {
+            return flattenAllRows(root);
+        }
 
         return treeBuilder.flattenVisibleRows(
                 root,
                 treeState
         );
+    }
+
+    private List<AssetCatalogVisibleRow> flattenAllRows(
+            AssetCatalogTreeNode.Folder root
+    ) {
+        List<AssetCatalogVisibleRow> rows = new ArrayList<>();
+
+        for (AssetCatalogTreeNode child : root.children()) {
+            appendAllRows(child, 0, rows);
+        }
+
+        return rows;
+    }
+
+    private void appendAllRows(
+            AssetCatalogTreeNode node,
+            int depth,
+            List<AssetCatalogVisibleRow> rows
+    ) {
+        rows.add(new AssetCatalogVisibleRow(node, depth));
+
+        if (!(node instanceof AssetCatalogTreeNode.Folder folder)) {
+            return;
+        }
+
+        for (AssetCatalogTreeNode child : folder.children()) {
+            appendAllRows(child, depth + 1, rows);
+        }
     }
 
     private void renderItemDetailsPopup(
@@ -778,7 +927,8 @@ public final class AssetCatalogOverlay {
     private List<AssetCatalogItem> getCatalogItems(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
-            AssetCatalogFilter filter
+            AssetCatalogFilter filter,
+            String searchQuery
     ) {
         List<AssetCatalogItem> items = new ArrayList<>();
 
@@ -796,12 +946,22 @@ public final class AssetCatalogOverlay {
             items.add(new AssetCatalogItem.LibraryFile(entry));
         }
 
-        if (filter == null) {
+        if (filter != null) {
+            items = items.stream()
+                    .filter(filter::accepts)
+                    .toList();
+        }
+
+        if (searchQuery == null || searchQuery.isBlank()) {
             return items;
         }
 
+        String normalizedQuery = searchQuery.toLowerCase();
+
         return items.stream()
-                .filter(filter::accepts)
+                .filter(item -> item.displayName().toLowerCase().contains(normalizedQuery)
+                        || item.id().toLowerCase().contains(normalizedQuery)
+                        || item.typeName().toLowerCase().contains(normalizedQuery))
                 .toList();
     }
 
@@ -887,6 +1047,14 @@ public final class AssetCatalogOverlay {
 
     private int getPanelY(int screenHeight, int panelHeight) {
         return screenHeight - panelHeight - 10;
+    }
+
+    private int getSearchBoxX() {
+        return getPanelX() + PANEL_WIDTH - SEARCH_BOX_WIDTH - PADDING;
+    }
+
+    private int getSearchBoxY(int screenHeight) {
+        return getPanelY(screenHeight, PANEL_HEIGHT) + PADDING - 2;
     }
 
     private int clampPopupX(int popupX, int popupWidth, int screenWidth) {
