@@ -17,17 +17,15 @@ import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
-import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
-import com.petrick.vtt.feature.token.DebugTokenDefinitions;
+import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
-import com.petrick.vtt.feature.token.TokenFactory;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -60,6 +58,8 @@ public final class VTTScreen extends Screen {
     private final InputController inputController;
 
     private final EditorPanelVisibility panelVisibility;
+
+    private final TokenPlacementService tokenPlacementService;
 
     private final DebugOverlay debugOverlay;
 
@@ -100,6 +100,7 @@ public final class VTTScreen extends Screen {
         this.scene = session.getCanvasScene();
 
         this.selectionManager = new SelectionManager();
+        this.tokenPlacementService = new TokenPlacementService(scene, selectionManager);
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
 
@@ -449,16 +450,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        Vec2d screenCenter = new Vec2d(
+        createTokenAtScreenPosition(
                 this.width / 2.0,
-                this.height / 2.0
+                this.height / 2.0,
+                definition
         );
-
-        Vec2d worldPosition = renderState != null
-                ? renderState.screenToWorld(screenCenter)
-                : Vec2d.ZERO;
-
-        createTokenAtWorldPosition(worldPosition, definition);
     }
 
     private void createTokenAtScreenPosition(
@@ -485,17 +481,7 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        String objectId = scene.createUniqueObjectId("token");
-
-        CanvasObject token = TokenFactory.createCanvasObject(
-                definition,
-                objectId,
-                worldPosition
-        );
-
-        scene.addObject(token);
-
-        selectionManager.selectOnly(objectId);
+        tokenPlacementService.placeToken(definition, worldPosition);
         inputController.selectSelectTool();
     }
 

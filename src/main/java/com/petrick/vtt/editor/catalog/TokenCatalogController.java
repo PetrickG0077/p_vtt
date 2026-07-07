@@ -20,7 +20,7 @@ import java.util.Optional;
  */
 public final class TokenCatalogController {
 
-    private static final long TOKEN_DRAG_HOLD_DELAY_MS = 250L;
+    private static final long TOKEN_DRAG_HOLD_DELAY_MS = 25L;
 
     private static final double TOKEN_DRAG_MIN_DISTANCE = 6.0;
 
