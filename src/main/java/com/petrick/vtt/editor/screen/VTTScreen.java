@@ -4,6 +4,7 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.core.render.RenderState;
+import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
@@ -46,6 +47,8 @@ public final class VTTScreen extends Screen {
 
     private final InputController inputController;
 
+    private final HelpOverlay helpOverlay;
+
     private final DebugOverlay debugOverlay;
 
     private final SelectionInspectorOverlay selectionInspectorOverlay;
@@ -63,6 +66,8 @@ public final class VTTScreen extends Screen {
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
     private TokenDefinition draggingTokenDefinition;
+
+    private boolean showHelpOverlay = true;
 
     private boolean showDebugOverlay = false;
 
@@ -97,6 +102,7 @@ public final class VTTScreen extends Screen {
         this.selectionManager = new SelectionManager();
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
+        this.helpOverlay = new HelpOverlay();
         this.debugOverlay = new DebugOverlay();
         this.tokenCatalogOverlay = new TokenCatalogOverlay();
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
@@ -130,6 +136,11 @@ public final class VTTScreen extends Screen {
         canvasRenderer.render(context, scene, selectionManager);
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
+
+        if (showHelpOverlay) {
+            helpOverlay.render(context, this.font);
+        }
+
         if (showDebugOverlay) {
             debugOverlay.render(
                     context,
@@ -351,7 +362,7 @@ public final class VTTScreen extends Screen {
 
         graphics.drawCenteredString(
                 this.font,
-                "Sprint 2 - Tokens & Assets | F3-F7 Panels",
+                "Sprint 2 - Tokens & Assets | F1 Help | F3-F7 Panels",
                 this.width / 2,
                 this.height / 2,
                 0xFFAAAAAA
@@ -650,6 +661,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
             inputController.setSelectedObjectsActiveState("3");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F1) {
+            showHelpOverlay = !showHelpOverlay;
             return true;
         }
 
