@@ -81,6 +81,12 @@ public final class VTTScreen extends Screen {
 
     private double tokenDragStartMouseY;
 
+    private static final long TOKEN_CATALOG_DOUBLE_CLICK_MS = 300L;
+
+    private long lastTokenCatalogClickTimeMs;
+
+    private String lastTokenCatalogClickDefinitionId;
+
     private TokenDefinition draggingTokenDefinition;
 
     private Viewport viewport;
@@ -489,6 +495,18 @@ public final class VTTScreen extends Screen {
         return distanceSquared >= TOKEN_DRAG_MIN_DISTANCE * TOKEN_DRAG_MIN_DISTANCE;
     }
 
+    private boolean isTokenCatalogDoubleClick(TokenDefinition definition) {
+        long nowMs = System.currentTimeMillis();
+
+        boolean sameToken = definition.id().equals(lastTokenCatalogClickDefinitionId);
+        boolean withinTime = nowMs - lastTokenCatalogClickTimeMs <= TOKEN_CATALOG_DOUBLE_CLICK_MS;
+
+        lastTokenCatalogClickTimeMs = nowMs;
+        lastTokenCatalogClickDefinitionId = definition.id();
+
+        return sameToken && withinTime;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -504,6 +522,17 @@ public final class VTTScreen extends Screen {
                     TokenDefinition definition = clickedTokenDefinition.get();
 
                     tokenCatalogSelection.select(definition.id());
+
+                    if (isTokenCatalogDoubleClick(definition)) {
+                        createTokenFromDraggedTokenDefinition(
+                                this.width / 2.0,
+                                this.height / 2.0,
+                                definition
+                        );
+
+                        this.draggingTokenDefinition = null;
+                        return true;
+                    }
 
                     this.draggingTokenDefinition = definition;
                     this.tokenDragStartTimeMs = System.currentTimeMillis();
