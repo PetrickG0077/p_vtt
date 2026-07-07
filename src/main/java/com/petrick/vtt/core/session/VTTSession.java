@@ -8,6 +8,8 @@ import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -25,6 +27,10 @@ public final class VTTSession {
 
     private final AssetLibraryService assetLibraryService;
 
+    private final AssetThumbnailRegistry assetThumbnailRegistry;
+
+    private final AssetThumbnailLoader assetThumbnailLoader;
+
     private AssetLibraryScanResult assetLibraryScanResult;
 
     public VTTSession() {
@@ -37,6 +43,9 @@ public final class VTTSession {
         assetLibraryService.ensureDirectoriesExist();
 
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
+
+        this.assetThumbnailRegistry = new AssetThumbnailRegistry();
+        this.assetThumbnailLoader = new AssetThumbnailLoader(assetThumbnailRegistry);
 
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
@@ -59,10 +68,21 @@ public final class VTTSession {
 
     public void refreshAssetLibrary() {
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
+        loadAssetThumbnails();
     }
 
     public TokenDefinitionRegistry getTokenDefinitionRegistry() {
         return tokenDefinitionRegistry;
+    }
+
+    public AssetThumbnailRegistry getAssetThumbnailRegistry() {
+        return assetThumbnailRegistry;
+    }
+
+    private void loadAssetThumbnails() {
+        for (var entry : assetLibraryScanResult.entries()) {
+            assetThumbnailLoader.loadThumbnailIfNeeded(entry);
+        }
     }
 
     public CanvasScene getCanvasScene() {

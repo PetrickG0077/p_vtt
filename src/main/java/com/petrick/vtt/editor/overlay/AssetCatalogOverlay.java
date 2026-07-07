@@ -6,7 +6,8 @@ import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
-import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
@@ -67,6 +68,7 @@ public final class AssetCatalogOverlay {
             Font font,
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
+            AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogSelection selection,
             int scrollOffset
     ) {
@@ -138,6 +140,7 @@ public final class AssetCatalogOverlay {
             renderItemRow(
                     context,
                     font,
+                    thumbnailRegistry,
                     item,
                     textX,
                     textY,
@@ -181,6 +184,7 @@ public final class AssetCatalogOverlay {
             renderItemDetailsPopup(
                     context,
                     font,
+                    thumbnailRegistry,
                     detailsItem,
                     popupX,
                     popupY
@@ -191,6 +195,7 @@ public final class AssetCatalogOverlay {
     private void renderItemRow(
             VRenderContext context,
             Font font,
+            AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogItem item,
             int x,
             int y,
@@ -216,6 +221,7 @@ public final class AssetCatalogOverlay {
 
         renderItemThumbnail(
                 context,
+                thumbnailRegistry,
                 item,
                 thumbnailX,
                 thumbnailY,
@@ -246,6 +252,7 @@ public final class AssetCatalogOverlay {
 
     private void renderItemThumbnail(
             VRenderContext context,
+            AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogItem item,
             int x,
             int y,
@@ -268,14 +275,36 @@ public final class AssetCatalogOverlay {
                     builtInTexture.textureHeight()
             );
         } else if (item instanceof AssetCatalogItem.LibraryFile libraryFile) {
-            renderLibraryFilePlaceholder(
-                    context,
-                    libraryFile.entry(),
-                    x,
-                    y,
-                    width,
-                    height
-            );
+            AssetLibraryEntry entry = libraryFile.entry();
+
+            AssetThumbnail thumbnail = thumbnailRegistry
+                    .findById(entry.id())
+                    .orElse(null);
+
+            if (thumbnail != null) {
+                context.graphics().blit(
+                        thumbnail.texture(),
+                        x,
+                        y,
+                        width,
+                        height,
+                        0.0F,
+                        0.0F,
+                        thumbnail.width(),
+                        thumbnail.height(),
+                        thumbnail.width(),
+                        thumbnail.height()
+                );
+            } else {
+                renderLibraryFilePlaceholder(
+                        context,
+                        entry,
+                        x,
+                        y,
+                        width,
+                        height
+                );
+            }
         } else {
             context.graphics().fill(
                     x,
@@ -416,6 +445,7 @@ public final class AssetCatalogOverlay {
     private void renderItemDetailsPopup(
             VRenderContext context,
             Font font,
+            AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogItem item,
             int x,
             int y
@@ -438,6 +468,7 @@ public final class AssetCatalogOverlay {
 
         renderItemThumbnail(
                 context,
+                thumbnailRegistry,
                 item,
                 textX,
                 textY,

@@ -122,6 +122,8 @@ public final class VTTScreen extends Screen {
     protected void init() {
         this.viewport = Viewport.fullScreen(this.width, this.height);
         this.renderState = new RenderState(camera, viewport);
+
+        session.refreshAssetLibrary();
     }
 
     @Override
@@ -172,6 +174,7 @@ public final class VTTScreen extends Screen {
                     this.font,
                     assetRegistry,
                     session.getAssetLibraryScanResult(),
+                    session.getAssetThumbnailRegistry(),
                     assetCatalogSelection,
                     assetCatalogController.getScrollOffset()
             );
