@@ -16,16 +16,23 @@ public final class AssetLibraryService {
 
     private final AssetLibraryConfig config;
 
+    private final AssetLibraryScanner scanner;
+
     public AssetLibraryService(AssetLibraryConfig config) {
         if (config == null) {
             throw new IllegalArgumentException("AssetLibraryConfig cannot be null");
         }
 
         this.config = config;
+        this.scanner = new AssetLibraryScanner(config.libraryPath());
     }
 
     public AssetLibraryConfig config() {
         return config;
+    }
+
+    public AssetLibraryScanResult scanLibrary() {
+        return scanner.scan();
     }
 
     public void ensureDirectoriesExist() {

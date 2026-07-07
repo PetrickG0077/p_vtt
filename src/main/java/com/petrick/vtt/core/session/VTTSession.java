@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
+import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -24,6 +25,8 @@ public final class VTTSession {
 
     private final AssetLibraryService assetLibraryService;
 
+    private AssetLibraryScanResult assetLibraryScanResult;
+
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
         DebugAssets.registerAll(assetRegistry);
@@ -32,6 +35,8 @@ public final class VTTSession {
                 new AssetLibraryConfig(Minecraft.getInstance().gameDirectory.toPath())
         );
         assetLibraryService.ensureDirectoriesExist();
+
+        this.assetLibraryScanResult = assetLibraryService.scanLibrary();
 
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
@@ -46,6 +51,14 @@ public final class VTTSession {
 
     public AssetLibraryService getAssetLibraryService() {
         return assetLibraryService;
+    }
+
+    public AssetLibraryScanResult getAssetLibraryScanResult() {
+        return assetLibraryScanResult;
+    }
+
+    public void refreshAssetLibrary() {
+        this.assetLibraryScanResult = assetLibraryService.scanLibrary();
     }
 
     public TokenDefinitionRegistry getTokenDefinitionRegistry() {

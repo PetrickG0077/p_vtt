@@ -156,7 +156,8 @@ public final class VTTScreen extends Screen {
                     camera,
                     inputController.getActiveToolId(),
                     assetRegistry.size(),
-                    tokenDefinitionRegistry.size()
+                    tokenDefinitionRegistry.size(),
+                    session.getAssetLibraryScanResult().totalCount()
             );
         }
 
@@ -638,6 +639,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_F10) {
             panelVisibility.showAllEditorPanels();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F12) {
+            session.refreshAssetLibrary();
             return true;
         }
 

@@ -22,7 +22,8 @@ public final class DebugOverlay {
             Camera2D camera,
             String activeToolId,
             int assetCount,
-            int tokenDefinitionCount
+            int tokenDefinitionCount,
+            int libraryFileCount
     ) {
         GuiGraphics graphics = context.graphics();
 
@@ -88,6 +89,15 @@ public final class DebugOverlay {
                 "Token Definitions: " + tokenDefinitionCount,
                 15,
                 90,
+                0xFFAAAAAA,
+                false
+        );
+
+        context.graphics().drawString(
+                font,
+                "Library Files: " + libraryFileCount,
+                15,
+                100,
                 0xFFAAAAAA,
                 false
         );
