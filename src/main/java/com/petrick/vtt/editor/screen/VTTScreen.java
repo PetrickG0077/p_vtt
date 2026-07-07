@@ -413,6 +413,42 @@ public final class VTTScreen extends Screen {
         return modifiers;
     }
 
+    private void createSelectedTokenAtCameraCenter() {
+        if (!tokenCatalogSelection.hasSelection()) {
+            return;
+        }
+
+        TokenDefinition definition = tokenDefinitionRegistry
+                .findById(tokenCatalogSelection.getSelectedTokenDefinitionId())
+                .orElse(null);
+
+        if (definition == null) {
+            return;
+        }
+
+        Vec2d screenCenter = new Vec2d(
+                this.width / 2.0,
+                this.height / 2.0
+        );
+
+        Vec2d worldPosition = renderState != null
+                ? renderState.screenToWorld(screenCenter)
+                : Vec2d.ZERO;
+
+        String objectId = scene.createUniqueObjectId("token");
+
+        CanvasObject token = TokenFactory.createCanvasObject(
+                definition,
+                objectId,
+                worldPosition
+        );
+
+        scene.addObject(token);
+
+        selectionManager.selectOnly(objectId);
+        inputController.selectSelectTool();
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -576,6 +612,11 @@ public final class VTTScreen extends Screen {
                 return true;
             }
 
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            createSelectedTokenAtCameraCenter();
             return true;
         }
 
