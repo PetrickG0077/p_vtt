@@ -6,6 +6,7 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.input.InputController;
+import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
@@ -47,6 +48,8 @@ public final class VTTScreen extends Screen {
 
     private final InputController inputController;
 
+    private final EditorPanelVisibility panelVisibility;
+
     private final HelpOverlay helpOverlay;
 
     private final DebugOverlay debugOverlay;
@@ -66,18 +69,6 @@ public final class VTTScreen extends Screen {
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
     private TokenDefinition draggingTokenDefinition;
-
-    private boolean showHelpOverlay = true;
-
-    private boolean showDebugOverlay = false;
-
-    private boolean showSelectionInspector = false;
-
-    private boolean showAssetCatalog = false;
-
-    private boolean showTokenCatalog = false;
-
-    private boolean showSceneOutliner = false;
 
     private Viewport viewport;
 
@@ -108,6 +99,7 @@ public final class VTTScreen extends Screen {
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
+        this.panelVisibility = new EditorPanelVisibility();
     }
 
     @Override
@@ -137,11 +129,11 @@ public final class VTTScreen extends Screen {
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
-        if (showHelpOverlay) {
+        if (panelVisibility.isHelpVisible()) {
             helpOverlay.render(context, this.font);
         }
 
-        if (showDebugOverlay) {
+        if (panelVisibility.isDebugVisible()) {
             debugOverlay.render(
                     context,
                     this.font,
@@ -152,19 +144,19 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (showSelectionInspector) {
+        if (panelVisibility.isSelectionInspectorVisible()) {
             selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
         }
 
-        if (showAssetCatalog) {
+        if (panelVisibility.isAssetCatalogVisible()) {
             assetCatalogOverlay.render(context, this.font, assetRegistry);
         }
 
-        if (showTokenCatalog) {
+        if (panelVisibility.isTokenCatalogVisible()) {
             tokenCatalogOverlay.render(context, this.font, tokenDefinitionRegistry);
         }
 
-        if (showSceneOutliner) {
+        if (panelVisibility.isSceneOutlinerVisible()) {
             sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
         }
 
@@ -415,7 +407,7 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            if (showTokenCatalog) {
+            if (panelVisibility.isTokenCatalogVisible()) {
                 var clickedTokenDefinition = tokenCatalogOverlay.findTokenDefinitionAt(
                         tokenDefinitionRegistry,
                         this.height,
@@ -429,7 +421,7 @@ public final class VTTScreen extends Screen {
                 }
             }
 
-            if (showAssetCatalog) {
+            if (panelVisibility.isAssetCatalogVisible()) {
                 var clickedAsset = assetCatalogOverlay.findAssetAt(
                         assetRegistry,
                         this.height,
@@ -443,7 +435,7 @@ public final class VTTScreen extends Screen {
                 }
             }
 
-            if (showSceneOutliner) {
+            if (panelVisibility.isSceneOutlinerVisible()) {
                 var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
                         scene,
                         mouseX,
@@ -665,32 +657,42 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F1) {
-            showHelpOverlay = !showHelpOverlay;
+            panelVisibility.toggleHelp();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F3) {
-            showDebugOverlay = !showDebugOverlay;
+            panelVisibility.toggleDebug();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F4) {
-            showSelectionInspector = !showSelectionInspector;
+            panelVisibility.toggleSelectionInspector();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F5) {
-            showAssetCatalog = !showAssetCatalog;
+            panelVisibility.toggleAssetCatalog();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F6) {
-            showTokenCatalog = !showTokenCatalog;
+            panelVisibility.toggleTokenCatalog();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F7) {
-            showSceneOutliner = !showSceneOutliner;
+            panelVisibility.toggleSceneOutliner();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F9) {
+            panelVisibility.hideAllEditorPanels();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F10) {
+            panelVisibility.showAllEditorPanels();
             return true;
         }
 

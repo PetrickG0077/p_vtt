@@ -71,7 +71,9 @@ public final class HelpOverlay {
                 "F4: Inspector",
                 "F5: Assets",
                 "F6: Tokens",
-                "F7: Outliner"
+                "F7: Outliner",
+                "F9: Hide panels",
+                "F10: Show panels"
         };
 
         int width = PANEL_WIDTH;
