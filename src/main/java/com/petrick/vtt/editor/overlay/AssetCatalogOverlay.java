@@ -15,22 +15,27 @@ import java.util.Optional;
 /**
  * Painel debug que lista os assets disponíveis no AssetRegistry.
  *
- * Agora o Asset Catalog é apenas visualização/inspeção:
+ * O Asset Catalog é apenas visualização/inspeção:
  * - mostra assets registrados;
  * - permite selecionar asset;
  * - mostra popup de detalhes;
+ * - mostra miniaturas;
  * - não cria tokens;
  * - não arrasta assets para o canvas.
  */
 public final class AssetCatalogOverlay {
 
-    private static final int PANEL_WIDTH = 220;
+    private static final int PANEL_WIDTH = 240;
 
     private static final int PADDING = 8;
 
     private static final int LINE_HEIGHT = 10;
 
-    private static final int ASSET_ROW_HEIGHT = 14;
+    private static final int ASSET_ROW_HEIGHT = 30;
+
+    private static final int THUMBNAIL_SIZE = 24;
+
+    private static final int POPUP_PREVIEW_SIZE = 48;
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
@@ -189,14 +194,75 @@ public final class AssetCatalogOverlay {
             );
         }
 
+        int thumbnailX = x;
+        int thumbnailY = y + 3;
+
+        renderAssetThumbnail(
+                context,
+                asset,
+                thumbnailX,
+                thumbnailY,
+                THUMBNAIL_SIZE,
+                THUMBNAIL_SIZE
+        );
+
+        int textX = x + THUMBNAIL_SIZE + 8;
+
         drawLine(
                 context,
                 font,
-                "- " + asset.id(),
-                x,
-                y + 2,
+                asset.id(),
+                textX,
+                y + 4,
                 selected ? TITLE_COLOR : hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
         );
+
+        drawLine(
+                context,
+                font,
+                getAssetTypeName(asset),
+                textX,
+                y + 16,
+                MUTED_TEXT_COLOR
+        );
+    }
+
+    private void renderAssetThumbnail(
+            VRenderContext context,
+            AssetRef asset,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        if (asset instanceof BuiltInTextureAssetRef builtInTexture) {
+            context.graphics().blit(
+                    builtInTexture.texture(),
+                    x,
+                    y,
+                    width,
+                    height,
+                    0.0F,
+                    0.0F,
+                    builtInTexture.textureWidth(),
+                    builtInTexture.textureHeight(),
+                    builtInTexture.textureWidth(),
+                    builtInTexture.textureHeight()
+            );
+        } else {
+            context.graphics().fill(
+                    x,
+                    y,
+                    x + width,
+                    y + height,
+                    0xFFFF00FF
+            );
+        }
+
+        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
+        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
+        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
     }
 
     public Optional<AssetRef> findAssetAt(
@@ -282,6 +348,17 @@ public final class AssetCatalogOverlay {
         int textX = clampedX + PADDING;
         int textY = clampedY + PADDING;
 
+        renderAssetThumbnail(
+                context,
+                asset,
+                textX,
+                textY,
+                POPUP_PREVIEW_SIZE,
+                POPUP_PREVIEW_SIZE
+        );
+
+        textY += POPUP_PREVIEW_SIZE + 6;
+
         drawLine(context, font, "Asset Details:", textX, textY, TITLE_COLOR);
         textY += LINE_HEIGHT;
 
@@ -319,11 +396,13 @@ public final class AssetCatalogOverlay {
     }
 
     private int calculateDetailsPopupHeight(AssetRef asset) {
+        int previewHeight = POPUP_PREVIEW_SIZE + 6;
+
         if (asset instanceof BuiltInTextureAssetRef) {
-            return PADDING * 2 + 5 * LINE_HEIGHT;
+            return PADDING * 2 + previewHeight + 5 * LINE_HEIGHT;
         }
 
-        return PADDING * 2 + 3 * LINE_HEIGHT;
+        return PADDING * 2 + previewHeight + 3 * LINE_HEIGHT;
     }
 
     private int resolvePopupYForAsset(
@@ -365,6 +444,14 @@ public final class AssetCatalogOverlay {
         return assetRegistry
                 .findById(selection.getSelectedAssetId())
                 .orElse(null);
+    }
+
+    private String getAssetTypeName(AssetRef asset) {
+        if (asset instanceof BuiltInTextureAssetRef) {
+            return "Built-in Texture";
+        }
+
+        return "Unknown Asset";
     }
 
     private List<AssetRef> getSortedAssets(AssetRegistry assetRegistry) {
