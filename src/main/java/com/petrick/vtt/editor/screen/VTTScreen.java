@@ -1,35 +1,37 @@
 package com.petrick.vtt.editor.screen;
 
 import com.petrick.vtt.VTT;
-import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
-import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
-import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
-import com.petrick.vtt.editor.overlay.HelpOverlay;
+import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
+import com.petrick.vtt.editor.catalog.TokenCatalogController;
+import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.input.InputController;
-import com.petrick.vtt.editor.panel.EditorPanelVisibility;
+import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
-import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
+import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
+import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
+import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
+import com.petrick.vtt.editor.panel.EditorPanelVisibility;
+import com.petrick.vtt.feature.asset.AssetRef;
+import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.camera.Camera2D;
+import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
+import com.petrick.vtt.feature.token.DebugTokenDefinitions;
+import com.petrick.vtt.feature.token.TokenDefinition;
+import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.feature.token.TokenFactory;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import com.petrick.vtt.feature.asset.AssetRegistry;
 import net.minecraft.network.chat.Component;
-import com.petrick.vtt.core.math.Vec2d;
-import com.petrick.vtt.feature.asset.AssetRef;
-import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
-import com.petrick.vtt.feature.canvas.CanvasObject;
-import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
-import com.petrick.vtt.feature.token.TokenDefinition;
-import com.petrick.vtt.feature.token.TokenFactory;
-import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -39,7 +41,13 @@ import org.lwjgl.glfw.GLFW;
  */
 public final class VTTScreen extends Screen {
 
+    private final VTTSession session;
+
     private final Camera2D camera;
+
+    private final AssetRegistry assetRegistry;
+
+    private final TokenDefinitionRegistry tokenDefinitionRegistry;
 
     private final CanvasScene scene;
 
@@ -51,43 +59,21 @@ public final class VTTScreen extends Screen {
 
     private final EditorPanelVisibility panelVisibility;
 
-    private final HelpOverlay helpOverlay;
-
     private final DebugOverlay debugOverlay;
+
+    private final HelpOverlay helpOverlay;
 
     private final SelectionInspectorOverlay selectionInspectorOverlay;
 
-    private final AssetRegistry assetRegistry;
-
     private final AssetCatalogOverlay assetCatalogOverlay;
-
-    private final SceneOutlinerOverlay sceneOutlinerOverlay;
-
-    private final VTTSession session;
-
-    private final TokenDefinitionRegistry tokenDefinitionRegistry;
 
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
     private final TokenCatalogSelection tokenCatalogSelection;
 
-    private static final long TOKEN_DRAG_HOLD_DELAY_MS = 250L;
+    private final TokenCatalogController tokenCatalogController;
 
-    private static final double TOKEN_DRAG_MIN_DISTANCE = 6.0;
-
-    private long tokenDragStartTimeMs;
-
-    private double tokenDragStartMouseX;
-
-    private double tokenDragStartMouseY;
-
-    private static final long TOKEN_CATALOG_DOUBLE_CLICK_MS = 300L;
-
-    private long lastTokenCatalogClickTimeMs;
-
-    private String lastTokenCatalogClickDefinitionId;
-
-    private TokenDefinition draggingTokenDefinition;
+    private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
     private Viewport viewport;
 
@@ -112,14 +98,17 @@ public final class VTTScreen extends Screen {
         this.selectionManager = new SelectionManager();
         this.canvasRenderer = new CanvasRenderer();
         this.inputController = new InputController(camera, scene, selectionManager);
-        this.helpOverlay = new HelpOverlay();
+
+        this.panelVisibility = new EditorPanelVisibility();
+
         this.debugOverlay = new DebugOverlay();
-        this.tokenCatalogOverlay = new TokenCatalogOverlay();
-        this.tokenCatalogSelection = new TokenCatalogSelection();
-        this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
+        this.helpOverlay = new HelpOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
-        this.panelVisibility = new EditorPanelVisibility();
+        this.tokenCatalogOverlay = new TokenCatalogOverlay();
+        this.tokenCatalogSelection = new TokenCatalogSelection();
+        this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
+        this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
     }
 
     @Override
@@ -195,7 +184,11 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (draggingTokenDefinition != null && shouldShowDraggedTokenPreview(mouseX, mouseY)) {
+        TokenDefinition draggingTokenDefinition =
+                tokenCatalogController.getDraggingTokenDefinition();
+
+        if (draggingTokenDefinition != null
+                && tokenCatalogController.shouldShowDragPreview(mouseX, mouseY)) {
             tokenCatalogOverlay.renderDragPreview(
                     context,
                     this.font,
@@ -208,10 +201,236 @@ public final class VTTScreen extends Screen {
         if (renamingObjectId != null) {
             renderRenameDialog(context);
         }
+    }
 
-        if (renamingObjectId != null) {
-            renderRenameDialog(context);
+    private void renderOpaqueBackground(VRenderContext context) {
+        context.graphics().fill(
+                0,
+                0,
+                context.screenWidth(),
+                context.screenHeight(),
+                0xFF101014
+        );
+    }
+
+    private void renderTitle(VRenderContext context) {
+        GuiGraphics graphics = context.graphics();
+
+        graphics.drawCenteredString(
+                this.font,
+                this.title,
+                this.width / 2,
+                this.height / 2 - 20,
+                0xFFFFFFFF
+        );
+
+        graphics.drawCenteredString(
+                this.font,
+                "Sprint 2 - Tokens & Assets | F1 Help | F3-F7 Panels",
+                this.width / 2,
+                this.height / 2,
+                0xFFAAAAAA
+        );
+    }
+
+    private void ensureRenderState() {
+        if (viewport == null || renderState == null) {
+            this.viewport = Viewport.fullScreen(this.width, this.height);
+            this.renderState = new RenderState(camera, viewport);
         }
+    }
+
+    private void updateCursor(int mouseX, int mouseY) {
+        if (renderState == null) {
+            CursorManager.reset();
+            return;
+        }
+
+        CursorManager.apply(inputController.getCursor(mouseX, mouseY, renderState));
+    }
+
+    private int getKeyboardModifiers() {
+        if (this.minecraft == null) {
+            return 0;
+        }
+
+        long window = this.minecraft.getWindow().getWindow();
+
+        int modifiers = 0;
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_SHIFT;
+        }
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_CONTROL;
+        }
+
+        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS) {
+            modifiers |= GLFW.GLFW_MOD_ALT;
+        }
+
+        return modifiers;
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            TokenCatalogClickResult tokenCatalogClickResult =
+                    tokenCatalogController.mouseClicked(
+                            tokenCatalogOverlay,
+                            tokenDefinitionRegistry,
+                            panelVisibility.isTokenCatalogVisible(),
+                            this.height,
+                            mouseX,
+                            mouseY
+                    );
+
+            if (tokenCatalogClickResult.shouldCreateAtCameraCenter()) {
+                createTokenFromDraggedTokenDefinition(
+                        this.width / 2.0,
+                        this.height / 2.0,
+                        tokenCatalogClickResult.tokenToCreateAtCameraCenter()
+                );
+
+                return true;
+            }
+
+            if (tokenCatalogClickResult.consumesClick()) {
+                return true;
+            }
+
+            if (panelVisibility.isAssetCatalogVisible()) {
+                var clickedAsset = assetCatalogOverlay.findAssetAt(
+                        assetRegistry,
+                        this.height,
+                        mouseX,
+                        mouseY
+                );
+
+                if (clickedAsset.isPresent()) {
+                    this.draggingAsset = clickedAsset.get();
+                    return true;
+                }
+            }
+
+            if (panelVisibility.isSceneOutlinerVisible()) {
+                var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
+                        scene,
+                        mouseX,
+                        mouseY
+                );
+
+                if (clickedObjectId.isPresent()) {
+                    if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                        selectionManager.toggle(clickedObjectId.get());
+                    } else {
+                        selectionManager.selectOnly(clickedObjectId.get());
+                    }
+
+                    inputController.selectSelectTool();
+                    return true;
+                }
+            }
+        }
+
+        if (renderState != null && inputController.mouseClicked(
+                mouseX,
+                mouseY,
+                button,
+                getKeyboardModifiers(),
+                renderState
+        )) {
+            return true;
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            TokenDefinition releasedTokenDefinition =
+                    tokenCatalogController.mouseReleased(mouseX, mouseY);
+
+            if (releasedTokenDefinition != null) {
+                createTokenFromDraggedTokenDefinition(
+                        mouseX,
+                        mouseY,
+                        releasedTokenDefinition
+                );
+
+                return true;
+            }
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingAsset != null) {
+            createTokenFromDraggedAsset(mouseX, mouseY, draggingAsset);
+            this.draggingAsset = null;
+            return true;
+        }
+
+        if (renderState != null && inputController.mouseReleased(
+                mouseX,
+                mouseY,
+                button,
+                getKeyboardModifiers(),
+                renderState
+        )) {
+            return true;
+        }
+
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(
+            double mouseX,
+            double mouseY,
+            int button,
+            double dragX,
+            double dragY
+    ) {
+        if (tokenCatalogController.getDraggingTokenDefinition() != null || draggingAsset != null) {
+            return true;
+        }
+
+        if (renderState != null && inputController.mouseDragged(
+                mouseX,
+                mouseY,
+                button,
+                dragX,
+                dragY,
+                getKeyboardModifiers(),
+                renderState
+        )) {
+            return true;
+        }
+
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseScrolled(
+            double mouseX,
+            double mouseY,
+            double scrollX,
+            double scrollY
+    ) {
+        if (renderState != null && inputController.mouseScrolled(
+                mouseX,
+                mouseY,
+                scrollX,
+                scrollY,
+                renderState
+        )) {
+            return true;
+        }
+
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     private void createTokenFromDraggedAsset(double mouseX, double mouseY, AssetRef assetRef) {
@@ -249,6 +468,42 @@ public final class VTTScreen extends Screen {
         }
 
         Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+
+        String objectId = scene.createUniqueObjectId("token");
+
+        CanvasObject token = TokenFactory.createCanvasObject(
+                definition,
+                objectId,
+                worldPosition
+        );
+
+        scene.addObject(token);
+
+        selectionManager.selectOnly(objectId);
+        inputController.selectSelectTool();
+    }
+
+    private void createSelectedTokenAtCameraCenter() {
+        if (!tokenCatalogSelection.hasSelection()) {
+            return;
+        }
+
+        TokenDefinition definition = tokenDefinitionRegistry
+                .findById(tokenCatalogSelection.getSelectedTokenDefinitionId())
+                .orElse(null);
+
+        if (definition == null) {
+            return;
+        }
+
+        Vec2d screenCenter = new Vec2d(
+                this.width / 2.0,
+                this.height / 2.0
+        );
+
+        Vec2d worldPosition = renderState != null
+                ? renderState.screenToWorld(screenCenter)
+                : Vec2d.ZERO;
 
         String objectId = scene.createUniqueObjectId("token");
 
@@ -356,331 +611,6 @@ public final class VTTScreen extends Screen {
         );
     }
 
-    private void renderOpaqueBackground(VRenderContext context) {
-        context.graphics().fill(
-                0,
-                0,
-                context.screenWidth(),
-                context.screenHeight(),
-                0xFF101014
-        );
-    }
-
-    private void renderTitle(VRenderContext context) {
-        GuiGraphics graphics = context.graphics();
-
-        graphics.drawCenteredString(
-                this.font,
-                this.title,
-                this.width / 2,
-                this.height / 2 - 20,
-                0xFFFFFFFF
-        );
-
-        graphics.drawCenteredString(
-                this.font,
-                "Sprint 2 - Tokens & Assets | F1 Help | F3-F7 Panels",
-                this.width / 2,
-                this.height / 2,
-                0xFFAAAAAA
-        );
-    }
-
-    private void ensureRenderState() {
-        if (viewport == null || renderState == null) {
-            this.viewport = Viewport.fullScreen(this.width, this.height);
-            this.renderState = new RenderState(camera, viewport);
-        }
-    }
-
-    private void updateCursor(int mouseX, int mouseY) {
-        if (renderState == null) {
-            CursorManager.reset();
-            return;
-        }
-
-        CursorManager.apply(inputController.getCursor(mouseX, mouseY, renderState));
-    }
-
-    private int getKeyboardModifiers() {
-        if (this.minecraft == null) {
-            return 0;
-        }
-
-        long window = this.minecraft.getWindow().getWindow();
-
-        int modifiers = 0;
-
-        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS) {
-            modifiers |= GLFW.GLFW_MOD_SHIFT;
-        }
-
-        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS) {
-            modifiers |= GLFW.GLFW_MOD_CONTROL;
-        }
-
-        if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS) {
-            modifiers |= GLFW.GLFW_MOD_ALT;
-        }
-
-        return modifiers;
-    }
-
-    private void createSelectedTokenAtCameraCenter() {
-        if (!tokenCatalogSelection.hasSelection()) {
-            return;
-        }
-
-        TokenDefinition definition = tokenDefinitionRegistry
-                .findById(tokenCatalogSelection.getSelectedTokenDefinitionId())
-                .orElse(null);
-
-        if (definition == null) {
-            return;
-        }
-
-        Vec2d screenCenter = new Vec2d(
-                this.width / 2.0,
-                this.height / 2.0
-        );
-
-        Vec2d worldPosition = renderState != null
-                ? renderState.screenToWorld(screenCenter)
-                : Vec2d.ZERO;
-
-        String objectId = scene.createUniqueObjectId("token");
-
-        CanvasObject token = TokenFactory.createCanvasObject(
-                definition,
-                objectId,
-                worldPosition
-        );
-
-        scene.addObject(token);
-
-        selectionManager.selectOnly(objectId);
-        inputController.selectSelectTool();
-    }
-
-    private boolean shouldCreateDraggedToken(double mouseX, double mouseY) {
-        long heldTimeMs = System.currentTimeMillis() - tokenDragStartTimeMs;
-
-        if (heldTimeMs < TOKEN_DRAG_HOLD_DELAY_MS) {
-            return false;
-        }
-
-        double deltaX = mouseX - tokenDragStartMouseX;
-        double deltaY = mouseY - tokenDragStartMouseY;
-
-        double distanceSquared = deltaX * deltaX + deltaY * deltaY;
-
-        return distanceSquared >= TOKEN_DRAG_MIN_DISTANCE * TOKEN_DRAG_MIN_DISTANCE;
-    }
-
-    private boolean shouldShowDraggedTokenPreview(double mouseX, double mouseY) {
-        long heldTimeMs = System.currentTimeMillis() - tokenDragStartTimeMs;
-
-        if (heldTimeMs < TOKEN_DRAG_HOLD_DELAY_MS) {
-            return false;
-        }
-
-        double deltaX = mouseX - tokenDragStartMouseX;
-        double deltaY = mouseY - tokenDragStartMouseY;
-
-        double distanceSquared = deltaX * deltaX + deltaY * deltaY;
-
-        return distanceSquared >= TOKEN_DRAG_MIN_DISTANCE * TOKEN_DRAG_MIN_DISTANCE;
-    }
-
-    private boolean isTokenCatalogDoubleClick(TokenDefinition definition) {
-        long nowMs = System.currentTimeMillis();
-
-        boolean sameToken = definition.id().equals(lastTokenCatalogClickDefinitionId);
-        boolean withinTime = nowMs - lastTokenCatalogClickTimeMs <= TOKEN_CATALOG_DOUBLE_CLICK_MS;
-
-        lastTokenCatalogClickTimeMs = nowMs;
-        lastTokenCatalogClickDefinitionId = definition.id();
-
-        return sameToken && withinTime;
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            if (panelVisibility.isTokenCatalogVisible()) {
-                var clickedTokenDefinition = tokenCatalogOverlay.findTokenDefinitionAt(
-                        tokenDefinitionRegistry,
-                        this.height,
-                        mouseX,
-                        mouseY
-                );
-
-                if (clickedTokenDefinition.isPresent()) {
-                    TokenDefinition definition = clickedTokenDefinition.get();
-
-                    tokenCatalogSelection.select(definition.id());
-
-                    if (isTokenCatalogDoubleClick(definition)) {
-                        createTokenFromDraggedTokenDefinition(
-                                this.width / 2.0,
-                                this.height / 2.0,
-                                definition
-                        );
-
-                        this.draggingTokenDefinition = null;
-                        return true;
-                    }
-
-                    this.draggingTokenDefinition = definition;
-                    this.tokenDragStartTimeMs = System.currentTimeMillis();
-                    this.tokenDragStartMouseX = mouseX;
-                    this.tokenDragStartMouseY = mouseY;
-
-                    return true;
-                }
-            }
-
-            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                boolean overTokenCatalog = panelVisibility.isTokenCatalogVisible()
-                        && tokenCatalogOverlay.containsPoint(
-                        tokenDefinitionRegistry,
-                        this.height,
-                        mouseX,
-                        mouseY
-                );
-
-                if (!overTokenCatalog) {
-                    tokenCatalogSelection.clear();
-                }
-            }
-
-            if (panelVisibility.isAssetCatalogVisible()) {
-                var clickedAsset = assetCatalogOverlay.findAssetAt(
-                        assetRegistry,
-                        this.height,
-                        mouseX,
-                        mouseY
-                );
-
-                if (clickedAsset.isPresent()) {
-                    this.draggingAsset = clickedAsset.get();
-                    return true;
-                }
-            }
-
-            if (panelVisibility.isSceneOutlinerVisible()) {
-                var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
-                        scene,
-                        mouseX,
-                        mouseY
-                );
-
-                if (clickedObjectId.isPresent()) {
-                    if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
-                        selectionManager.toggle(clickedObjectId.get());
-                    } else {
-                        selectionManager.selectOnly(clickedObjectId.get());
-                    }
-
-                    inputController.selectSelectTool();
-                    return true;
-                }
-            }
-        }
-
-        if (renderState != null && inputController.mouseClicked(
-                mouseX,
-                mouseY,
-                button,
-                getKeyboardModifiers(),
-                renderState
-        )) {
-            return true;
-        }
-
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingTokenDefinition != null) {
-            if (shouldCreateDraggedToken(mouseX, mouseY)) {
-                createTokenFromDraggedTokenDefinition(mouseX, mouseY, draggingTokenDefinition);
-            }
-
-            this.draggingTokenDefinition = null;
-            return true;
-        }
-
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingAsset != null) {
-            createTokenFromDraggedAsset(mouseX, mouseY, draggingAsset);
-            this.draggingAsset = null;
-            return true;
-        }
-
-        if (renderState != null && inputController.mouseReleased(
-                mouseX,
-                mouseY,
-                button,
-                getKeyboardModifiers(),
-                renderState
-        )) {
-            return true;
-        }
-
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(
-            double mouseX,
-            double mouseY,
-            int button,
-            double dragX,
-            double dragY
-    ) {
-        if (draggingTokenDefinition != null || draggingAsset != null) {
-            return true;
-        }
-
-        if (renderState != null && inputController.mouseDragged(
-                mouseX,
-                mouseY,
-                button,
-                dragX,
-                dragY,
-                getKeyboardModifiers(),
-                renderState
-        )) {
-            return true;
-        }
-
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseScrolled(
-            double mouseX,
-            double mouseY,
-            double scrollX,
-            double scrollY
-    ) {
-        if (renderState != null && inputController.mouseScrolled(
-                mouseX,
-                mouseY,
-                scrollX,
-                scrollY,
-                renderState
-        )) {
-            return true;
-        }
-
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (isRenaming()) {
@@ -702,6 +632,46 @@ public final class VTTScreen extends Screen {
                 return true;
             }
 
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F1) {
+            panelVisibility.toggleHelp();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F3) {
+            panelVisibility.toggleDebug();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F4) {
+            panelVisibility.toggleSelectionInspector();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F5) {
+            panelVisibility.toggleAssetCatalog();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F6) {
+            panelVisibility.toggleTokenCatalog();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F7) {
+            panelVisibility.toggleSceneOutliner();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F9) {
+            panelVisibility.hideAllEditorPanels();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F10) {
+            panelVisibility.showAllEditorPanels();
             return true;
         }
 
@@ -800,53 +770,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F1) {
-            panelVisibility.toggleHelp();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F3) {
-            panelVisibility.toggleDebug();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F4) {
-            panelVisibility.toggleSelectionInspector();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F5) {
-            panelVisibility.toggleAssetCatalog();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F6) {
-            panelVisibility.toggleTokenCatalog();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F7) {
-            panelVisibility.toggleSceneOutliner();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F9) {
-            panelVisibility.hideAllEditorPanels();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F10) {
-            panelVisibility.showAllEditorPanels();
-            return true;
-        }
-
         return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
-    @Override
-    public void removed() {
-        CursorManager.reset();
-        super.removed();
     }
 
     @Override
@@ -864,6 +788,12 @@ public final class VTTScreen extends Screen {
 
     private boolean isAllowedRenameCharacter(char character) {
         return character >= 32 && character != 127;
+    }
+
+    @Override
+    public void removed() {
+        CursorManager.reset();
+        super.removed();
     }
 
     @Override
