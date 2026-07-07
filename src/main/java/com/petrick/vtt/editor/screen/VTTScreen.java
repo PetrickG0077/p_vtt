@@ -7,6 +7,7 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
 import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
+import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
@@ -67,6 +68,8 @@ public final class VTTScreen extends Screen {
 
     private final AssetCatalogOverlay assetCatalogOverlay;
 
+    private final AssetCatalogSelection assetCatalogSelection;
+
     private final TokenCatalogOverlay tokenCatalogOverlay;
 
     private final TokenCatalogSelection tokenCatalogSelection;
@@ -103,6 +106,7 @@ public final class VTTScreen extends Screen {
         this.helpOverlay = new HelpOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
         this.assetCatalogOverlay = new AssetCatalogOverlay();
+        this.assetCatalogSelection = new AssetCatalogSelection();
         this.tokenCatalogOverlay = new TokenCatalogOverlay();
         this.tokenCatalogSelection = new TokenCatalogSelection();
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
@@ -156,7 +160,12 @@ public final class VTTScreen extends Screen {
         }
 
         if (panelVisibility.isAssetCatalogVisible()) {
-            assetCatalogOverlay.render(context, this.font, assetRegistry);
+            assetCatalogOverlay.render(
+                    context,
+                    this.font,
+                    assetRegistry,
+                    assetCatalogSelection
+            );
         }
 
         if (panelVisibility.isTokenCatalogVisible()) {
@@ -300,6 +309,7 @@ public final class VTTScreen extends Screen {
                 );
 
                 if (clickedAsset.isPresent()) {
+                    assetCatalogSelection.select(clickedAsset.get().id());
                     return true;
                 }
             }
@@ -321,6 +331,20 @@ public final class VTTScreen extends Screen {
                     inputController.selectSelectTool();
                     return true;
                 }
+            }
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            boolean overAssetCatalog = panelVisibility.isAssetCatalogVisible()
+                    && assetCatalogOverlay.containsPoint(
+                    assetRegistry,
+                    this.height,
+                    mouseX,
+                    mouseY
+            );
+
+            if (!overAssetCatalog) {
+                assetCatalogSelection.clear();
             }
         }
 
