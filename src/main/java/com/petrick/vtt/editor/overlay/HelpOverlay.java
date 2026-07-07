@@ -5,21 +5,20 @@ import net.minecraft.client.gui.Font;
 
 /**
  * Painel simples de ajuda com os principais atalhos do editor.
- *
- * Este overlay é temporário/debug, mas já ajuda bastante enquanto
- * o editor ainda não tem botões reais de UI.
  */
 public final class HelpOverlay {
 
-    private static final int PANEL_WIDTH = 250;
+    private static final int PANEL_WIDTH = 205;
 
     private static final int PADDING = 8;
 
-    private static final int LINE_HEIGHT = 10;
+    private static final int LINE_HEIGHT = 8;
 
     private static final int PANEL_X = 10;
 
     private static final int PANEL_Y = 10;
+
+    private static final float TEXT_SCALE = 0.75F;
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
@@ -37,41 +36,41 @@ public final class HelpOverlay {
                 "F1: Toggle help",
                 "",
                 "Tools:",
-                "S: Select tool",
-                "H: Hand tool",
+                "S: Select",
+                "H: Hand",
                 "Middle Mouse: Pan",
-                "Mouse Wheel: Zoom",
+                "Wheel: Zoom",
                 "",
                 "Selection:",
                 "Click: Select",
-                "Ctrl + Click: Multi-select",
-                "Shift + Drag: Box select",
+                "Ctrl+Click: Multi",
+                "Shift+Drag: Box",
                 "Drag selected: Move",
                 "",
                 "Transform:",
                 "Handles: Resize",
-                "Shift + Resize: Proportional",
+                "Shift+Resize: Prop.",
                 "Rotation handle: Rotate",
-                "Q / E: Rotate -/+",
-                "+ / -: Scale",
-                "R: Reset scale/rotation",
+                "Q/E: Rotate",
+                "+/-: Scale",
+                "R: Reset",
                 "",
                 "Objects:",
                 "Delete: Remove",
-                "Ctrl + D: Duplicate",
-                "V: Toggle visibility",
+                "Ctrl+D: Duplicate",
+                "V: Visibility",
                 "N: Rename",
-                "1 / 2 / 3: Change state",
+                "1/2/3: State",
                 "",
                 "Layers:",
-                "PageUp/PageDown: Layer +/-",
+                "PageUp/Down: Layer",
                 "Home/End: Front/Back",
                 "",
                 "Panels:",
                 "F3: Debug",
                 "F4: Inspector",
-                "F5: Asset Catalog",
-                "F6: Token Catalog",
+                "F5: Assets",
+                "F6: Tokens",
                 "F7: Outliner"
         };
 
@@ -97,17 +96,45 @@ public final class HelpOverlay {
                 color = TITLE_COLOR;
             }
 
-            context.graphics().drawString(
+            drawScaledString(
+                    context,
                     font,
                     line,
                     x,
                     y,
-                    color,
-                    false
+                    color
             );
 
             y += LINE_HEIGHT;
         }
+    }
+
+    private void drawScaledString(
+            VRenderContext context,
+            Font font,
+            String text,
+            int x,
+            int y,
+            int color
+    ) {
+        context.graphics().pose().pushPose();
+
+        context.graphics().pose().scale(
+                TEXT_SCALE,
+                TEXT_SCALE,
+                1.0F
+        );
+
+        context.graphics().drawString(
+                font,
+                text,
+                Math.round(x / TEXT_SCALE),
+                Math.round(y / TEXT_SCALE),
+                color,
+                false
+        );
+
+        context.graphics().pose().popPose();
     }
 
     private void renderPanelBackground(
