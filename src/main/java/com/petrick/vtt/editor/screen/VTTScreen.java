@@ -79,8 +79,6 @@ public final class VTTScreen extends Screen {
 
     private RenderState renderState;
 
-    private AssetRef draggingAsset;
-
     private String renamingObjectId;
 
     private String renameBuffer;
@@ -172,16 +170,6 @@ public final class VTTScreen extends Screen {
 
         if (panelVisibility.isSceneOutlinerVisible()) {
             sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
-        }
-
-        if (draggingAsset != null) {
-            assetCatalogOverlay.renderDragPreview(
-                    context,
-                    this.font,
-                    draggingAsset,
-                    mouseX,
-                    mouseY
-            );
         }
 
         TokenDefinition draggingTokenDefinition =
@@ -312,7 +300,6 @@ public final class VTTScreen extends Screen {
                 );
 
                 if (clickedAsset.isPresent()) {
-                    this.draggingAsset = clickedAsset.get();
                     return true;
                 }
             }
@@ -367,13 +354,7 @@ public final class VTTScreen extends Screen {
             }
         }
 
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingAsset != null) {
-            createTokenFromDraggedAsset(mouseX, mouseY, draggingAsset);
-            this.draggingAsset = null;
-            return true;
-        }
-
-        if (renderState != null && inputController.mouseReleased(
+                if (renderState != null && inputController.mouseReleased(
                 mouseX,
                 mouseY,
                 button,
@@ -394,7 +375,7 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (tokenCatalogController.getDraggingTokenDefinition() != null || draggingAsset != null) {
+        if (tokenCatalogController.getDraggingTokenDefinition() != null) {
             return true;
         }
 
@@ -431,14 +412,6 @@ public final class VTTScreen extends Screen {
         }
 
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    private void createTokenFromDraggedAsset(double mouseX, double mouseY, AssetRef assetRef) {
-        TokenDefinition definition = tokenDefinitionRegistry.getRequired(
-                DebugTokenDefinitions.TEST_TOKEN_DEFINITION_ID
-        );
-
-        createTokenAtScreenPosition(mouseX, mouseY, definition);
     }
 
     private void createTokenFromDraggedTokenDefinition(

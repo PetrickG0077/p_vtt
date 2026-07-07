@@ -106,44 +106,6 @@ public final class AssetCatalogOverlay {
         }
     }
 
-    public void renderDragPreview(
-            VRenderContext context,
-            Font font,
-            AssetRef asset,
-            double mouseX,
-            double mouseY
-    ) {
-        String text = "Create token: " + asset.id();
-
-        int x = (int) Math.round(mouseX) + 12;
-        int y = (int) Math.round(mouseY) + 12;
-
-        int width = font.width(text) + PADDING * 2;
-        int height = PADDING * 2 + LINE_HEIGHT;
-
-        context.graphics().fill(
-                x,
-                y,
-                x + width,
-                y + height,
-                DRAG_PREVIEW_BACKGROUND
-        );
-
-        context.graphics().hLine(x, x + width, y, DRAG_PREVIEW_BORDER);
-        context.graphics().hLine(x, x + width, y + height, DRAG_PREVIEW_BORDER);
-        context.graphics().vLine(x, y, y + height, DRAG_PREVIEW_BORDER);
-        context.graphics().vLine(x + width, y, y + height, DRAG_PREVIEW_BORDER);
-
-        drawLine(
-                context,
-                font,
-                text,
-                x + PADDING,
-                y + PADDING,
-                TEXT_COLOR
-        );
-    }
-
     public Optional<AssetRef> findAssetAt(
             AssetRegistry assetRegistry,
             int screenHeight,
