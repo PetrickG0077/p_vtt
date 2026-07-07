@@ -1,14 +1,15 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.catalog.AssetCatalogFilter;
 import com.petrick.vtt.editor.catalog.AssetCatalogItem;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
+import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
-import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -24,8 +25,12 @@ import java.util.Optional;
  * - assets registrados em memória;
  * - arquivos detectados na biblioteca real.
  *
- * Por enquanto arquivos da biblioteca usam placeholder.
- * Textura real de arquivos externos fica para um passo futuro.
+ * Possui:
+ * - seleção;
+ * - popup de detalhes;
+ * - scroll interno;
+ * - filtro por tipo;
+ * - miniatura real quando disponível.
  */
 public final class AssetCatalogOverlay {
 
@@ -63,6 +68,8 @@ public final class AssetCatalogOverlay {
 
     private static final int SCROLL_STEP = 1;
 
+    private static final int MAX_ITEM_NAME_LENGTH = 33;
+
     public void render(
             VRenderContext context,
             Font font,
@@ -70,13 +77,19 @@ public final class AssetCatalogOverlay {
             AssetLibraryScanResult libraryScanResult,
             AssetThumbnailRegistry thumbnailRegistry,
             AssetCatalogSelection selection,
+            AssetCatalogFilter filter,
             int scrollOffset
     ) {
-        List<AssetCatalogItem> items = getCatalogItems(assetRegistry, libraryScanResult);
+        List<AssetCatalogItem> items = getCatalogItems(
+                assetRegistry,
+                libraryScanResult,
+                filter
+        );
 
         Optional<AssetCatalogItem> hoveredItem = findItemAt(
                 assetRegistry,
                 libraryScanResult,
+                filter,
                 context.screenHeight(),
                 context.mouseX(),
                 context.mouseY(),
@@ -103,7 +116,7 @@ public final class AssetCatalogOverlay {
         drawLine(
                 context,
                 font,
-                "Items: " + items.size(),
+                "Items: " + items.size() + " | " + filter.displayName(),
                 textX,
                 textY,
                 TEXT_COLOR
@@ -234,7 +247,7 @@ public final class AssetCatalogOverlay {
         drawLine(
                 context,
                 font,
-                item.displayName(),
+                truncateText(item.displayName(), MAX_ITEM_NAME_LENGTH),
                 textX,
                 y + 3,
                 selected ? TITLE_COLOR : hovered ? HOVER_TEXT_COLOR : TEXT_COLOR
@@ -321,6 +334,24 @@ public final class AssetCatalogOverlay {
         context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
     }
 
+    private String truncateText(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+
+        if (maxLength <= 3) {
+            return text.length() <= maxLength
+                    ? text
+                    : text.substring(0, maxLength);
+        }
+
+        if (text.length() <= maxLength) {
+            return text;
+        }
+
+        return text.substring(0, maxLength - 3) + "...";
+    }
+
     private void renderLibraryFilePlaceholder(
             VRenderContext context,
             AssetLibraryEntry entry,
@@ -348,12 +379,17 @@ public final class AssetCatalogOverlay {
     public Optional<AssetCatalogItem> findItemAt(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
             int screenHeight,
             double mouseX,
             double mouseY,
             int scrollOffset
     ) {
-        List<AssetCatalogItem> items = getCatalogItems(assetRegistry, libraryScanResult);
+        List<AssetCatalogItem> items = getCatalogItems(
+                assetRegistry,
+                libraryScanResult,
+                filter
+        );
 
         if (items.isEmpty()) {
             return Optional.empty();
@@ -414,6 +450,7 @@ public final class AssetCatalogOverlay {
     public int scroll(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
             int currentScrollOffset,
             double scrollY
     ) {
@@ -424,6 +461,7 @@ public final class AssetCatalogOverlay {
         return clampScrollOffset(
                 assetRegistry,
                 libraryScanResult,
+                filter,
                 newOffset
         );
     }
@@ -431,9 +469,14 @@ public final class AssetCatalogOverlay {
     public int clampScrollOffset(
             AssetRegistry assetRegistry,
             AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
             int scrollOffset
     ) {
-        int itemCount = getCatalogItems(assetRegistry, libraryScanResult).size();
+        int itemCount = getCatalogItems(
+                assetRegistry,
+                libraryScanResult,
+                filter
+        ).size();
 
         int maxVisibleItems = calculateMaxVisibleItems();
 
@@ -551,17 +594,15 @@ public final class AssetCatalogOverlay {
         drawLine(context, font, "Ext: " + entry.extension(), x, y, TEXT_COLOR);
         y += LINE_HEIGHT;
 
-        String thumbnailStatus = thumbnailRegistry.contains(entry.id())
-                ? "Loaded"
-                : "Unavailable";
+        boolean thumbnailLoaded = thumbnailRegistry.contains(entry.id());
 
         drawLine(
                 context,
                 font,
-                "Thumbnail: " + thumbnailStatus,
+                "Thumbnail: " + (thumbnailLoaded ? "Loaded" : "Unavailable"),
                 x,
                 y,
-                thumbnailRegistry.contains(entry.id()) ? TEXT_COLOR : MUTED_TEXT_COLOR
+                thumbnailLoaded ? TEXT_COLOR : MUTED_TEXT_COLOR
         );
     }
 
@@ -627,7 +668,8 @@ public final class AssetCatalogOverlay {
 
     private List<AssetCatalogItem> getCatalogItems(
             AssetRegistry assetRegistry,
-            AssetLibraryScanResult libraryScanResult
+            AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter
     ) {
         List<AssetCatalogItem> items = new ArrayList<>();
 
@@ -645,7 +687,13 @@ public final class AssetCatalogOverlay {
             items.add(new AssetCatalogItem.LibraryFile(entry));
         }
 
-        return items;
+        if (filter == null) {
+            return items;
+        }
+
+        return items.stream()
+                .filter(filter::accepts)
+                .toList();
     }
 
     private int calculateMaxVisibleItems() {

@@ -70,6 +70,7 @@ public final class HelpOverlay {
                 "F3: Debug",
                 "F4: Inspector",
                 "F5: Assets",
+                "Ctrl+F5: Asset filter",
                 "F6: Tokens",
                 "F7: Outliner",
                 "F9: Hide panels",

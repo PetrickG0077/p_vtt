@@ -176,6 +176,7 @@ public final class VTTScreen extends Screen {
                     session.getAssetLibraryScanResult(),
                     session.getAssetThumbnailRegistry(),
                     assetCatalogSelection,
+                    assetCatalogController.getFilter(),
                     assetCatalogController.getScrollOffset()
             );
         }
@@ -638,7 +639,12 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F5) {
-            panelVisibility.toggleAssetCatalog();
+            if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
+                assetCatalogController.cycleFilter();
+            } else {
+                panelVisibility.toggleAssetCatalog();
+            }
+
             return true;
         }
 

@@ -15,6 +15,8 @@ public final class AssetCatalogController {
 
     private int scrollOffset;
 
+    private AssetCatalogFilter filter = AssetCatalogFilter.ALL;
+
     public AssetCatalogController(AssetCatalogSelection selection) {
         if (selection == null) {
             throw new IllegalArgumentException("AssetCatalogSelection cannot be null");
@@ -40,12 +42,14 @@ public final class AssetCatalogController {
         scrollOffset = overlay.clampScrollOffset(
                 registry,
                 libraryScanResult,
+                filter,
                 scrollOffset
         );
 
         Optional<AssetCatalogItem> clickedItem = overlay.findItemAt(
                 registry,
                 libraryScanResult,
+                filter,
                 screenHeight,
                 mouseX,
                 mouseY,
@@ -85,6 +89,7 @@ public final class AssetCatalogController {
         scrollOffset = overlay.scroll(
                 registry,
                 libraryScanResult,
+                filter,
                 scrollOffset,
                 scrollY
         );
@@ -94,6 +99,16 @@ public final class AssetCatalogController {
 
     public int getScrollOffset() {
         return scrollOffset;
+    }
+
+    public AssetCatalogFilter getFilter() {
+        return filter;
+    }
+
+    public void cycleFilter() {
+        filter = filter.next();
+        scrollOffset = 0;
+        selection.clear();
     }
 
     public AssetCatalogSelection getSelection() {
