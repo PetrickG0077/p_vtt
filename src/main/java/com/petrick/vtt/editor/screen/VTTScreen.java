@@ -434,28 +434,11 @@ public final class VTTScreen extends Screen {
     }
 
     private void createTokenFromDraggedAsset(double mouseX, double mouseY, AssetRef assetRef) {
-        if (renderState == null) {
-            return;
-        }
-
-        Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
-
-        String objectId = scene.createUniqueObjectId("token");
-
         TokenDefinition definition = tokenDefinitionRegistry.getRequired(
                 DebugTokenDefinitions.TEST_TOKEN_DEFINITION_ID
         );
 
-        CanvasObject token = TokenFactory.createCanvasObject(
-                definition,
-                objectId,
-                worldPosition
-        );
-
-        scene.addObject(token);
-
-        selectionManager.selectOnly(objectId);
-        inputController.selectSelectTool();
+        createTokenAtScreenPosition(mouseX, mouseY, definition);
     }
 
     private void createTokenFromDraggedTokenDefinition(
@@ -463,24 +446,7 @@ public final class VTTScreen extends Screen {
             double mouseY,
             TokenDefinition definition
     ) {
-        if (renderState == null) {
-            return;
-        }
-
-        Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
-
-        String objectId = scene.createUniqueObjectId("token");
-
-        CanvasObject token = TokenFactory.createCanvasObject(
-                definition,
-                objectId,
-                worldPosition
-        );
-
-        scene.addObject(token);
-
-        selectionManager.selectOnly(objectId);
-        inputController.selectSelectTool();
+        createTokenAtScreenPosition(mouseX, mouseY, definition);
     }
 
     private void createSelectedTokenAtCameraCenter() {
@@ -504,6 +470,33 @@ public final class VTTScreen extends Screen {
         Vec2d worldPosition = renderState != null
                 ? renderState.screenToWorld(screenCenter)
                 : Vec2d.ZERO;
+
+        createTokenAtWorldPosition(worldPosition, definition);
+    }
+
+    private void createTokenAtScreenPosition(
+            double screenX,
+            double screenY,
+            TokenDefinition definition
+    ) {
+        if (renderState == null) {
+            return;
+        }
+
+        Vec2d worldPosition = renderState.screenToWorld(
+                new Vec2d(screenX, screenY)
+        );
+
+        createTokenAtWorldPosition(worldPosition, definition);
+    }
+
+    private void createTokenAtWorldPosition(
+            Vec2d worldPosition,
+            TokenDefinition definition
+    ) {
+        if (definition == null) {
+            return;
+        }
 
         String objectId = scene.createUniqueObjectId("token");
 
