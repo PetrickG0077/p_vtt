@@ -432,6 +432,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (!tokenCreationDraft.hasSelectedImage()) {
+            tokenCreationDraft.setErrorMessage("Choose an image first");
             return;
         }
 

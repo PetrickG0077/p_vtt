@@ -123,6 +123,17 @@ public final class TokenCreationDialog {
                 MUTED_TEXT_COLOR
         );
 
+        if (draft.hasError()) {
+            drawCenteredString(
+                    context,
+                    font,
+                    draft.getErrorMessage(),
+                    x + DIALOG_WIDTH / 2,
+                    y + 204,
+                    0xFFFF5555
+            );
+        }
+
         renderButton(
                 context,
                 font,

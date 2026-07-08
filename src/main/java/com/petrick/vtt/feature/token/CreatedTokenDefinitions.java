@@ -43,9 +43,7 @@ public final class CreatedTokenDefinitions {
             throw new IllegalStateException("Cannot create token without selected image");
         }
 
-        String baseName = draft.hasName()
-                ? draft.getName()
-                : draft.getSelectedImageDisplayName();
+        String baseName = draft.getResolvedDisplayName();
 
         String safeName = sanitizeIdPart(baseName);
 

@@ -13,6 +13,8 @@ public final class TokenCreationDraft {
 
     private String notes = "";
 
+    private String errorMessage = "";
+
     private String selectedImageId;
 
     private String selectedImageDisplayName;
@@ -29,6 +31,7 @@ public final class TokenCreationDraft {
 
     public void setName(String name) {
         this.name = sanitize(name);
+        clearError();
     }
 
     public String getPlayer() {
@@ -37,6 +40,7 @@ public final class TokenCreationDraft {
 
     public void setPlayer(String player) {
         this.player = sanitize(player);
+        clearError();
     }
 
     public String getNotes() {
@@ -45,10 +49,23 @@ public final class TokenCreationDraft {
 
     public void setNotes(String notes) {
         this.notes = sanitize(notes);
+        clearError();
     }
 
     public boolean hasName() {
         return name != null && !name.isBlank();
+    }
+
+    public String getResolvedDisplayName() {
+        if (hasName()) {
+            return name.trim();
+        }
+
+        if (selectedImageDisplayName != null && !selectedImageDisplayName.isBlank()) {
+            return selectedImageDisplayName;
+        }
+
+        return "New Token";
     }
 
     public boolean hasSelectedImage() {
@@ -99,6 +116,8 @@ public final class TokenCreationDraft {
         this.selectedImageTexture = texture;
         this.selectedImageWidth = width;
         this.selectedImageHeight = height;
+
+        clearError();
     }
 
     public void clearSelectedImage() {
@@ -107,6 +126,22 @@ public final class TokenCreationDraft {
         this.selectedImageTexture = null;
         this.selectedImageWidth = 0;
         this.selectedImageHeight = 0;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public boolean hasError() {
+        return errorMessage != null && !errorMessage.isBlank();
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = sanitize(errorMessage);
+    }
+
+    public void clearError() {
+        this.errorMessage = "";
     }
 
     private String sanitize(String value) {
