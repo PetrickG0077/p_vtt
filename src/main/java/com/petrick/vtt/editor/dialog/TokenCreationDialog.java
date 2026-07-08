@@ -7,12 +7,6 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Janela visual para criação de tokens.
- *
- * Por enquanto é um esqueleto:
- * - permite digitar Name, Player e Notes;
- * - tem botão Choose Image;
- * - tem botão Create;
- * - tem botão Discard.
  */
 public final class TokenCreationDialog {
 
@@ -88,7 +82,7 @@ public final class TokenCreationDialog {
                 TITLE_COLOR
         );
 
-        renderImageButton(context, font, x + 26, y + 52);
+        renderImageButton(context, font, draft, x + 26, y + 52);
 
         renderInputField(
                 context,
@@ -282,6 +276,7 @@ public final class TokenCreationDialog {
     private void renderImageButton(
             VRenderContext context,
             Font font,
+            TokenCreationDraft draft,
             int x,
             int y
     ) {
@@ -308,6 +303,33 @@ public final class TokenCreationDialog {
                 IMAGE_BOX_SIZE,
                 hovered ? BUTTON_HOVER_BORDER : BUTTON_BORDER
         );
+
+        if (draft.hasSelectedImage()) {
+            context.graphics().blit(
+                    draft.getSelectedImageTexture(),
+                    x + 8,
+                    y + 8,
+                    IMAGE_BOX_SIZE - 16,
+                    IMAGE_BOX_SIZE - 26,
+                    0.0F,
+                    0.0F,
+                    draft.getSelectedImageWidth(),
+                    draft.getSelectedImageHeight(),
+                    draft.getSelectedImageWidth(),
+                    draft.getSelectedImageHeight()
+            );
+
+            drawCenteredString(
+                    context,
+                    font,
+                    truncateText(draft.getSelectedImageDisplayName(), 14),
+                    x + IMAGE_BOX_SIZE / 2,
+                    y + IMAGE_BOX_SIZE - 14,
+                    TEXT_COLOR
+            );
+
+            return;
+        }
 
         drawCenteredString(
                 context,

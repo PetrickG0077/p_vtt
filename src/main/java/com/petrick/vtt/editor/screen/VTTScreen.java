@@ -4,11 +4,14 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.editor.catalog.AssetCatalogController;
+import com.petrick.vtt.editor.catalog.AssetCatalogItem;
+import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
+import com.petrick.vtt.editor.catalog.AssetCatalogVisibleRow;
 import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
 import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
-import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
-import com.petrick.vtt.editor.catalog.AssetCatalogController;
+import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
@@ -17,17 +20,18 @@ import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
+import com.petrick.vtt.editor.placement.TokenPlacementService;
+import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
-import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
-import com.petrick.vtt.editor.dialog.TokenCreationDialog;
-import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -35,6 +39,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.Optional;
 
 /**
  * Tela principal do Virtual Tabletop.
@@ -87,6 +93,12 @@ public final class VTTScreen extends Screen {
 
     private TokenCreationDraft tokenCreationDraft;
 
+    private boolean tokenImagePickerActive;
+
+    private long lastTokenImagePickerClickTime;
+
+    private String lastTokenImagePickerClickedItemId;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -115,12 +127,15 @@ public final class VTTScreen extends Screen {
         this.debugOverlay = new DebugOverlay();
         this.helpOverlay = new HelpOverlay();
         this.selectionInspectorOverlay = new SelectionInspectorOverlay();
+
         this.assetCatalogOverlay = new AssetCatalogOverlay();
         this.assetCatalogSelection = new AssetCatalogSelection();
         this.assetCatalogController = new AssetCatalogController(assetCatalogSelection);
+
         this.tokenCatalogOverlay = new TokenCatalogOverlay();
         this.tokenCatalogSelection = new TokenCatalogSelection();
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
+
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.tokenCreationDialog = new TokenCreationDialog();
     }
@@ -176,19 +191,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (panelVisibility.isAssetCatalogVisible()) {
-            assetCatalogOverlay.render(
-                    context,
-                    this.font,
-                    assetRegistry,
-                    session.getAssetLibraryScanResult(),
-                    session.getAssetThumbnailRegistry(),
-                    assetCatalogSelection,
-                    assetCatalogController.getFilter(),
-                    assetCatalogController.getTreeState(),
-                    assetCatalogController.getSearchQuery(),
-                    assetCatalogController.isSearchActive(),
-                    assetCatalogController.getScrollOffset()
-            );
+            renderAssetCatalog(context);
         }
 
         if (panelVisibility.isTokenCatalogVisible()) {
@@ -224,11 +227,31 @@ public final class VTTScreen extends Screen {
                     this.font,
                     tokenCreationDraft
             );
+
+            if (tokenImagePickerActive) {
+                renderAssetCatalog(context);
+            }
         }
 
         if (renamingObjectId != null) {
             renderRenameDialog(context);
         }
+    }
+
+    private void renderAssetCatalog(VRenderContext context) {
+        assetCatalogOverlay.render(
+                context,
+                this.font,
+                assetRegistry,
+                session.getAssetLibraryScanResult(),
+                session.getAssetThumbnailRegistry(),
+                assetCatalogSelection,
+                assetCatalogController.getFilter(),
+                assetCatalogController.getTreeState(),
+                assetCatalogController.getSearchQuery(),
+                assetCatalogController.isSearchActive(),
+                assetCatalogController.getScrollOffset()
+        );
     }
 
     private void renderOpaqueBackground(VRenderContext context) {
@@ -274,6 +297,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (tokenCreationDraft != null) {
+            CursorManager.reset();
+            return;
+        }
+
         CursorManager.apply(inputController.getCursor(mouseX, mouseY, renderState));
     }
 
@@ -306,29 +334,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (tokenCreationDraft != null) {
-            TokenCreationDialog.Action action = tokenCreationDialog.mouseClicked(
-                    this.width,
-                    this.height,
-                    tokenCreationDraft,
-                    mouseX,
-                    mouseY,
-                    button
-            );
-
-            if (action == TokenCreationDialog.Action.DISCARD) {
-                tokenCreationDraft = null;
-                return true;
-            }
-
-            if (action == TokenCreationDialog.Action.CHOOSE_IMAGE) {
-                return true;
-            }
-
-            if (action == TokenCreationDialog.Action.CREATE) {
-                return true;
-            }
-
+        if (handleTokenCreationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
@@ -339,6 +345,9 @@ public final class VTTScreen extends Screen {
                 mouseY
         )) {
             tokenCreationDraft = new TokenCreationDraft();
+            tokenImagePickerActive = false;
+            lastTokenImagePickerClickedItemId = null;
+            lastTokenImagePickerClickTime = 0L;
             return true;
         }
 
@@ -415,8 +424,105 @@ public final class VTTScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private boolean handleTokenCreationMouseClicked(
+            double mouseX,
+            double mouseY,
+            int button
+    ) {
+        if (tokenCreationDraft == null) {
+            return false;
+        }
+
+        if (tokenImagePickerActive) {
+            Optional<AssetCatalogVisibleRow> clickedRow = assetCatalogOverlay.findRowAt(
+                    assetRegistry,
+                    session.getAssetLibraryScanResult(),
+                    assetCatalogController.getFilter(),
+                    assetCatalogController.getTreeState(),
+                    assetCatalogController.getSearchQuery(),
+                    this.height,
+                    mouseX,
+                    mouseY,
+                    assetCatalogController.getScrollOffset()
+            );
+
+            if (clickedRow.isPresent() && clickedRow.get().isItem()) {
+                AssetCatalogItem clickedItem = clickedRow.get()
+                        .item()
+                        .catalogItem();
+
+                assetCatalogController.mouseClicked(
+                        assetCatalogOverlay,
+                        assetRegistry,
+                        session.getAssetLibraryScanResult(),
+                        true,
+                        this.height,
+                        mouseX,
+                        mouseY
+                );
+
+                if (isSelectableTokenImage(clickedItem)
+                        && isTokenImagePickerDoubleClick(clickedItem)) {
+                    applyTokenImageSelection(clickedItem);
+                    tokenImagePickerActive = false;
+                    lastTokenImagePickerClickedItemId = null;
+                    lastTokenImagePickerClickTime = 0L;
+                } else {
+                    rememberTokenImagePickerClick(clickedItem);
+                }
+
+                return true;
+            }
+
+            if (assetCatalogController.mouseClicked(
+                    assetCatalogOverlay,
+                    assetRegistry,
+                    session.getAssetLibraryScanResult(),
+                    true,
+                    this.height,
+                    mouseX,
+                    mouseY
+            )) {
+                return true;
+            }
+        }
+
+        TokenCreationDialog.Action action = tokenCreationDialog.mouseClicked(
+                this.width,
+                this.height,
+                tokenCreationDraft,
+                mouseX,
+                mouseY,
+                button
+        );
+
+        if (action == TokenCreationDialog.Action.DISCARD) {
+            tokenCreationDraft = null;
+            tokenImagePickerActive = false;
+            lastTokenImagePickerClickedItemId = null;
+            lastTokenImagePickerClickTime = 0L;
+            return true;
+        }
+
+        if (action == TokenCreationDialog.Action.CHOOSE_IMAGE) {
+            tokenImagePickerActive = true;
+            return true;
+        }
+
+        if (action == TokenCreationDialog.Action.CREATE) {
+            // Próximo passo: criar TokenDefinition custom.
+            return true;
+        }
+
+        return true;
+    }
+
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (tokenCreationDraft != null) {
+            return true;
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             TokenDefinition releasedTokenDefinition =
                     tokenCatalogController.mouseReleased(mouseX, mouseY);
@@ -432,7 +538,7 @@ public final class VTTScreen extends Screen {
             }
         }
 
-                if (renderState != null && inputController.mouseReleased(
+        if (renderState != null && inputController.mouseReleased(
                 mouseX,
                 mouseY,
                 button,
@@ -453,6 +559,10 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (tokenCreationDraft != null) {
+            return true;
+        }
+
         if (tokenCatalogController.getDraggingTokenDefinition() != null) {
             return true;
         }
@@ -479,6 +589,23 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (tokenCreationDraft != null && tokenImagePickerActive) {
+            if (assetCatalogController.mouseScrolled(
+                    assetCatalogOverlay,
+                    assetRegistry,
+                    session.getAssetLibraryScanResult(),
+                    true,
+                    this.height,
+                    mouseX,
+                    mouseY,
+                    scrollY
+            )) {
+                return true;
+            }
+
+            return true;
+        }
+
         if (assetCatalogController.mouseScrolled(
                 assetCatalogOverlay,
                 assetRegistry,
@@ -503,6 +630,229 @@ public final class VTTScreen extends Screen {
         }
 
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (isRenaming()) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmRename();
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                cancelRename();
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!renameBuffer.isEmpty()) {
+                    renameBuffer = renameBuffer.substring(0, renameBuffer.length() - 1);
+                }
+
+                return true;
+            }
+
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F1) {
+            panelVisibility.toggleHelp();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F3) {
+            panelVisibility.toggleDebug();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F4) {
+            panelVisibility.toggleSelectionInspector();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F5) {
+            if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                assetCatalogController.cycleFilter();
+            } else {
+                panelVisibility.toggleAssetCatalog();
+            }
+
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F6) {
+            panelVisibility.toggleTokenCatalog();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F7) {
+            panelVisibility.toggleSceneOutliner();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F9) {
+            panelVisibility.hideAllEditorPanels();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F10) {
+            panelVisibility.showAllEditorPanels();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F12) {
+            session.refreshAssetLibrary();
+            return true;
+        }
+
+        if (tokenCreationDraft != null) {
+            if (tokenImagePickerActive) {
+                if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) {
+                    return true;
+                }
+
+                if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                    tokenImagePickerActive = false;
+                    return true;
+                }
+            }
+
+            if (tokenCreationDialog.keyPressed(tokenCreationDraft, keyCode)) {
+                return true;
+            }
+        }
+
+        if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) {
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            createSelectedTokenAtCameraCenter();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_H) {
+            inputController.selectHandTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_S) {
+            inputController.selectSelectTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
+            inputController.scaleSelectedObjectsUp();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
+            inputController.scaleSelectedObjectsDown();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_Q) {
+            inputController.rotateSelectedObjectsLeft();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_E) {
+            inputController.rotateSelectedObjectsRight();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_R) {
+            inputController.resetSelectedObjectsScaleAndRotation();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_N) {
+            beginRenameSelectedObject();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            inputController.deleteSelectedObjects();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_D
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            inputController.duplicateSelectedObjects();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_PAGE_UP) {
+            inputController.bringSelectedObjectsForward();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
+            inputController.sendSelectedObjectsBackward();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_HOME) {
+            inputController.bringSelectedObjectsToFront();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_END) {
+            inputController.sendSelectedObjectsToBack();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_V) {
+            inputController.toggleSelectedObjectsVisibility();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_1 || keyCode == GLFW.GLFW_KEY_KP_1) {
+            inputController.setSelectedObjectsActiveState("1");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_2 || keyCode == GLFW.GLFW_KEY_KP_2) {
+            inputController.setSelectedObjectsActiveState("2");
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
+            inputController.setSelectedObjectsActiveState("3");
+            return true;
+        }
+
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (isRenaming()) {
+            if (isAllowedRenameCharacter(codePoint) && renameBuffer.length() < 48) {
+                renameBuffer += codePoint;
+            }
+
+            return true;
+        }
+
+        if (tokenCreationDraft != null && tokenImagePickerActive) {
+            if (assetCatalogController.charTyped(codePoint)) {
+                return true;
+            }
+        }
+
+        if (tokenCreationDraft != null) {
+            if (tokenCreationDialog.charTyped(tokenCreationDraft, codePoint)) {
+                return true;
+            }
+        }
+
+        if (assetCatalogController.charTyped(codePoint)) {
+            return true;
+        }
+
+        return super.charTyped(codePoint, modifiers);
     }
 
     private void createTokenFromDraggedTokenDefinition(
@@ -657,210 +1007,67 @@ public final class VTTScreen extends Screen {
         );
     }
 
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (isRenaming()) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                confirmRename();
-                return true;
-            }
-
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                cancelRename();
-                return true;
-            }
-
-            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-                if (!renameBuffer.isEmpty()) {
-                    renameBuffer = renameBuffer.substring(0, renameBuffer.length() - 1);
-                }
-
-                return true;
-            }
-
-            return true;
+    private boolean isSelectableTokenImage(AssetCatalogItem item) {
+        if (item instanceof AssetCatalogItem.RegisteredAsset registeredAsset) {
+            return registeredAsset.assetRef() instanceof BuiltInTextureAssetRef;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F1) {
-            panelVisibility.toggleHelp();
-            return true;
+        if (item instanceof AssetCatalogItem.LibraryFile libraryFile) {
+            return session.getAssetThumbnailRegistry()
+                    .findById(libraryFile.entry().id())
+                    .isPresent();
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F3) {
-            panelVisibility.toggleDebug();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F4) {
-            panelVisibility.toggleSelectionInspector();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F5) {
-            if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
-                assetCatalogController.cycleFilter();
-            } else {
-                panelVisibility.toggleAssetCatalog();
-            }
-
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F6) {
-            panelVisibility.toggleTokenCatalog();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F7) {
-            panelVisibility.toggleSceneOutliner();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F9) {
-            panelVisibility.hideAllEditorPanels();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F10) {
-            panelVisibility.showAllEditorPanels();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F12) {
-            session.refreshAssetLibrary();
-            return true;
-        }
-
-        if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) {
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-            createSelectedTokenAtCameraCenter();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_H) {
-            inputController.selectHandTool();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_S) {
-            inputController.selectSelectTool();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
-            inputController.scaleSelectedObjectsUp();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
-            inputController.scaleSelectedObjectsDown();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_Q) {
-            inputController.rotateSelectedObjectsLeft();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_E) {
-            inputController.rotateSelectedObjectsRight();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_R) {
-            inputController.resetSelectedObjectsScaleAndRotation();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_N) {
-            beginRenameSelectedObject();
-            return true;
-        }
-
-        if (tokenCreationDraft != null) {
-            if (tokenCreationDialog.keyPressed(tokenCreationDraft, keyCode)) {
-                return true;
-            }
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            inputController.deleteSelectedObjects();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_D && (modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
-            inputController.duplicateSelectedObjects();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_PAGE_UP) {
-            inputController.bringSelectedObjectsForward();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
-            inputController.sendSelectedObjectsBackward();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_HOME) {
-            inputController.bringSelectedObjectsToFront();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_END) {
-            inputController.sendSelectedObjectsToBack();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_V) {
-            inputController.toggleSelectedObjectsVisibility();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_1 || keyCode == GLFW.GLFW_KEY_KP_1) {
-            inputController.setSelectedObjectsActiveState("1");
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_2 || keyCode == GLFW.GLFW_KEY_KP_2) {
-            inputController.setSelectedObjectsActiveState("2");
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
-            inputController.setSelectedObjectsActiveState("3");
-            return true;
-        }
-
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return false;
     }
 
+    private boolean isTokenImagePickerDoubleClick(AssetCatalogItem item) {
+        long now = System.currentTimeMillis();
 
-    @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        if (isRenaming()) {
-            if (isAllowedRenameCharacter(codePoint) && renameBuffer.length() < 48) {
-                renameBuffer += codePoint;
+        return item.id().equals(lastTokenImagePickerClickedItemId)
+                && now - lastTokenImagePickerClickTime <= 350L;
+    }
+
+    private void rememberTokenImagePickerClick(AssetCatalogItem item) {
+        lastTokenImagePickerClickedItemId = item.id();
+        lastTokenImagePickerClickTime = System.currentTimeMillis();
+    }
+
+    private void applyTokenImageSelection(AssetCatalogItem item) {
+        if (tokenCreationDraft == null) {
+            return;
+        }
+
+        if (item instanceof AssetCatalogItem.RegisteredAsset registeredAsset
+                && registeredAsset.assetRef() instanceof BuiltInTextureAssetRef builtInTexture) {
+            tokenCreationDraft.selectImage(
+                    item.id(),
+                    item.displayName(),
+                    builtInTexture.texture(),
+                    builtInTexture.textureWidth(),
+                    builtInTexture.textureHeight()
+            );
+
+            return;
+        }
+
+        if (item instanceof AssetCatalogItem.LibraryFile libraryFile) {
+            AssetThumbnail thumbnail = session.getAssetThumbnailRegistry()
+                    .findById(libraryFile.entry().id())
+                    .orElse(null);
+
+            if (thumbnail == null) {
+                return;
             }
 
-            return true;
+            tokenCreationDraft.selectImage(
+                    item.id(),
+                    item.displayName(),
+                    thumbnail.texture(),
+                    thumbnail.width(),
+                    thumbnail.height()
+            );
         }
-
-        if (tokenCreationDraft != null) {
-            if (tokenCreationDialog.charTyped(tokenCreationDraft, codePoint)) {
-                return true;
-            }
-        }
-
-        if (assetCatalogController.charTyped(codePoint)) {
-            return true;
-        }
-
-        return super.charTyped(codePoint, modifiers);
     }
 
     @Override
