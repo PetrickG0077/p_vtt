@@ -247,11 +247,13 @@ public final class TokenCatalogOverlay {
         context.graphics().vLine(x, y, y + size, borderColor);
         context.graphics().vLine(x + size, y, y + size, borderColor);
 
+        String text = "+";
+
         context.graphics().drawString(
                 font,
-                "+",
-                x + 6,
-                y + 5,
+                text,
+                x + size / 2 - font.width(text) / 2 + 1,
+                y + size / 2 - 4 + 1,
                 0xFFFFFFFF,
                 false
         );

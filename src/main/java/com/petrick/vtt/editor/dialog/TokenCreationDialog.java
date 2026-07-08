@@ -30,9 +30,9 @@ public final class TokenCreationDialog {
         NOTES
     }
 
-    private static final int DIALOG_WIDTH = 620;
+    private static final int DIALOG_WIDTH = 430;
 
-    private static final int DIALOG_HEIGHT = 420;
+    private static final int DIALOG_HEIGHT = 285;
 
     private static final int PANEL_BACKGROUND = 0xEE000000;
 
@@ -56,15 +56,15 @@ public final class TokenCreationDialog {
 
     private static final int BUTTON_HOVER_BORDER = 0xFFFFAA33;
 
-    private static final int IMAGE_BOX_SIZE = 145;
+    private static final int IMAGE_BOX_SIZE = 92;
 
-    private static final int INPUT_WIDTH = 292;
+    private static final int INPUT_WIDTH = 210;
 
-    private static final int INPUT_HEIGHT = 32;
+    private static final int INPUT_HEIGHT = 22;
 
-    private static final int BUTTON_WIDTH = 188;
+    private static final int BUTTON_WIDTH = 118;
 
-    private static final int BUTTON_HEIGHT = 42;
+    private static final int BUTTON_HEIGHT = 30;
 
     private Field activeField = Field.NONE;
 
@@ -84,19 +84,19 @@ public final class TokenCreationDialog {
                 font,
                 "CREATE TOKEN",
                 x + DIALOG_WIDTH / 2,
-                y + 18,
+                y + 14,
                 TITLE_COLOR
         );
 
-        renderImageButton(context, font, draft, x + 36, y + 84);
+        renderImageButton(context, font, x + 26, y + 52);
 
         renderInputField(
                 context,
                 font,
                 "Name:",
                 draft.getName(),
-                x + 206,
-                y + 100,
+                x + 145,
+                y + 56,
                 Field.NAME
         );
 
@@ -105,8 +105,8 @@ public final class TokenCreationDialog {
                 font,
                 "Player:",
                 draft.getPlayer(),
-                x + 206,
-                y + 146,
+                x + 145,
+                y + 88,
                 Field.PLAYER
         );
 
@@ -115,27 +115,18 @@ public final class TokenCreationDialog {
                 font,
                 "Notes:",
                 draft.getNotes(),
-                x + 206,
-                y + 192,
+                x + 145,
+                y + 120,
                 Field.NOTES
         );
 
         drawCenteredString(
                 context,
                 font,
-                "INFORMAÇÕES",
+                "INFORMAÇÕES FUTURAS",
                 x + DIALOG_WIDTH / 2,
-                y + 276,
-                0xFFFFFFFF
-        );
-
-        drawCenteredString(
-                context,
-                font,
-                "FUTURAS",
-                x + DIALOG_WIDTH / 2,
-                y + 322,
-                0xFFFFFFFF
+                y + 180,
+                MUTED_TEXT_COLOR
         );
 
         renderButton(
@@ -155,105 +146,6 @@ public final class TokenCreationDialog {
                 getDiscardButtonY(context),
                 isMouseOverDiscardButton(context)
         );
-    }
-
-    public Action mouseClicked(
-            VRenderContext context,
-            TokenCreationDraft draft,
-            double mouseX,
-            double mouseY,
-            int button
-    ) {
-        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            return Action.NONE;
-        }
-
-        if (!containsPoint(context, mouseX, mouseY)) {
-            return Action.NONE;
-        }
-
-        if (isMouseOverImageButton(context, mouseX, mouseY)) {
-            activeField = Field.NONE;
-            return Action.CHOOSE_IMAGE;
-        }
-
-        if (isMouseOverCreateButton(context, mouseX, mouseY)) {
-            activeField = Field.NONE;
-            return Action.CREATE;
-        }
-
-        if (isMouseOverDiscardButton(context, mouseX, mouseY)) {
-            activeField = Field.NONE;
-            return Action.DISCARD;
-        }
-
-        Field clickedField = findFieldAt(context, mouseX, mouseY);
-
-        activeField = clickedField;
-
-        return Action.NONE;
-    }
-
-    public boolean keyPressed(
-            TokenCreationDraft draft,
-            int keyCode
-    ) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            activeField = Field.NONE;
-            return true;
-        }
-
-        if (activeField == Field.NONE) {
-            return false;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            backspaceActiveField(draft);
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-            activeField = Field.NONE;
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_TAB) {
-            focusNextField();
-            return true;
-        }
-
-        return true;
-    }
-
-    public boolean charTyped(
-            TokenCreationDraft draft,
-            char codePoint
-    ) {
-        if (activeField == Field.NONE) {
-            return false;
-        }
-
-        if (!isAllowedTextCharacter(codePoint)) {
-            return true;
-        }
-
-        appendToActiveField(draft, codePoint);
-
-        return true;
-    }
-
-    public boolean containsPoint(
-            VRenderContext context,
-            double mouseX,
-            double mouseY
-    ) {
-        int x = getDialogX(context);
-        int y = getDialogY(context);
-
-        return mouseX >= x
-                && mouseX <= x + DIALOG_WIDTH
-                && mouseY >= y
-                && mouseY <= y + DIALOG_HEIGHT;
     }
 
     public Action mouseClicked(
@@ -306,79 +198,52 @@ public final class TokenCreationDialog {
         return Action.NONE;
     }
 
-    private boolean containsPoint(
-            int screenWidth,
-            int screenHeight,
-            double mouseX,
-            double mouseY
+    public boolean keyPressed(
+            TokenCreationDraft draft,
+            int keyCode
     ) {
-        int x = getDialogX(screenWidth);
-        int y = getDialogY(screenHeight);
-
-        return mouseX >= x
-                && mouseX <= x + DIALOG_WIDTH
-                && mouseY >= y
-                && mouseY <= y + DIALOG_HEIGHT;
-    }
-
-    private boolean isMouseOverImageButton(
-            int screenWidth,
-            int screenHeight,
-            double mouseX,
-            double mouseY
-    ) {
-        int x = getDialogX(screenWidth) + 36;
-        int y = getDialogY(screenHeight) + 84;
-
-        return isPointInside(mouseX, mouseY, x, y, IMAGE_BOX_SIZE, IMAGE_BOX_SIZE);
-    }
-
-    private Field findFieldAt(
-            int screenWidth,
-            int screenHeight,
-            double mouseX,
-            double mouseY
-    ) {
-        int x = getDialogX(screenWidth);
-        int y = getDialogY(screenHeight);
-
-        if (isPointInside(mouseX, mouseY, x + 302, y + 100, INPUT_WIDTH, INPUT_HEIGHT)) {
-            return Field.NAME;
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            activeField = Field.NONE;
+            return true;
         }
 
-        if (isPointInside(mouseX, mouseY, x + 302, y + 146, INPUT_WIDTH, INPUT_HEIGHT)) {
-            return Field.PLAYER;
+        if (activeField == Field.NONE) {
+            return false;
         }
 
-        if (isPointInside(mouseX, mouseY, x + 302, y + 192, INPUT_WIDTH, INPUT_HEIGHT)) {
-            return Field.NOTES;
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            backspaceActiveField(draft);
+            return true;
         }
 
-        return Field.NONE;
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            activeField = Field.NONE;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_TAB) {
+            focusNextField();
+            return true;
+        }
+
+        return true;
     }
 
-    private int getDialogX(int screenWidth) {
-        return screenWidth / 2 - DIALOG_WIDTH / 2;
-    }
+    public boolean charTyped(
+            TokenCreationDraft draft,
+            char codePoint
+    ) {
+        if (activeField == Field.NONE) {
+            return false;
+        }
 
-    private int getDialogY(int screenHeight) {
-        return screenHeight / 2 - DIALOG_HEIGHT / 2;
-    }
+        if (!isAllowedTextCharacter(codePoint)) {
+            return true;
+        }
 
-    private int getCreateButtonX(int screenWidth) {
-        return getDialogX(screenWidth) + 32;
-    }
+        appendToActiveField(draft, codePoint);
 
-    private int getCreateButtonY(int screenHeight) {
-        return getDialogY(screenHeight) + DIALOG_HEIGHT - 58;
-    }
-
-    private int getDiscardButtonX(int screenWidth) {
-        return getDialogX(screenWidth) + DIALOG_WIDTH - BUTTON_WIDTH - 32;
-    }
-
-    private int getDiscardButtonY(int screenHeight) {
-        return getDialogY(screenHeight) + DIALOG_HEIGHT - 58;
+        return true;
     }
 
     private void renderDimBackground(VRenderContext context) {
@@ -417,12 +282,12 @@ public final class TokenCreationDialog {
     private void renderImageButton(
             VRenderContext context,
             Font font,
-            TokenCreationDraft draft,
             int x,
             int y
     ) {
         boolean hovered = isMouseOverImageButton(
-                context,
+                context.screenWidth(),
+                context.screenHeight(),
                 context.mouseX(),
                 context.mouseY()
         );
@@ -449,16 +314,25 @@ public final class TokenCreationDialog {
                 font,
                 "[ image ]",
                 x + IMAGE_BOX_SIZE / 2,
-                y + 46,
+                y + 24,
                 MUTED_TEXT_COLOR
         );
 
         drawCenteredString(
                 context,
                 font,
-                "Choose Image",
+                "Choose",
                 x + IMAGE_BOX_SIZE / 2,
-                y + 96,
+                y + 56,
+                TEXT_COLOR
+        );
+
+        drawCenteredString(
+                context,
+                font,
+                "Image",
+                x + IMAGE_BOX_SIZE / 2,
+                y + 68,
                 TEXT_COLOR
         );
     }
@@ -476,12 +350,12 @@ public final class TokenCreationDialog {
                 font,
                 label,
                 x,
-                y + 8,
+                y + 7,
                 TEXT_COLOR,
                 false
         );
 
-        int inputX = x + 96;
+        int inputX = x + 56;
 
         context.graphics().fill(
                 inputX,
@@ -508,9 +382,9 @@ public final class TokenCreationDialog {
 
         context.graphics().drawString(
                 font,
-                truncateText(visibleValue, 34),
-                inputX + 8,
-                y + 10,
+                truncateText(visibleValue, 25),
+                inputX + 6,
+                y + 7,
                 TEXT_COLOR,
                 false
         );
@@ -546,28 +420,29 @@ public final class TokenCreationDialog {
                 font,
                 text,
                 x + BUTTON_WIDTH / 2,
-                y + 15,
+                y + 10,
                 TEXT_COLOR
         );
     }
 
     private Field findFieldAt(
-            VRenderContext context,
+            int screenWidth,
+            int screenHeight,
             double mouseX,
             double mouseY
     ) {
-        int x = getDialogX(context);
-        int y = getDialogY(context);
+        int x = getDialogX(screenWidth);
+        int y = getDialogY(screenHeight);
 
-        if (isPointInside(mouseX, mouseY, x + 302, y + 100, INPUT_WIDTH, INPUT_HEIGHT)) {
+        if (isPointInside(mouseX, mouseY, x + 201, y + 56, INPUT_WIDTH, INPUT_HEIGHT)) {
             return Field.NAME;
         }
 
-        if (isPointInside(mouseX, mouseY, x + 302, y + 146, INPUT_WIDTH, INPUT_HEIGHT)) {
+        if (isPointInside(mouseX, mouseY, x + 201, y + 88, INPUT_WIDTH, INPUT_HEIGHT)) {
             return Field.PLAYER;
         }
 
-        if (isPointInside(mouseX, mouseY, x + 302, y + 192, INPUT_WIDTH, INPUT_HEIGHT)) {
+        if (isPointInside(mouseX, mouseY, x + 201, y + 120, INPUT_WIDTH, INPUT_HEIGHT)) {
             return Field.NOTES;
         }
 
@@ -630,13 +505,29 @@ public final class TokenCreationDialog {
         return character >= 32 && character != 127;
     }
 
-    private boolean isMouseOverImageButton(
-            VRenderContext context,
+    private boolean containsPoint(
+            int screenWidth,
+            int screenHeight,
             double mouseX,
             double mouseY
     ) {
-        int x = getDialogX(context) + 36;
-        int y = getDialogY(context) + 84;
+        int x = getDialogX(screenWidth);
+        int y = getDialogY(screenHeight);
+
+        return mouseX >= x
+                && mouseX <= x + DIALOG_WIDTH
+                && mouseY >= y
+                && mouseY <= y + DIALOG_HEIGHT;
+    }
+
+    private boolean isMouseOverImageButton(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int x = getDialogX(screenWidth) + 26;
+        int y = getDialogY(screenHeight) + 52;
 
         return isPointInside(mouseX, mouseY, x, y, IMAGE_BOX_SIZE, IMAGE_BOX_SIZE);
     }
@@ -645,21 +536,6 @@ public final class TokenCreationDialog {
         return isPointInside(
                 context.mouseX(),
                 context.mouseY(),
-                getCreateButtonX(context),
-                getCreateButtonY(context),
-                BUTTON_WIDTH,
-                BUTTON_HEIGHT
-        );
-    }
-
-    private boolean isMouseOverCreateButton(
-            VRenderContext context,
-            double mouseX,
-            double mouseY
-    ) {
-        return isPointInside(
-                mouseX,
-                mouseY,
                 getCreateButtonX(context),
                 getCreateButtonY(context),
                 BUTTON_WIDTH,
@@ -678,35 +554,36 @@ public final class TokenCreationDialog {
         );
     }
 
-    private boolean isMouseOverDiscardButton(
-            VRenderContext context,
-            double mouseX,
-            double mouseY
-    ) {
-        return isPointInside(
-                mouseX,
-                mouseY,
-                getDiscardButtonX(context),
-                getDiscardButtonY(context),
-                BUTTON_WIDTH,
-                BUTTON_HEIGHT
-        );
-    }
-
     private int getCreateButtonX(VRenderContext context) {
-        return getDialogX(context) + 32;
+        return getCreateButtonX(context.screenWidth());
     }
 
     private int getCreateButtonY(VRenderContext context) {
-        return getDialogY(context) + DIALOG_HEIGHT - 58;
+        return getCreateButtonY(context.screenHeight());
     }
 
     private int getDiscardButtonX(VRenderContext context) {
-        return getDialogX(context) + DIALOG_WIDTH - BUTTON_WIDTH - 32;
+        return getDiscardButtonX(context.screenWidth());
     }
 
     private int getDiscardButtonY(VRenderContext context) {
-        return getDialogY(context) + DIALOG_HEIGHT - 58;
+        return getDiscardButtonY(context.screenHeight());
+    }
+
+    private int getCreateButtonX(int screenWidth) {
+        return getDialogX(screenWidth) + 28;
+    }
+
+    private int getCreateButtonY(int screenHeight) {
+        return getDialogY(screenHeight) + DIALOG_HEIGHT - 46;
+    }
+
+    private int getDiscardButtonX(int screenWidth) {
+        return getDialogX(screenWidth) + DIALOG_WIDTH - BUTTON_WIDTH - 28;
+    }
+
+    private int getDiscardButtonY(int screenHeight) {
+        return getDialogY(screenHeight) + DIALOG_HEIGHT - 46;
     }
 
     private boolean isPointInside(
@@ -724,11 +601,19 @@ public final class TokenCreationDialog {
     }
 
     private int getDialogX(VRenderContext context) {
-        return context.screenWidth() / 2 - DIALOG_WIDTH / 2;
+        return getDialogX(context.screenWidth());
     }
 
     private int getDialogY(VRenderContext context) {
-        return context.screenHeight() / 2 - DIALOG_HEIGHT / 2;
+        return getDialogY(context.screenHeight());
+    }
+
+    private int getDialogX(int screenWidth) {
+        return screenWidth / 2 - DIALOG_WIDTH / 2;
+    }
+
+    private int getDialogY(int screenHeight) {
+        return screenHeight / 2 - DIALOG_HEIGHT / 2;
     }
 
     private void drawBorder(
