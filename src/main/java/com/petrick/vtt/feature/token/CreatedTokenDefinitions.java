@@ -15,8 +15,8 @@ import java.util.Map;
  */
 public final class CreatedTokenDefinitions {
 
-    private static final String CREATED_TOKEN_ID_PREFIX = "created/token/";
-    private static final String CREATED_ASSET_ID_PREFIX = "created/asset/";
+    private static final String USER_TOKEN_ID_PREFIX = "user/tokens/";
+    private static final String USER_TOKEN_IMAGE_ID_PREFIX = "user/token_images/";
 
     private static final double MAX_DEFAULT_TOKEN_SIZE = 96.0;
 
@@ -43,18 +43,17 @@ public final class CreatedTokenDefinitions {
             throw new IllegalStateException("Cannot create token without selected image");
         }
 
-        String baseName = draft.getResolvedDisplayName();
-
-        String safeName = sanitizeIdPart(baseName);
+        String displayName = draft.getResolvedDisplayName();
+        String safeName = sanitizeIdPart(displayName);
 
         String tokenDefinitionId = createUniqueTokenDefinitionId(
                 tokenDefinitionRegistry,
-                CREATED_TOKEN_ID_PREFIX + safeName
+                USER_TOKEN_ID_PREFIX + safeName
         );
 
         String assetId = createUniqueAssetId(
                 assetRegistry,
-                CREATED_ASSET_ID_PREFIX + safeName
+                USER_TOKEN_IMAGE_ID_PREFIX + safeName
         );
 
         LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
@@ -80,7 +79,7 @@ public final class CreatedTokenDefinitions {
 
         TokenDefinition definition = new TokenDefinition(
                 tokenDefinitionId,
-                baseName,
+                displayName,
                 calculateDefaultSize(
                         draft.getSelectedImageWidth(),
                         draft.getSelectedImageHeight()
@@ -126,7 +125,7 @@ public final class CreatedTokenDefinitions {
 
     private static String sanitizeIdPart(String value) {
         if (value == null || value.isBlank()) {
-            return "token";
+            return "new_token";
         }
 
         String sanitized = value
@@ -134,10 +133,11 @@ public final class CreatedTokenDefinitions {
                 .trim()
                 .replace('\\', '/')
                 .replaceAll("[^a-z0-9._/-]", "_")
-                .replaceAll("_+", "_");
+                .replaceAll("_+", "_")
+                .replaceAll("/+", "/");
 
         if (sanitized.isBlank()) {
-            return "token";
+            return "new_token";
         }
 
         return sanitized;
