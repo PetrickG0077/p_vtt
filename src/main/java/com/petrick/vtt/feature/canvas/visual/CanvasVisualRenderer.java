@@ -1,6 +1,7 @@
 package com.petrick.vtt.feature.canvas.visual;
 
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
+import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -13,8 +14,8 @@ import com.petrick.vtt.platform.render.VRenderContext;
  *
  * Esta classe cuida apenas de como o conteúdo visual é desenhado:
  * - cor sólida
- * - textura
- * - futuramente AssetRef/cache
+ * - textura built-in
+ * - textura carregada da biblioteca do usuário
  */
 public final class CanvasVisualRenderer {
 
@@ -35,7 +36,10 @@ public final class CanvasVisualRenderer {
 
         if (visual instanceof TextureVisual textureVisual) {
             renderTextureVisual(context, textureVisual, left, top, right, bottom);
+            return;
         }
+
+        renderMissingTexture(context, left, top, right, bottom);
     }
 
     private void renderColorVisual(
@@ -68,12 +72,43 @@ public final class CanvasVisualRenderer {
             return;
         }
 
+        if (visual.assetRef() instanceof LibraryTextureAssetRef libraryTexture) {
+            renderLibraryTexture(context, libraryTexture, left, top, right, bottom);
+            return;
+        }
+
         renderMissingTexture(context, left, top, right, bottom);
     }
 
     private void renderBuiltInTexture(
             VRenderContext context,
             BuiltInTextureAssetRef asset,
+            int left,
+            int top,
+            int right,
+            int bottom
+    ) {
+        int drawWidth = right - left;
+        int drawHeight = bottom - top;
+
+        context.graphics().blit(
+                asset.texture(),
+                left,
+                top,
+                drawWidth,
+                drawHeight,
+                0.0F,
+                0.0F,
+                asset.textureWidth(),
+                asset.textureHeight(),
+                asset.textureWidth(),
+                asset.textureHeight()
+        );
+    }
+
+    private void renderLibraryTexture(
+            VRenderContext context,
+            LibraryTextureAssetRef asset,
             int left,
             int top,
             int right,

@@ -22,6 +22,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
@@ -424,6 +425,29 @@ public final class VTTScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private void createTokenDefinitionFromDraft() {
+        if (tokenCreationDraft == null) {
+            return;
+        }
+
+        if (!tokenCreationDraft.hasSelectedImage()) {
+            return;
+        }
+
+        TokenDefinition createdDefinition = CreatedTokenDefinitions.createAndRegister(
+                tokenCreationDraft,
+                tokenDefinitionRegistry,
+                assetRegistry
+        );
+
+        tokenCatalogSelection.select(createdDefinition.id());
+
+        tokenCreationDraft = null;
+        tokenImagePickerActive = false;
+        lastTokenImagePickerClickedItemId = null;
+        lastTokenImagePickerClickTime = 0L;
+    }
+
     private boolean handleTokenCreationMouseClicked(
             double mouseX,
             double mouseY,
@@ -510,10 +534,9 @@ public final class VTTScreen extends Screen {
         }
 
         if (action == TokenCreationDialog.Action.CREATE) {
-            // Próximo passo: criar TokenDefinition custom.
+            createTokenDefinitionFromDraft();
             return true;
         }
-
         return true;
     }
 

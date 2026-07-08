@@ -10,8 +10,7 @@ package com.petrick.vtt.feature.asset;
  * - textura em cache
  * - asset sincronizado pelo servidor
  */
-public sealed interface AssetRef permits BuiltInTextureAssetRef {
+public sealed interface AssetRef permits BuiltInTextureAssetRef, LibraryTextureAssetRef {
 
     String id();
-
 }
