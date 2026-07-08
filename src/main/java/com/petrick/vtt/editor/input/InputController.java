@@ -224,6 +224,12 @@ public final class InputController {
         );
     }
 
+    public void flipSelectedObjectsHorizontally() {
+        scene.flipObjectsHorizontally(
+                selectionManager.getSelectedObjectIds()
+        );
+    }
+
     private ToolContext createToolContext(RenderState renderState) {
         return new ToolContext(
                 camera,

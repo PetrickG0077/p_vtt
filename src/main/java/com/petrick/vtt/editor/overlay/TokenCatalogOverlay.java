@@ -118,6 +118,7 @@ public final class TokenCatalogOverlay {
                 x + PANEL_WIDTH - PADDING - 18,
                 y + PADDING,
                 isCreateTokenButtonAt(
+                        tokenDefinitionRegistry,
                         context.screenHeight(),
                         context.mouseX(),
                         context.mouseY()
@@ -401,11 +402,16 @@ public final class TokenCatalogOverlay {
     }
 
     public boolean isCreateTokenButtonAt(
+            TokenDefinitionRegistry tokenDefinitionRegistry,
             int screenHeight,
             double mouseX,
             double mouseY
     ) {
-        int panelHeight = calculatePanelHeight(1);
+        int tokenCount = tokenDefinitionRegistry == null
+                ? 0
+                : tokenDefinitionRegistry.size();
+
+        int panelHeight = calculatePanelHeight(tokenCount);
 
         int panelX = PANEL_X;
         int panelY = getPanelY(screenHeight, panelHeight);

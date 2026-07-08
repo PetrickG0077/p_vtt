@@ -12,7 +12,12 @@ import java.util.Map;
 /**
  * Objeto temporário do canvas.
  *
- * Agora ele suporta múltiplos estados visuais.
+ * Agora ele suporta:
+ * - múltiplos estados visuais;
+ * - origem em TokenDefinition;
+ * - visibilidade;
+ * - flip horizontal visual sem usar escala negativa.
+ *
  * Futuramente isso será convertido para entidades/componentes do ECS.
  */
 public record CanvasObject(
@@ -23,7 +28,8 @@ public record CanvasObject(
         Vec2d size,
         Map<String, CanvasObjectState> states,
         String activeStateId,
-        boolean visible
+        boolean visible,
+        boolean flippedHorizontally
 ) {
 
     public static final String DEFAULT_STATE_ID = "default";
@@ -61,6 +67,33 @@ public record CanvasObject(
     }
 
     /**
+     * Construtor de compatibilidade com a versão anterior,
+     * antes de existir flippedHorizontally.
+     */
+    public CanvasObject(
+            String id,
+            String displayName,
+            String sourceTokenDefinitionId,
+            Transform2D transform,
+            Vec2d size,
+            Map<String, CanvasObjectState> states,
+            String activeStateId,
+            boolean visible
+    ) {
+        this(
+                id,
+                displayName,
+                sourceTokenDefinitionId,
+                transform,
+                size,
+                states,
+                activeStateId,
+                visible,
+                false
+        );
+    }
+
+    /**
      * Construtor de compatibilidade.
      *
      * Permite criar objetos com um único visual,
@@ -82,7 +115,8 @@ public record CanvasObject(
                 size,
                 createSingleStateMap(visual),
                 DEFAULT_STATE_ID,
-                visible
+                visible,
+                false
         );
     }
 
@@ -126,7 +160,8 @@ public record CanvasObject(
                 size,
                 states,
                 stateId,
-                visible
+                visible,
+                flippedHorizontally
         );
     }
 
@@ -139,7 +174,8 @@ public record CanvasObject(
                 size,
                 states,
                 activeStateId,
-                visible
+                visible,
+                flippedHorizontally
         );
     }
 
@@ -176,7 +212,8 @@ public record CanvasObject(
                 size,
                 states,
                 activeStateId,
-                visible
+                visible,
+                flippedHorizontally
         );
     }
 
@@ -193,8 +230,27 @@ public record CanvasObject(
                 size,
                 states,
                 activeStateId,
-                visible
+                visible,
+                flippedHorizontally
         );
+    }
+
+    public CanvasObject withFlippedHorizontally(boolean flippedHorizontally) {
+        return new CanvasObject(
+                id,
+                displayName,
+                sourceTokenDefinitionId,
+                transform,
+                size,
+                states,
+                activeStateId,
+                visible,
+                flippedHorizontally
+        );
+    }
+
+    public CanvasObject toggledHorizontalFlip() {
+        return withFlippedHorizontally(!flippedHorizontally);
     }
 
     public CanvasObject duplicatedAs(String newId, Vec2d offset) {
@@ -206,7 +262,8 @@ public record CanvasObject(
                 size,
                 states,
                 activeStateId,
-                visible
+                visible,
+                flippedHorizontally
         );
     }
 

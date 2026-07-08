@@ -1,10 +1,11 @@
 package com.petrick.vtt.feature.canvas;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Vec2d;
-import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
+import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 
@@ -81,35 +82,50 @@ public final class CanvasRenderer {
         double width = object.size().x() * object.transform().scale().x() * zoom;
         double height = object.size().y() * object.transform().scale().y() * zoom;
 
-        int left = (int) Math.round(-width / 2.0);
-        int top = (int) Math.round(-height / 2.0);
-        int right = (int) Math.round(width / 2.0);
-        int bottom = (int) Math.round(height / 2.0);
+        int drawWidth = (int) Math.round(width);
+        int drawHeight = (int) Math.round(height);
+
+        if (drawWidth == 0 || drawHeight == 0) {
+            return;
+        }
+
+        int localLeft = -drawWidth / 2;
+        int localTop = -drawHeight / 2;
+        int localRight = localLeft + drawWidth;
+        int localBottom = localTop + drawHeight;
 
         PoseStack poseStack = context.graphics().pose();
 
+        boolean flipped = object.flippedHorizontally();
+
         poseStack.pushPose();
 
-        poseStack.translate(
-                screenCenter.x(),
-                screenCenter.y(),
-                0.0
-        );
+        poseStack.translate(screenCenter.x(), screenCenter.y(), 0.0);
+        poseStack.mulPose(Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees()));
 
-        poseStack.mulPose(
-                Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees())
-        );
+        if (flipped) {
+            /*
+             * O scale negativo espelha a imagem, mas pode inverter a face do quad.
+             * Por isso desativamos o culling só durante o desenho do objeto flipado.
+             */
+            RenderSystem.disableCull();
+            poseStack.scale(-1.0F, 1.0F, 1.0F);
+        }
 
         visualRenderer.render(
                 context,
                 object.currentVisual(),
-                left,
-                top,
-                right,
-                bottom
+                localLeft,
+                localTop,
+                localRight,
+                localBottom
         );
 
         poseStack.popPose();
+
+        if (flipped) {
+            RenderSystem.enableCull();
+        }
     }
 
     private void renderSelectionBorder(VRenderContext context, CanvasObject object) {

@@ -341,6 +341,7 @@ public final class VTTScreen extends Screen {
 
         if (panelVisibility.isTokenCatalogVisible()
                 && tokenCatalogOverlay.isCreateTokenButtonAt(
+                tokenDefinitionRegistry,
                 this.height,
                 mouseX,
                 mouseY
@@ -782,6 +783,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_E) {
             inputController.rotateSelectedObjectsRight();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F) {
+            inputController.flipSelectedObjectsHorizontally();
             return true;
         }
 

@@ -349,6 +349,25 @@ public final class CanvasScene {
         }
     }
 
+    public void flipObjectsHorizontally(Set<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+
+        for (String objectId : objectIds) {
+            CanvasObject object = findObjectById(objectId);
+
+            if (object == null) {
+                continue;
+            }
+
+            replaceObjectById(
+                    object.id(),
+                    object.toggledHorizontalFlip()
+            );
+        }
+    }
+
     public int getObjectLayerIndex(String objectId) {
         if (objectId == null || objectId.isBlank()) {
             return -1;
