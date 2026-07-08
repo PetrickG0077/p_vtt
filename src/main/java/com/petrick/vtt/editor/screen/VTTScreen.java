@@ -26,6 +26,8 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.editor.dialog.TokenCreationDialog;
+import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -81,6 +83,10 @@ public final class VTTScreen extends Screen {
 
     private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
+    private final TokenCreationDialog tokenCreationDialog;
+
+    private TokenCreationDraft tokenCreationDraft;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -116,6 +122,7 @@ public final class VTTScreen extends Screen {
         this.tokenCatalogSelection = new TokenCatalogSelection();
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
+        this.tokenCreationDialog = new TokenCreationDialog();
     }
 
     @Override
@@ -211,6 +218,14 @@ public final class VTTScreen extends Screen {
             );
         }
 
+        if (tokenCreationDraft != null) {
+            tokenCreationDialog.render(
+                    context,
+                    this.font,
+                    tokenCreationDraft
+            );
+        }
+
         if (renamingObjectId != null) {
             renderRenameDialog(context);
         }
@@ -291,6 +306,42 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (tokenCreationDraft != null) {
+            TokenCreationDialog.Action action = tokenCreationDialog.mouseClicked(
+                    this.width,
+                    this.height,
+                    tokenCreationDraft,
+                    mouseX,
+                    mouseY,
+                    button
+            );
+
+            if (action == TokenCreationDialog.Action.DISCARD) {
+                tokenCreationDraft = null;
+                return true;
+            }
+
+            if (action == TokenCreationDialog.Action.CHOOSE_IMAGE) {
+                return true;
+            }
+
+            if (action == TokenCreationDialog.Action.CREATE) {
+                return true;
+            }
+
+            return true;
+        }
+
+        if (panelVisibility.isTokenCatalogVisible()
+                && tokenCatalogOverlay.isCreateTokenButtonAt(
+                this.height,
+                mouseX,
+                mouseY
+        )) {
+            tokenCreationDraft = new TokenCreationDraft();
+            return true;
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             TokenCatalogClickResult tokenCatalogClickResult =
                     tokenCatalogController.mouseClicked(
@@ -729,6 +780,12 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (tokenCreationDraft != null) {
+            if (tokenCreationDialog.keyPressed(tokenCreationDraft, keyCode)) {
+                return true;
+            }
+        }
+
         if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             inputController.deleteSelectedObjects();
             return true;
@@ -791,6 +848,12 @@ public final class VTTScreen extends Screen {
             }
 
             return true;
+        }
+
+        if (tokenCreationDraft != null) {
+            if (tokenCreationDialog.charTyped(tokenCreationDraft, codePoint)) {
+                return true;
+            }
         }
 
         if (assetCatalogController.charTyped(codePoint)) {
