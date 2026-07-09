@@ -8,7 +8,7 @@ package com.petrick.vtt.editor.panel;
  */
 public final class EditorPanelVisibility {
 
-    private boolean helpVisible = true;
+    private boolean helpVisible = false;
 
     private boolean debugVisible = false;
 

@@ -22,7 +22,7 @@ import java.util.Set;
  * Isso é temporário para o Sprint 1.
  * Futuramente pode virar um inspector real do editor.
  */
-public final class SelectionInspectorOverlay {
+public final class  SelectionInspectorOverlay {
 
     private static final int PANEL_WIDTH = 220;
 
@@ -252,7 +252,7 @@ public final class SelectionInspectorOverlay {
         drawLine(
                 context,
                 font,
-                "States:",
+                "Available States:",
                 x,
                 y,
                 MUTED_TEXT_COLOR
@@ -308,8 +308,10 @@ public final class SelectionInspectorOverlay {
         drawLine(
                 context,
                 font,
-                "State: " + object.currentState().displayName()
-                        + " (" + object.activeStateId() + ")",
+                "Active State: "
+                        + object.activeStateId()
+                        + " - "
+                        + object.currentState().displayName(),
                 x,
                 y,
                 TEXT_COLOR
