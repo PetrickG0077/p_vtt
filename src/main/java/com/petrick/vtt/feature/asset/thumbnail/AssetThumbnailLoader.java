@@ -8,12 +8,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.util.Iterator;
 
 /**
@@ -21,7 +22,7 @@ import java.util.Iterator;
  *
  * Por enquanto:
  * - IMAGE carrega a imagem real;
- * - ANIMATED_IMAGE carrega um placeholder temporário;
+ * - ANIMATED_IMAGE carrega o primeiro frame do GIF como thumbnail;
  * - não redimensiona a imagem;
  * - rejeita arquivos/imagens grandes demais.
  */
@@ -33,7 +34,7 @@ public final class AssetThumbnailLoader {
 
     private static final int MAX_IMAGE_HEIGHT = 2048;
 
-    private static final int ANIMATED_PLACEHOLDER_SIZE = 64;
+    private static final int ANIMATED_FALLBACK_PLACEHOLDER_SIZE = 64;
 
     private final AssetThumbnailRegistry registry;
 
@@ -70,7 +71,7 @@ public final class AssetThumbnailLoader {
         }
 
         if (entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE) {
-            loadAnimatedImagePlaceholder(entry);
+            loadAnimatedImageThumbnail(entry);
             return;
         }
 
@@ -120,24 +121,21 @@ public final class AssetThumbnailLoader {
         }
     }
 
-    private void loadAnimatedImagePlaceholder(AssetLibraryEntry entry) {
+    private void loadAnimatedImageThumbnail(AssetLibraryEntry entry) {
         try {
-            int[] dimensions = readAnimatedImageDimensions(entry);
+            NativeImage image = readFirstGifFrameAsNativeImage(entry);
 
-            int width = dimensions[0];
-            int height = dimensions[1];
-
-            if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
+            if (!isImageSizeAllowed(image)) {
                 VTT.LOGGER.warn(
                         "Skipped animated VTT asset thumbnail because image is too large: {} ({}x{})",
                         entry.absolutePath(),
-                        width,
-                        height
+                        image.getWidth(),
+                        image.getHeight()
                 );
+
+                image.close();
                 return;
             }
-
-            NativeImage image = createAnimatedImagePlaceholder(width, height);
 
             registerThumbnail(
                     entry.id(),
@@ -146,49 +144,31 @@ public final class AssetThumbnailLoader {
             );
 
             VTT.LOGGER.info(
-                    "Loaded VTT animated asset placeholder thumbnail: {} ({}x{})",
+                    "Loaded VTT animated asset thumbnail first frame: {} ({}x{})",
                     entry.id(),
-                    width,
-                    height
+                    image.getWidth(),
+                    image.getHeight()
             );
         } catch (IOException exception) {
             VTT.LOGGER.error(
-                    "Failed to read animated VTT asset dimensions: {}",
+                    "Failed to load first frame for animated VTT asset thumbnail: {}",
                     entry.absolutePath(),
                     exception
             );
+
+            loadAnimatedImageFallbackPlaceholder(entry);
         } catch (RuntimeException exception) {
             VTT.LOGGER.error(
-                    "Failed to create animated VTT asset placeholder thumbnail: {}",
+                    "Unexpected error while loading animated VTT asset thumbnail: {}",
                     entry.absolutePath(),
                     exception
             );
+
+            loadAnimatedImageFallbackPlaceholder(entry);
         }
     }
 
-    private NativeImage createAnimatedImagePlaceholder(int width, int height) {
-        NativeImage image = new NativeImage(
-                width,
-                height,
-                false
-        );
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                boolean checker = ((x / 8) + (y / 8)) % 2 == 0;
-
-                int color = checker
-                        ? 0xFFFFAA33
-                        : 0xFF552266;
-
-                image.setPixelRGBA(x, y, color);
-            }
-        }
-
-        return image;
-    }
-
-    private int[] readAnimatedImageDimensions(AssetLibraryEntry entry) throws IOException {
+    private NativeImage readFirstGifFrameAsNativeImage(AssetLibraryEntry entry) throws IOException {
         try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(
                 Files.newInputStream(entry.absolutePath())
         )) {
@@ -207,14 +187,93 @@ public final class AssetThumbnailLoader {
             try {
                 reader.setInput(imageInputStream, false, false);
 
-                return new int[] {
-                        reader.getWidth(0),
-                        reader.getHeight(0)
-                };
+                BufferedImage firstFrame = reader.read(0);
+
+                if (firstFrame == null) {
+                    throw new IOException("GIF first frame is null: " + entry.absolutePath());
+                }
+
+                return convertToNativeImage(firstFrame);
             } finally {
                 reader.dispose();
             }
         }
+    }
+
+    private NativeImage convertToNativeImage(BufferedImage bufferedImage) {
+        NativeImage nativeImage = new NativeImage(
+                bufferedImage.getWidth(),
+                bufferedImage.getHeight(),
+                false
+        );
+
+        for (int y = 0; y < bufferedImage.getHeight(); y++) {
+            for (int x = 0; x < bufferedImage.getWidth(); x++) {
+                int argb = bufferedImage.getRGB(x, y);
+
+                int alpha = (argb >> 24) & 0xFF;
+                int red = (argb >> 16) & 0xFF;
+                int green = (argb >> 8) & 0xFF;
+                int blue = argb & 0xFF;
+
+                int abgr = alpha << 24
+                        | blue << 16
+                        | green << 8
+                        | red;
+
+                nativeImage.setPixelRGBA(x, y, abgr);
+            }
+        }
+
+        return nativeImage;
+    }
+
+    private void loadAnimatedImageFallbackPlaceholder(AssetLibraryEntry entry) {
+        try {
+            NativeImage image = createAnimatedImagePlaceholder(
+                    ANIMATED_FALLBACK_PLACEHOLDER_SIZE,
+                    ANIMATED_FALLBACK_PLACEHOLDER_SIZE
+            );
+
+            registerThumbnail(
+                    entry.id(),
+                    image,
+                    "vtt_asset_thumbnail/animated/fallback/" + sanitizeTextureName(entry.id())
+            );
+
+            VTT.LOGGER.info(
+                    "Loaded fallback VTT animated asset placeholder thumbnail: {}",
+                    entry.id()
+            );
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error(
+                    "Failed to create fallback animated VTT asset placeholder thumbnail: {}",
+                    entry.absolutePath(),
+                    exception
+            );
+        }
+    }
+
+    private NativeImage createAnimatedImagePlaceholder(int width, int height) {
+        NativeImage image = new NativeImage(
+                width,
+                height,
+                false
+        );
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                boolean checker = ((x / 16) + (y / 16)) % 2 == 0;
+
+                int color = checker
+                        ? 0xFFFFAA33
+                        : 0xFF552266;
+
+                image.setPixelRGBA(x, y, color);
+            }
+        }
+
+        return image;
     }
 
     private void registerThumbnail(
