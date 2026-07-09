@@ -34,6 +34,8 @@ public final class TokenCreationDraft {
 
     private String selectedImageId;
 
+    private String defaultStateId;
+
     private String selectedImageDisplayName;
 
     private ResourceLocation selectedImageTexture;
@@ -152,6 +154,10 @@ public final class TokenCreationDraft {
             syncMainImageFromState(states.get(newSelectedIndex));
         } else {
             syncMainImageFromState(getSelectedState());
+        }
+
+        if (stateIdToDelete.equals(defaultStateId)) {
+            defaultStateId = states.get(0).getId();
         }
 
         clearError();
@@ -393,8 +399,10 @@ public final class TokenCreationDraft {
 
         if (stateIdToSelect != null && hasStateId(stateIdToSelect)) {
             selectedStateId = stateIdToSelect;
+            defaultStateId = stateIdToSelect;
         } else {
             selectedStateId = states.get(0).getId();
+            defaultStateId = states.get(0).getId();
         }
 
         syncMainImageFromState(getSelectedState());
@@ -425,26 +433,18 @@ public final class TokenCreationDraft {
     public String getDefaultStateIdForSave() {
         ensureDefaultState();
 
-        for (TokenStateDraft state : states) {
-            if ("1".equals(state.getId()) && state.hasImage()) {
-                return state.getId();
-            }
-        }
-
-        for (TokenStateDraft state : states) {
-            if (state.hasImage()) {
-                return state.getId();
-            }
+        if (hasStateId(defaultStateId)) {
+            return defaultStateId;
         }
 
         return states.get(0).getId();
     }
 
     public TokenStateDraft getDefaultStateForSave() {
-        String defaultStateId = getDefaultStateIdForSave();
+        String defaultStateIdForSave = getDefaultStateIdForSave();
 
         for (TokenStateDraft state : states) {
-            if (state.getId().equals(defaultStateId)) {
+            if (state.getId().equals(defaultStateIdForSave)) {
                 return state;
             }
         }
@@ -468,17 +468,54 @@ public final class TokenCreationDraft {
         this.errorMessage = "";
     }
 
+    public String getDefaultStateId() {
+        ensureDefaultState();
+        return defaultStateId;
+    }
+
+    public boolean isDefaultState(String stateId) {
+        if (stateId == null || stateId.isBlank()) {
+            return false;
+        }
+
+        return stateId.equals(getDefaultStateId());
+    }
+
+    public boolean setDefaultState(String stateId) {
+        ensureDefaultState();
+
+        if (stateId == null || stateId.isBlank()) {
+            return false;
+        }
+
+        if (!hasStateId(stateId)) {
+            return false;
+        }
+
+        defaultStateId = stateId;
+        clearError();
+
+        return true;
+    }
+
     private void ensureDefaultState() {
         if (states.isEmpty()) {
             TokenStateDraft defaultState = new TokenStateDraft("1", "Normal");
             states.add(defaultState);
             selectedStateId = defaultState.getId();
+            defaultStateId = defaultState.getId();
         }
 
         if (selectedStateId == null || selectedStateId.isBlank()) {
             selectedStateId = states.get(0).getId();
         }
+
+        if (defaultStateId == null || defaultStateId.isBlank() || !hasStateId(defaultStateId)) {
+            defaultStateId = states.get(0).getId();
+        }
     }
+
+
 
     private String createNextStateId() {
         int id = 1;
