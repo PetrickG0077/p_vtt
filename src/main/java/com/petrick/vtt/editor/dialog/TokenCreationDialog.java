@@ -250,6 +250,10 @@ public final class TokenCreationDialog {
         }
 
         if (activeField == Field.NONE) {
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                return draft.deleteSelectedState();
+            }
+
             return false;
         }
 

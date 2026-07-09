@@ -58,6 +58,51 @@ public final class TokenCreationDraft {
         return mode == Mode.EDIT;
     }
 
+    public boolean deleteSelectedState() {
+        ensureDefaultState();
+
+        if (states.size() <= 1) {
+            setErrorMessage("Token must have at least one state");
+            return false;
+        }
+
+        String stateIdToDelete = selectedStateId;
+
+        if (stateIdToDelete == null || stateIdToDelete.isBlank()) {
+            return false;
+        }
+
+        int removedIndex = -1;
+
+        for (int i = 0; i < states.size(); i++) {
+            TokenStateDraft state = states.get(i);
+
+            if (state.getId().equals(stateIdToDelete)) {
+                removedIndex = i;
+                states.remove(i);
+                break;
+            }
+        }
+
+        if (removedIndex < 0) {
+            return false;
+        }
+
+        if (states.isEmpty()) {
+            ensureDefaultState();
+            return true;
+        }
+
+        int newSelectedIndex = Math.min(removedIndex, states.size() - 1);
+
+        selectedStateId = states.get(newSelectedIndex).getId();
+        syncMainImageFromState(states.get(newSelectedIndex));
+
+        clearError();
+
+        return true;
+    }
+
     public void beginEdit(
             String tokenDefinitionId,
             String originalDisplayName
