@@ -11,6 +11,10 @@ import net.minecraft.resources.ResourceLocation;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.util.Iterator;
 
 /**
  * Carrega miniaturas de arquivos de imagem externos como DynamicTexture.
@@ -118,7 +122,22 @@ public final class AssetThumbnailLoader {
 
     private void loadAnimatedImagePlaceholder(AssetLibraryEntry entry) {
         try {
-            NativeImage image = createAnimatedImagePlaceholder();
+            int[] dimensions = readAnimatedImageDimensions(entry);
+
+            int width = dimensions[0];
+            int height = dimensions[1];
+
+            if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
+                VTT.LOGGER.warn(
+                        "Skipped animated VTT asset thumbnail because image is too large: {} ({}x{})",
+                        entry.absolutePath(),
+                        width,
+                        height
+                );
+                return;
+            }
+
+            NativeImage image = createAnimatedImagePlaceholder(width, height);
 
             registerThumbnail(
                     entry.id(),
@@ -127,8 +146,16 @@ public final class AssetThumbnailLoader {
             );
 
             VTT.LOGGER.info(
-                    "Loaded VTT animated asset placeholder thumbnail: {}",
-                    entry.id()
+                    "Loaded VTT animated asset placeholder thumbnail: {} ({}x{})",
+                    entry.id(),
+                    width,
+                    height
+            );
+        } catch (IOException exception) {
+            VTT.LOGGER.error(
+                    "Failed to read animated VTT asset dimensions: {}",
+                    entry.absolutePath(),
+                    exception
             );
         } catch (RuntimeException exception) {
             VTT.LOGGER.error(
@@ -139,15 +166,15 @@ public final class AssetThumbnailLoader {
         }
     }
 
-    private NativeImage createAnimatedImagePlaceholder() {
+    private NativeImage createAnimatedImagePlaceholder(int width, int height) {
         NativeImage image = new NativeImage(
-                ANIMATED_PLACEHOLDER_SIZE,
-                ANIMATED_PLACEHOLDER_SIZE,
+                width,
+                height,
                 false
         );
 
-        for (int y = 0; y < ANIMATED_PLACEHOLDER_SIZE; y++) {
-            for (int x = 0; x < ANIMATED_PLACEHOLDER_SIZE; x++) {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
                 boolean checker = ((x / 8) + (y / 8)) % 2 == 0;
 
                 int color = checker
@@ -159,6 +186,35 @@ public final class AssetThumbnailLoader {
         }
 
         return image;
+    }
+
+    private int[] readAnimatedImageDimensions(AssetLibraryEntry entry) throws IOException {
+        try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(
+                Files.newInputStream(entry.absolutePath())
+        )) {
+            if (imageInputStream == null) {
+                throw new IOException("Could not create image input stream for " + entry.absolutePath());
+            }
+
+            Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName("gif");
+
+            if (!readers.hasNext()) {
+                throw new IOException("No GIF ImageReader available");
+            }
+
+            ImageReader reader = readers.next();
+
+            try {
+                reader.setInput(imageInputStream, false, false);
+
+                return new int[] {
+                        reader.getWidth(0),
+                        reader.getHeight(0)
+                };
+            } finally {
+                reader.dispose();
+            }
+        }
     }
 
     private void registerThumbnail(

@@ -1,8 +1,16 @@
 package com.petrick.vtt.feature.canvas.visual;
 
+import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
+import com.petrick.vtt.feature.asset.animation.AnimatedTexture;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureFrame;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureLoader;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureRegistry;
 import com.petrick.vtt.platform.render.VRenderContext;
+import net.minecraft.client.Minecraft;
+
+import java.nio.file.Path;
 
 /**
  * Renderizador dos diferentes tipos de visual do canvas.
@@ -15,11 +23,13 @@ import com.petrick.vtt.platform.render.VRenderContext;
  * Esta classe cuida apenas de como o conteúdo visual é desenhado:
  * - cor sólida
  * - textura estática
- * - textura animada, por enquanto como frame/placeholder estático
+ * - textura animada
  */
 public final class CanvasVisualRenderer {
 
     private static final int MISSING_TEXTURE_COLOR = 0xFFFF00FF;
+
+    private final AnimatedTextureLoader animatedTextureLoader = new AnimatedTextureLoader();
 
     public void render(
             VRenderContext context,
@@ -66,7 +76,7 @@ public final class CanvasVisualRenderer {
 
     private void renderTextureVisual(
             VRenderContext context,
-            com.petrick.vtt.feature.asset.AssetRef assetRef,
+            AssetRef assetRef,
             int left,
             int top,
             int right,
@@ -93,21 +103,85 @@ public final class CanvasVisualRenderer {
             int right,
             int bottom
     ) {
-        /*
-         * Etapa 1:
-         * Por enquanto desenhamos como textura normal.
-         *
-         * Etapa futura:
-         * Aqui entra o AnimatedTexturePlayer/AnimatedFrameCache.
-         */
-        renderTextureVisual(
+        if (!(visual.assetRef() instanceof LibraryTextureAssetRef libraryTexture)) {
+            renderTextureVisual(context, visual.assetRef(), left, top, right, bottom);
+            return;
+        }
+
+        AnimatedTexture animatedTexture = getOrLoadAnimatedTexture(libraryTexture);
+
+        if (animatedTexture == null) {
+            renderLibraryTexture(context, libraryTexture, left, top, right, bottom);
+            return;
+        }
+
+        long nowMs = System.currentTimeMillis();
+        AnimatedTextureFrame frame = animatedTexture.frameAtTime(nowMs);
+
+        renderTexture(
                 context,
-                visual.assetRef(),
+                frame.texture(),
+                frame.width(),
+                frame.height(),
                 left,
                 top,
                 right,
                 bottom
         );
+    }
+
+    private AnimatedTexture getOrLoadAnimatedTexture(
+            LibraryTextureAssetRef libraryTexture
+    ) {
+        AnimatedTextureRegistry registry = AnimatedTextureRegistry.getInstance();
+
+        String animatedTextureId = libraryTexture.id();
+
+        AnimatedTexture existingTexture = registry.findById(animatedTextureId)
+                .orElse(null);
+
+        if (existingTexture != null) {
+            return existingTexture;
+        }
+
+        Path file = Minecraft.getInstance()
+                .gameDirectory
+                .toPath()
+                .resolve("config")
+                .resolve("vtt_assets")
+                .resolve("assets")
+                .resolve(normalizeLibraryRelativePath(libraryTexture.sourceRelativePath()));
+
+        AnimatedTexture loadedTexture = animatedTextureLoader.loadGif(
+                animatedTextureId,
+                file
+        );
+
+        if (loadedTexture == null) {
+            return null;
+        }
+
+        registry.register(loadedTexture);
+
+        return loadedTexture;
+    }
+
+    private String normalizeLibraryRelativePath(String sourceRelativePath) {
+        if (sourceRelativePath == null || sourceRelativePath.isBlank()) {
+            return "";
+        }
+
+        String normalized = sourceRelativePath.replace('\\', '/');
+
+        if (normalized.startsWith("library:")) {
+            normalized = normalized.substring("library:".length());
+        }
+
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+
+        return normalized;
     }
 
     private void renderBuiltInTexture(
@@ -118,21 +192,15 @@ public final class CanvasVisualRenderer {
             int right,
             int bottom
     ) {
-        int drawWidth = right - left;
-        int drawHeight = bottom - top;
-
-        context.graphics().blit(
+        renderTexture(
+                context,
                 asset.texture(),
-                left,
-                top,
-                drawWidth,
-                drawHeight,
-                0.0F,
-                0.0F,
                 asset.textureWidth(),
                 asset.textureHeight(),
-                asset.textureWidth(),
-                asset.textureHeight()
+                left,
+                top,
+                right,
+                bottom
         );
     }
 
@@ -144,22 +212,52 @@ public final class CanvasVisualRenderer {
             int right,
             int bottom
     ) {
+        renderTexture(
+                context,
+                asset.texture(),
+                asset.textureWidth(),
+                asset.textureHeight(),
+                left,
+                top,
+                right,
+                bottom
+        );
+    }
+
+    private void renderTexture(
+            VRenderContext context,
+            net.minecraft.resources.ResourceLocation texture,
+            int textureWidth,
+            int textureHeight,
+            int left,
+            int top,
+            int right,
+            int bottom
+    ) {
         int drawWidth = right - left;
         int drawHeight = bottom - top;
 
         context.graphics().blit(
-                asset.texture(),
+                texture,
                 left,
                 top,
                 drawWidth,
                 drawHeight,
                 0.0F,
                 0.0F,
-                asset.textureWidth(),
-                asset.textureHeight(),
-                asset.textureWidth(),
-                asset.textureHeight()
+                textureWidth,
+                textureHeight,
+                textureWidth,
+                textureHeight
         );
+    }
+
+    private int textureHeight() {
+        /*
+         * Esse método existe só para evitar confusão no overload do blit?
+         * Não. Se o seu Java acusar erro aqui, substitua a chamada por textureHeight direto.
+         */
+        return 0;
     }
 
     private void renderMissingTexture(
