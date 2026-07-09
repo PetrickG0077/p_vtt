@@ -24,12 +24,13 @@ public final class TokenCreationDialog {
         NONE,
         NAME,
         PLAYER,
-        NOTES
+        NOTES,
+        STATE_NAME
     }
 
     private static final int DIALOG_WIDTH = 430;
 
-    private static final int DIALOG_HEIGHT = 285;
+    private static final int DIALOG_HEIGHT = 325;
 
     private static final int PANEL_BACKGROUND = 0xEE000000;
 
@@ -65,11 +66,11 @@ public final class TokenCreationDialog {
 
     private static final int STATE_PANEL_X_OFFSET = 26;
 
-    private static final int STATE_PANEL_Y_OFFSET = 160;
+    private static final int STATE_PANEL_Y_OFFSET = 150;
 
     private static final int STATE_PANEL_WIDTH = 378;
 
-    private static final int STATE_PANEL_HEIGHT = 62;
+    private static final int STATE_PANEL_HEIGHT = 88;
 
     private static final int STATE_ROW_HEIGHT = 15;
 
@@ -82,6 +83,8 @@ public final class TokenCreationDialog {
     private static final int HOVERED_STATE_BACKGROUND = 0x33222222;
 
     private Field activeField = Field.NONE;
+
+    private String stateNameEditBuffer = "";
 
     private int stateListScrollOffset = 0;
 
@@ -211,6 +214,17 @@ public final class TokenCreationDialog {
             return Action.NONE;
         }
 
+        if (isMouseOverSelectedStateNameField(screenWidth, screenHeight, mouseX, mouseY)) {
+            activeField = Field.STATE_NAME;
+
+            TokenStateDraft selectedState = draft.getSelectedState();
+            stateNameEditBuffer = selectedState == null
+                    ? ""
+                    : selectedState.getDisplayName();
+
+            return Action.NONE;
+        }
+
         if (isPointInside(
                 mouseX,
                 mouseY,
@@ -245,8 +259,24 @@ public final class TokenCreationDialog {
             int keyCode
     ) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (activeField == Field.STATE_NAME) {
+                activeField = Field.NONE;
+                stateNameEditBuffer = "";
+                return true;
+            }
+
             activeField = Field.NONE;
             return true;
+        }
+
+        if (activeField == Field.NONE && keyCode == GLFW.GLFW_KEY_N) {
+            TokenStateDraft selectedState = draft.getSelectedState();
+
+            if (selectedState != null) {
+                activeField = Field.STATE_NAME;
+                stateNameEditBuffer = selectedState.getDisplayName();
+                return true;
+            }
         }
 
         if (activeField == Field.NONE) {
@@ -255,6 +285,26 @@ public final class TokenCreationDialog {
             }
 
             return false;
+        }
+
+        if (activeField == Field.STATE_NAME) {
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                stateNameEditBuffer = removeLastCharacter(stateNameEditBuffer);
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmStateNameEdit(draft);
+                return true;
+            }
+
+            if (keyCode == GLFW.GLFW_KEY_TAB) {
+                confirmStateNameEdit(draft);
+                activeField = Field.NAME;
+                return true;
+            }
+
+            return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
@@ -281,6 +331,18 @@ public final class TokenCreationDialog {
     ) {
         if (activeField == Field.NONE) {
             return false;
+        }
+
+        if (activeField == Field.STATE_NAME) {
+            if (!isAllowedTextCharacter(codePoint)) {
+                return true;
+            }
+
+            if (stateNameEditBuffer.length() < 32) {
+                stateNameEditBuffer += codePoint;
+            }
+
+            return true;
         }
 
         if (!isAllowedTextCharacter(codePoint)) {
@@ -323,6 +385,45 @@ public final class TokenCreationDialog {
         clampStateListScrollOffset(draft);
 
         return true;
+    }
+
+    private void confirmStateNameEdit(TokenCreationDraft draft) {
+        TokenStateDraft selectedState = draft.getSelectedState();
+
+        if (selectedState == null) {
+            activeField = Field.NONE;
+            stateNameEditBuffer = "";
+            return;
+        }
+
+        selectedState.setDisplayName(stateNameEditBuffer);
+
+        activeField = Field.NONE;
+        stateNameEditBuffer = "";
+        draft.clearError();
+    }
+
+    private boolean isMouseOverSelectedStateNameField(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        int fieldX = x + 8 + 48;
+        int fieldY = y + STATE_PANEL_HEIGHT - 28;
+        int fieldWidth = 250;
+
+        return isPointInside(
+                mouseX,
+                mouseY,
+                fieldX,
+                fieldY,
+                fieldWidth,
+                INPUT_HEIGHT
+        );
     }
 
     private boolean isMouseOverStatesPanel(
@@ -624,6 +725,19 @@ public final class TokenCreationDialog {
                     states.size()
             );
         }
+
+        TokenStateDraft selectedState = draft.getSelectedState();
+
+        if (selectedState != null) {
+            renderSelectedStateNameField(
+                    context,
+                    font,
+                    selectedState,
+                    x + 8,
+                    y + STATE_PANEL_HEIGHT - 28,
+                    STATE_PANEL_WIDTH - 74
+            );
+        }
     }
 
     private void renderStateScrollIndicator(
@@ -725,6 +839,59 @@ public final class TokenCreationDialog {
         );
     }
 
+    private void renderSelectedStateNameField(
+            VRenderContext context,
+            Font font,
+            TokenStateDraft selectedState,
+            int x,
+            int y,
+            int width
+    ) {
+        String label = "Name:";
+
+        context.graphics().drawString(
+                font,
+                label,
+                x,
+                y + 7,
+                MUTED_TEXT_COLOR,
+                false
+        );
+
+        int inputX = x + 48;
+        int inputWidth = 250;
+
+        context.graphics().fill(
+                inputX,
+                y,
+                inputX + inputWidth,
+                y + INPUT_HEIGHT,
+                INPUT_BACKGROUND
+        );
+
+        drawBorder(
+                context,
+                inputX,
+                y,
+                inputWidth,
+                INPUT_HEIGHT,
+                activeField == Field.STATE_NAME ? INPUT_ACTIVE_BORDER : INPUT_BORDER
+        );
+
+        String visibleText = activeField == Field.STATE_NAME
+                ? stateNameEditBuffer + "_"
+                : selectedState.getDisplayName();
+
+        context.graphics().drawString(
+                font,
+                truncateText(visibleText, 28),
+                inputX + 6,
+                y + 7,
+                TEXT_COLOR,
+                false
+        );
+    }
+
     private void renderButton(
             VRenderContext context,
             Font font,
@@ -791,8 +958,8 @@ public final class TokenCreationDialog {
                 context,
                 font,
                 text,
-                x + width / 2,
-                y + 4,
+                x + width / 2 +1,
+                y + 4 +1,
                 TEXT_COLOR
         );
     }
@@ -956,7 +1123,8 @@ public final class TokenCreationDialog {
             case NONE -> Field.NAME;
             case NAME -> Field.PLAYER;
             case PLAYER -> Field.NOTES;
-            case NOTES -> Field.NAME;
+            case NOTES -> Field.STATE_NAME;
+            case STATE_NAME -> Field.NAME;
         };
     }
 
