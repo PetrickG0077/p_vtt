@@ -59,14 +59,16 @@ public final class TokenCreationDraft {
     }
 
     public boolean deleteSelectedState() {
+        return deleteState(selectedStateId);
+    }
+
+    public boolean deleteState(String stateIdToDelete) {
         ensureDefaultState();
 
         if (states.size() <= 1) {
             setErrorMessage("Token must have at least one state");
             return false;
         }
-
-        String stateIdToDelete = selectedStateId;
 
         if (stateIdToDelete == null || stateIdToDelete.isBlank()) {
             return false;
@@ -93,10 +95,13 @@ public final class TokenCreationDraft {
             return true;
         }
 
-        int newSelectedIndex = Math.min(removedIndex, states.size() - 1);
-
-        selectedStateId = states.get(newSelectedIndex).getId();
-        syncMainImageFromState(states.get(newSelectedIndex));
+        if (stateIdToDelete.equals(selectedStateId)) {
+            int newSelectedIndex = Math.min(removedIndex, states.size() - 1);
+            selectedStateId = states.get(newSelectedIndex).getId();
+            syncMainImageFromState(states.get(newSelectedIndex));
+        } else {
+            syncMainImageFromState(getSelectedState());
+        }
 
         clearError();
 

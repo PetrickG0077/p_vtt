@@ -503,10 +503,24 @@ public final class TokenCatalogOverlay {
         int textX = clampedX + PADDING;
         int textY = clampedY + PADDING;
 
-        drawLine(context, font, "Details:", textX, textY, TITLE_COLOR);
+        drawLine(
+                context,
+                font,
+                definition.displayName(),
+                textX,
+                textY,
+                TITLE_COLOR
+        );
         textY += LINE_HEIGHT;
 
-        drawLine(context, font, "ID: " + definition.id(), textX, textY, MUTED_TEXT_COLOR);
+        drawLine(
+                context,
+                font,
+                "ID: " + definition.id(),
+                textX,
+                textY,
+                MUTED_TEXT_COLOR
+        );
         textY += LINE_HEIGHT;
 
         drawLine(
@@ -525,14 +539,21 @@ public final class TokenCatalogOverlay {
         drawLine(
                 context,
                 font,
-                "Default State: " + definition.defaultStateId(),
+                "Default State: " + formatDefaultState(definition),
                 textX,
                 textY,
                 TEXT_COLOR
         );
         textY += LINE_HEIGHT;
 
-        drawLine(context, font, "States:", textX, textY, MUTED_TEXT_COLOR);
+        drawLine(
+                context,
+                font,
+                "States: " + definition.states().size(),
+                textX,
+                textY,
+                MUTED_TEXT_COLOR
+        );
         textY += LINE_HEIGHT;
 
         int index = 0;
@@ -569,6 +590,16 @@ public final class TokenCatalogOverlay {
             textY += LINE_HEIGHT;
             index++;
         }
+    }
+
+    private String formatDefaultState(TokenDefinition definition) {
+        CanvasObjectState defaultState = definition.states().get(definition.defaultStateId());
+
+        if (defaultState == null) {
+            return definition.defaultStateId();
+        }
+
+        return definition.defaultStateId() + " - " + defaultState.displayName();
     }
 
     private int calculateDetailsPopupHeight(TokenDefinition definition) {
