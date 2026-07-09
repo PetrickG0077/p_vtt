@@ -1,12 +1,10 @@
 package com.petrick.vtt.editor.token;
 
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import net.minecraft.resources.ResourceLocation;
 
 /**
  * Estado temporário dentro do editor de tokens.
- *
- * Nesta primeira etapa ele serve para mostrar e controlar a lista visual de states.
- * A persistência real de múltiplos states entra no próximo passo.
  */
 public final class TokenStateDraft {
 
@@ -23,6 +21,8 @@ public final class TokenStateDraft {
     private int imageWidth;
 
     private int imageHeight;
+
+    private AssetLibraryFileType imageFileType = AssetLibraryFileType.IMAGE;
 
     public TokenStateDraft(String id, String displayName) {
         if (id == null || id.isBlank()) {
@@ -56,6 +56,14 @@ public final class TokenStateDraft {
         return imageTexture != null;
     }
 
+    public boolean isAnimatedImage() {
+        return imageFileType == AssetLibraryFileType.ANIMATED_IMAGE;
+    }
+
+    public AssetLibraryFileType getImageFileType() {
+        return imageFileType;
+    }
+
     public String getImageId() {
         return imageId;
     }
@@ -83,6 +91,24 @@ public final class TokenStateDraft {
             int imageWidth,
             int imageHeight
     ) {
+        selectImage(
+                imageId,
+                imageDisplayName,
+                imageTexture,
+                imageWidth,
+                imageHeight,
+                AssetLibraryFileType.IMAGE
+        );
+    }
+
+    public void selectImage(
+            String imageId,
+            String imageDisplayName,
+            ResourceLocation imageTexture,
+            int imageWidth,
+            int imageHeight,
+            AssetLibraryFileType imageFileType
+    ) {
         if (imageId == null || imageId.isBlank()) {
             clearImage();
             return;
@@ -100,6 +126,9 @@ public final class TokenStateDraft {
         this.imageTexture = imageTexture;
         this.imageWidth = imageWidth;
         this.imageHeight = imageHeight;
+        this.imageFileType = imageFileType == null
+                ? AssetLibraryFileType.IMAGE
+                : imageFileType;
     }
 
     public void clearImage() {
@@ -108,5 +137,6 @@ public final class TokenStateDraft {
         this.imageTexture = null;
         this.imageWidth = 0;
         this.imageHeight = 0;
+        this.imageFileType = AssetLibraryFileType.IMAGE;
     }
 }

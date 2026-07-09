@@ -3,11 +3,14 @@ package com.petrick.vtt.feature.canvas.visual;
 import com.petrick.vtt.feature.asset.AssetRef;
 
 /**
- * Visual baseado em textura.
+ * Visual baseado em textura estática.
  *
- * Nesta fase, ele aponta para um AssetRef.
- * O AssetRef ainda pode ser uma textura interna do mod,
- * mas futuramente poderá apontar para imagens importadas/cacheadas.
+ * Use este visual para imagens normais:
+ * - PNG
+ * - JPG/JPEG
+ * - WEBP estático
+ *
+ * Para GIF/APNG, use AnimatedTextureVisual.
  */
 public record TextureVisual(
         AssetRef assetRef

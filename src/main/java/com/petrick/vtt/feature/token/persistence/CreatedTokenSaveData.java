@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Dados salvos em JSON para tokens criados pelo usuário.
  *
- * Agora suporta múltiplos states.
+ * Agora suporta múltiplos states e prepara suporte a imagens animadas.
  */
 public final class CreatedTokenSaveData {
 
@@ -27,6 +27,8 @@ public final class CreatedTokenSaveData {
     public String selectedImageDisplayName;
 
     public String selectedImageTextureId;
+
+    public String selectedImageFileType;
 
     public int selectedImageWidth;
 
@@ -53,6 +55,8 @@ public final class CreatedTokenSaveData {
         public String imageDisplayName;
 
         public String imageTextureId;
+
+        public String imageFileType;
 
         public int imageWidth;
 

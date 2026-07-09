@@ -14,8 +14,8 @@ import com.petrick.vtt.platform.render.VRenderContext;
  *
  * Esta classe cuida apenas de como o conteúdo visual é desenhado:
  * - cor sólida
- * - textura built-in
- * - textura carregada da biblioteca do usuário
+ * - textura estática
+ * - textura animada, por enquanto como frame/placeholder estático
  */
 public final class CanvasVisualRenderer {
 
@@ -35,7 +35,12 @@ public final class CanvasVisualRenderer {
         }
 
         if (visual instanceof TextureVisual textureVisual) {
-            renderTextureVisual(context, textureVisual, left, top, right, bottom);
+            renderTextureVisual(context, textureVisual.assetRef(), left, top, right, bottom);
+            return;
+        }
+
+        if (visual instanceof AnimatedTextureVisual animatedTextureVisual) {
+            renderAnimatedTextureVisual(context, animatedTextureVisual, left, top, right, bottom);
             return;
         }
 
@@ -61,23 +66,48 @@ public final class CanvasVisualRenderer {
 
     private void renderTextureVisual(
             VRenderContext context,
-            TextureVisual visual,
+            com.petrick.vtt.feature.asset.AssetRef assetRef,
             int left,
             int top,
             int right,
             int bottom
     ) {
-        if (visual.assetRef() instanceof BuiltInTextureAssetRef builtInTexture) {
+        if (assetRef instanceof BuiltInTextureAssetRef builtInTexture) {
             renderBuiltInTexture(context, builtInTexture, left, top, right, bottom);
             return;
         }
 
-        if (visual.assetRef() instanceof LibraryTextureAssetRef libraryTexture) {
+        if (assetRef instanceof LibraryTextureAssetRef libraryTexture) {
             renderLibraryTexture(context, libraryTexture, left, top, right, bottom);
             return;
         }
 
         renderMissingTexture(context, left, top, right, bottom);
+    }
+
+    private void renderAnimatedTextureVisual(
+            VRenderContext context,
+            AnimatedTextureVisual visual,
+            int left,
+            int top,
+            int right,
+            int bottom
+    ) {
+        /*
+         * Etapa 1:
+         * Por enquanto desenhamos como textura normal.
+         *
+         * Etapa futura:
+         * Aqui entra o AnimatedTexturePlayer/AnimatedFrameCache.
+         */
+        renderTextureVisual(
+                context,
+                visual.assetRef(),
+                left,
+                top,
+                right,
+                bottom
+        );
     }
 
     private void renderBuiltInTexture(

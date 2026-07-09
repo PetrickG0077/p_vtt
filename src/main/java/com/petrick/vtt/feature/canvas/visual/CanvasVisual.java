@@ -3,11 +3,10 @@ package com.petrick.vtt.feature.canvas.visual;
 /**
  * Representa o visual de um objeto no canvas.
  *
- * Por enquanto existem:
+ * Tipos atuais:
  * - ColorVisual: retângulo colorido
- * - TextureVisual: imagem/textura
- *
- * Futuramente isso pode apontar para assets carregados pelo usuário.
+ * - TextureVisual: imagem/textura estática
+ * - AnimatedTextureVisual: imagem animada, como GIF/APNG
  */
-public sealed interface CanvasVisual permits ColorVisual, TextureVisual {
+public sealed interface CanvasVisual permits ColorVisual, TextureVisual, AnimatedTextureVisual {
 }
