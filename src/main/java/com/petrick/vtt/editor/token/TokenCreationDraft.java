@@ -3,9 +3,20 @@ package com.petrick.vtt.editor.token;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Dados temporários enquanto o usuário está criando um token.
+ * Dados temporários enquanto o usuário está criando ou editando um token.
  */
 public final class TokenCreationDraft {
+
+    public enum Mode {
+        CREATE,
+        EDIT
+    }
+
+    private Mode mode = Mode.CREATE;
+
+    private String editingTokenDefinitionId;
+
+    private String originalDisplayName;
 
     private String name = "";
 
@@ -24,6 +35,37 @@ public final class TokenCreationDraft {
     private int selectedImageWidth;
 
     private int selectedImageHeight;
+
+    public Mode getMode() {
+        return mode;
+    }
+
+    public boolean isEditing() {
+        return mode == Mode.EDIT;
+    }
+
+    public void beginEdit(
+            String tokenDefinitionId,
+            String originalDisplayName
+    ) {
+        if (tokenDefinitionId == null || tokenDefinitionId.isBlank()) {
+            throw new IllegalArgumentException("Token definition id cannot be null or blank");
+        }
+
+        this.mode = Mode.EDIT;
+        this.editingTokenDefinitionId = tokenDefinitionId;
+        this.originalDisplayName = originalDisplayName == null
+                ? ""
+                : originalDisplayName;
+    }
+
+    public String getEditingTokenDefinitionId() {
+        return editingTokenDefinitionId;
+    }
+
+    public String getOriginalDisplayName() {
+        return originalDisplayName;
+    }
 
     public String getName() {
         return name;

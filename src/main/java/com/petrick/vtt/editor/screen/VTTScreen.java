@@ -499,6 +499,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (tokenCreationDraft.isEditing()) {
+            saveEditedTokenDefinitionFromDraft();
+            return;
+        }
+
         TokenDefinition createdDefinition = CreatedTokenDefinitions.createAndRegister(
                 tokenCreationDraft,
                 tokenDefinitionRegistry,
@@ -512,6 +517,31 @@ public final class VTTScreen extends Screen {
 
         tokenCatalogSelection.select(createdDefinition.id());
 
+        closeTokenCreationDialog();
+    }
+
+    private void saveEditedTokenDefinitionFromDraft() {
+        if (tokenCreationDraft == null) {
+            return;
+        }
+
+        TokenDefinition updatedDefinition = CreatedTokenStorage.updateCreatedToken(
+                tokenCreationDraft,
+                tokenDefinitionRegistry,
+                assetRegistry
+        );
+
+        if (updatedDefinition == null) {
+            tokenCreationDraft.setErrorMessage("Could not save token");
+            return;
+        }
+
+        tokenCatalogSelection.select(updatedDefinition.id());
+
+        closeTokenCreationDialog();
+    }
+
+    private void closeTokenCreationDialog() {
         tokenCreationDraft = null;
         tokenImagePickerActive = false;
         lastTokenImagePickerClickedItemId = null;
@@ -529,7 +559,7 @@ public final class VTTScreen extends Screen {
 
         switch (action) {
             case EDIT -> {
-                System.out.println("Edit token: " + tokenDefinition.id());
+                beginEditTokenDefinition(tokenDefinition);
             }
 
             case VIEW_IN_EXPLORER -> {
@@ -547,6 +577,23 @@ public final class VTTScreen extends Screen {
             case NONE -> {
             }
         }
+    }
+
+    private void beginEditTokenDefinition(TokenDefinition tokenDefinition) {
+        if (tokenDefinition == null) {
+            return;
+        }
+
+        TokenCreationDraft editDraft = CreatedTokenStorage.createEditDraft(tokenDefinition);
+
+        if (editDraft == null) {
+            return;
+        }
+
+        tokenCreationDraft = editDraft;
+        tokenImagePickerActive = false;
+        lastTokenImagePickerClickedItemId = null;
+        lastTokenImagePickerClickTime = 0L;
     }
 
     private void duplicateTokenDefinition(TokenDefinition tokenDefinition) {
@@ -659,10 +706,7 @@ public final class VTTScreen extends Screen {
         );
 
         if (action == TokenCreationDialog.Action.DISCARD) {
-            tokenCreationDraft = null;
-            tokenImagePickerActive = false;
-            lastTokenImagePickerClickedItemId = null;
-            lastTokenImagePickerClickTime = 0L;
+            closeTokenCreationDialog();
             return true;
         }
 

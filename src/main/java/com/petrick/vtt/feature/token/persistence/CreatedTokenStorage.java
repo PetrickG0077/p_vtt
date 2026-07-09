@@ -27,7 +27,7 @@ import java.util.stream.Stream;
 /**
  * Salva e carrega tokens criados pelo usuário em JSON.
  *
- * Pasta nova:
+ * Pasta:
  *
  * config/vtt_assets/created/tokens/
  *
@@ -43,6 +43,8 @@ public final class CreatedTokenStorage {
     private static final String TOKENS_FOLDER = "config/vtt_assets/created/tokens";
 
     private static final String USER_TOKEN_ID_PREFIX = "user/tokens/";
+
+    private static final double MAX_DEFAULT_TOKEN_SIZE = 96.0;
 
     private CreatedTokenStorage() {}
 
@@ -102,6 +104,145 @@ public final class CreatedTokenStorage {
                     ));
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to load created VTT tokens", exception);
+        }
+    }
+
+    /**
+     * Cria um draft preenchido para editar um token criado pelo usuário.
+     */
+    public static TokenCreationDraft createEditDraft(TokenDefinition definition) {
+        if (definition == null) {
+            return null;
+        }
+
+        if (!isUserCreatedToken(definition)) {
+            VTT.LOGGER.warn(
+                    "Ignoring edit request for non-user-created token: {}",
+                    definition.id()
+            );
+            return null;
+        }
+
+        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+
+        if (!Files.exists(file)) {
+            VTT.LOGGER.warn("Cannot edit token because JSON file does not exist: {}", file);
+            return null;
+        }
+
+        try (Reader reader = Files.newBufferedReader(file)) {
+            CreatedTokenSaveData data = GSON.fromJson(reader, CreatedTokenSaveData.class);
+
+            if (!isValid(data)) {
+                VTT.LOGGER.warn("Cannot edit invalid created VTT token file: {}", file);
+                return null;
+            }
+
+            TokenCreationDraft draft = new TokenCreationDraft();
+
+            draft.beginEdit(data.tokenDefinitionId, data.displayName);
+
+            draft.setName(data.displayName);
+            draft.setPlayer(data.player);
+            draft.setNotes(data.notes);
+
+            draft.selectImage(
+                    data.selectedImageId,
+                    data.selectedImageDisplayName,
+                    ResourceLocation.parse(data.selectedImageTextureId),
+                    data.selectedImageWidth,
+                    data.selectedImageHeight
+            );
+
+            return draft;
+        } catch (Exception exception) {
+            VTT.LOGGER.error(
+                    "Failed to create edit draft for created VTT token: {}",
+                    definition.id(),
+                    exception
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Salva alterações feitas no editor de token.
+     *
+     * O ID do token continua o mesmo. Isso evita quebrar objetos já colocados
+     * na mesa que apontam para esse TokenDefinition.
+     */
+    public static TokenDefinition updateCreatedToken(
+            TokenCreationDraft draft,
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            AssetRegistry assetRegistry
+    ) {
+        if (draft == null) {
+            return null;
+        }
+
+        if (!draft.isEditing()) {
+            return null;
+        }
+
+        if (tokenDefinitionRegistry == null || assetRegistry == null) {
+            return null;
+        }
+
+        if (draft.getEditingTokenDefinitionId() == null
+                || draft.getEditingTokenDefinitionId().isBlank()) {
+            return null;
+        }
+
+        TokenDefinition oldDefinition = tokenDefinitionRegistry
+                .findById(draft.getEditingTokenDefinitionId())
+                .orElse(null);
+
+        if (oldDefinition == null) {
+            VTT.LOGGER.warn(
+                    "Cannot update created token because definition does not exist: {}",
+                    draft.getEditingTokenDefinitionId()
+            );
+            return null;
+        }
+
+        if (!isUserCreatedToken(oldDefinition)) {
+            VTT.LOGGER.warn(
+                    "Ignoring update request for non-user-created token: {}",
+                    oldDefinition.id()
+            );
+            return null;
+        }
+
+        if (!draft.hasSelectedImage()) {
+            return null;
+        }
+
+        CreatedTokenSaveData data = createSaveDataForEditedDraft(draft);
+
+        try {
+            deleteOldFileIfRenamed(draft, data);
+
+            TokenDefinition updatedDefinition = createTokenDefinitionFromSaveData(
+                    data,
+                    assetRegistry
+            );
+
+            tokenDefinitionRegistry.removeById(oldDefinition.id());
+            tokenDefinitionRegistry.register(updatedDefinition);
+
+            saveCreatedTokenData(data);
+
+            VTT.LOGGER.info("Updated created VTT token: {}", updatedDefinition.id());
+
+            return updatedDefinition;
+        } catch (Exception exception) {
+            VTT.LOGGER.error(
+                    "Failed to update created VTT token: {}",
+                    draft.getEditingTokenDefinitionId(),
+                    exception
+            );
+
+            return null;
         }
     }
 
@@ -400,6 +541,60 @@ public final class CreatedTokenStorage {
         return data;
     }
 
+    private static CreatedTokenSaveData createSaveDataForEditedDraft(TokenCreationDraft draft) {
+        CreatedTokenSaveData data = new CreatedTokenSaveData();
+
+        data.tokenDefinitionId = draft.getEditingTokenDefinitionId();
+        data.displayName = draft.getResolvedDisplayName();
+
+        data.player = draft.getPlayer();
+        data.notes = draft.getNotes();
+
+        data.selectedImageId = draft.getSelectedImageId();
+        data.selectedImageDisplayName = draft.getSelectedImageDisplayName();
+
+        data.selectedImageTextureId = draft.getSelectedImageTexture().toString();
+
+        data.selectedImageWidth = draft.getSelectedImageWidth();
+        data.selectedImageHeight = draft.getSelectedImageHeight();
+
+        Vec2d defaultSize = calculateDefaultSize(
+                draft.getSelectedImageWidth(),
+                draft.getSelectedImageHeight()
+        );
+
+        data.defaultWidth = defaultSize.x();
+        data.defaultHeight = defaultSize.y();
+
+        data.activeStateId = "1";
+
+        return data;
+    }
+
+    private static void deleteOldFileIfRenamed(
+            TokenCreationDraft draft,
+            CreatedTokenSaveData data
+    ) throws IOException {
+        String originalDisplayName = draft.getOriginalDisplayName();
+
+        if (originalDisplayName == null || originalDisplayName.isBlank()) {
+            return;
+        }
+
+        String newDisplayName = data.displayName;
+
+        if (originalDisplayName.equals(newDisplayName)) {
+            return;
+        }
+
+        Path oldFile = getTokensFolder().resolve(createFileName(originalDisplayName));
+        Path newFile = getTokensFolder().resolve(createFileName(newDisplayName));
+
+        if (!oldFile.equals(newFile)) {
+            Files.deleteIfExists(oldFile);
+        }
+    }
+
     private static void saveCreatedTokenData(CreatedTokenSaveData data) throws IOException {
         Path folder = getTokensFolder();
 
@@ -483,6 +678,31 @@ public final class CreatedTokenStorage {
         }
 
         return id;
+    }
+
+    private static Vec2d calculateDefaultSize(
+            int textureWidth,
+            int textureHeight
+    ) {
+        if (textureWidth <= 0 || textureHeight <= 0) {
+            return new Vec2d(MAX_DEFAULT_TOKEN_SIZE, MAX_DEFAULT_TOKEN_SIZE);
+        }
+
+        double width = textureWidth;
+        double height = textureHeight;
+
+        double largestSide = Math.max(width, height);
+
+        if (largestSide <= MAX_DEFAULT_TOKEN_SIZE) {
+            return new Vec2d(width, height);
+        }
+
+        double scale = MAX_DEFAULT_TOKEN_SIZE / largestSide;
+
+        return new Vec2d(
+                width * scale,
+                height * scale
+        );
     }
 
     private static String sanitizeFileName(String value) {

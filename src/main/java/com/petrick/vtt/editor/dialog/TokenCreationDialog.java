@@ -6,7 +6,7 @@ import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Janela visual para criação de tokens.
+ * Janela visual para criação e edição básica de tokens.
  */
 public final class TokenCreationDialog {
 
@@ -76,7 +76,7 @@ public final class TokenCreationDialog {
         drawCenteredString(
                 context,
                 font,
-                "CREATE TOKEN",
+                draft.isEditing() ? "EDIT TOKEN" : "CREATE TOKEN",
                 x + DIALOG_WIDTH / 2,
                 y + 14,
                 TITLE_COLOR
@@ -137,7 +137,7 @@ public final class TokenCreationDialog {
         renderButton(
                 context,
                 font,
-                "Create",
+                draft.isEditing() ? "Save" : "Create",
                 getCreateButtonX(context),
                 getCreateButtonY(context),
                 isMouseOverCreateButton(context)
@@ -146,7 +146,7 @@ public final class TokenCreationDialog {
         renderButton(
                 context,
                 font,
-                "Discard",
+                draft.isEditing() ? "Cancel" : "Discard",
                 getDiscardButtonX(context),
                 getDiscardButtonY(context),
                 isMouseOverDiscardButton(context)
