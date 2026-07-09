@@ -5,6 +5,7 @@ import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
@@ -49,6 +50,11 @@ public final class VTTSession {
 
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
+
+        CreatedTokenStorage.loadCreatedTokens(
+                tokenDefinitionRegistry,
+                assetRegistry
+        );
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
 

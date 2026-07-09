@@ -4,7 +4,10 @@ package com.petrick.vtt.feature.token.persistence;
  * Dados salvos em JSON para tokens criados pelo usuário.
  *
  * Isso não salva a textura em si.
- * Salva a referência da imagem escolhida, para depois recarregar.
+ * Salva:
+ * - dados do token;
+ * - referência do arquivo escolhido;
+ * - ResourceLocation real da textura carregada no Minecraft.
  */
 public final class CreatedTokenSaveData {
 
@@ -19,6 +22,8 @@ public final class CreatedTokenSaveData {
     public String selectedImageId;
 
     public String selectedImageDisplayName;
+
+    public String selectedImageTextureId;
 
     public int selectedImageWidth;
 
