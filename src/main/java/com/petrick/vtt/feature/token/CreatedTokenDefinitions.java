@@ -2,6 +2,7 @@ package com.petrick.vtt.feature.token;
 
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.editor.token.TokenStateDraft;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
@@ -39,8 +40,12 @@ public final class CreatedTokenDefinitions {
             throw new IllegalArgumentException("AssetRegistry cannot be null");
         }
 
-        if (!draft.hasSelectedImage()) {
-            throw new IllegalStateException("Cannot create token without selected image");
+        if (!draft.hasAnyStateImage()) {
+            throw new IllegalStateException("Cannot create token without at least one state image");
+        }
+
+        if (!draft.allStatesHaveImages()) {
+            throw new IllegalStateException("Cannot create token while some states have no image");
         }
 
         String displayName = draft.getResolvedDisplayName();
@@ -51,46 +56,70 @@ public final class CreatedTokenDefinitions {
                 USER_TOKEN_ID_PREFIX + safeName
         );
 
-        String assetId = createUniqueAssetId(
+        Map<String, CanvasObjectState> states = createCanvasObjectStates(
+                draft,
                 assetRegistry,
-                USER_TOKEN_IMAGE_ID_PREFIX + safeName
+                safeName
         );
 
-        LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
-                assetId,
-                draft.getSelectedImageTexture(),
-                draft.getSelectedImageWidth(),
-                draft.getSelectedImageHeight(),
-                draft.getSelectedImageId()
-        );
+        String defaultStateId = draft.getDefaultStateIdForSave();
 
-        assetRegistry.register(assetRef);
-
-        Map<String, CanvasObjectState> states = new LinkedHashMap<>();
-
-        states.put(
-                "1",
-                new CanvasObjectState(
-                        "1",
-                        "Normal",
-                        new TextureVisual(assetRef)
-                )
-        );
+        TokenStateDraft defaultState = draft.getDefaultStateForSave();
 
         TokenDefinition definition = new TokenDefinition(
                 tokenDefinitionId,
                 displayName,
                 calculateDefaultSize(
-                        draft.getSelectedImageWidth(),
-                        draft.getSelectedImageHeight()
+                        defaultState.getImageWidth(),
+                        defaultState.getImageHeight()
                 ),
                 states,
-                "1"
+                defaultStateId
         );
 
         tokenDefinitionRegistry.register(definition);
 
         return definition;
+    }
+
+    private static Map<String, CanvasObjectState> createCanvasObjectStates(
+            TokenCreationDraft draft,
+            AssetRegistry assetRegistry,
+            String safeTokenName
+    ) {
+        Map<String, CanvasObjectState> states = new LinkedHashMap<>();
+
+        for (TokenStateDraft stateDraft : draft.getStates()) {
+            if (!stateDraft.hasImage()) {
+                continue;
+            }
+
+            String assetId = createUniqueAssetId(
+                    assetRegistry,
+                    USER_TOKEN_IMAGE_ID_PREFIX + safeTokenName + "/" + stateDraft.getId()
+            );
+
+            LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
+                    assetId,
+                    stateDraft.getImageTexture(),
+                    stateDraft.getImageWidth(),
+                    stateDraft.getImageHeight(),
+                    stateDraft.getImageId()
+            );
+
+            assetRegistry.register(assetRef);
+
+            states.put(
+                    stateDraft.getId(),
+                    new CanvasObjectState(
+                            stateDraft.getId(),
+                            stateDraft.getDisplayName(),
+                            new TextureVisual(assetRef)
+                    )
+            );
+        }
+
+        return states;
     }
 
     private static String createUniqueTokenDefinitionId(

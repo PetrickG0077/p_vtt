@@ -494,8 +494,13 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        if (!tokenCreationDraft.hasSelectedImage()) {
+        if (!tokenCreationDraft.hasAnyStateImage()) {
             tokenCreationDraft.setErrorMessage("Choose an image first");
+            return;
+        }
+
+        if (!tokenCreationDraft.allStatesHaveImages()) {
+            tokenCreationDraft.setErrorMessage("Choose an image for every state");
             return;
         }
 

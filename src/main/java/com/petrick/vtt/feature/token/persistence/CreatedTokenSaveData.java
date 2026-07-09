@@ -1,13 +1,12 @@
 package com.petrick.vtt.feature.token.persistence;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Dados salvos em JSON para tokens criados pelo usuário.
  *
- * Isso não salva a textura em si.
- * Salva:
- * - dados do token;
- * - referência do arquivo escolhido;
- * - ResourceLocation real da textura carregada no Minecraft.
+ * Agora suporta múltiplos states.
  */
 public final class CreatedTokenSaveData {
 
@@ -19,6 +18,10 @@ public final class CreatedTokenSaveData {
 
     public String notes;
 
+    /**
+     * Campos antigos/compatibilidade.
+     * Também continuam úteis como "imagem principal" do token.
+     */
     public String selectedImageId;
 
     public String selectedImageDisplayName;
@@ -35,5 +38,26 @@ public final class CreatedTokenSaveData {
 
     public String activeStateId;
 
+    public List<StateSaveData> states = new ArrayList<>();
+
     public CreatedTokenSaveData() {}
+
+    public static final class StateSaveData {
+
+        public String id;
+
+        public String displayName;
+
+        public String imageId;
+
+        public String imageDisplayName;
+
+        public String imageTextureId;
+
+        public int imageWidth;
+
+        public int imageHeight;
+
+        public StateSaveData() {}
+    }
 }

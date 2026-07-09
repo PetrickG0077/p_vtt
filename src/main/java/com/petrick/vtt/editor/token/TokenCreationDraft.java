@@ -121,6 +121,12 @@ public final class TokenCreationDraft {
             return selectedImageDisplayName;
         }
 
+        for (TokenStateDraft state : states) {
+            if (state.hasImage()) {
+                return state.getImageDisplayName();
+            }
+        }
+
         return "New Token";
     }
 
@@ -189,11 +195,7 @@ public final class TokenCreationDraft {
     }
 
     public void clearSelectedImage() {
-        this.selectedImageId = null;
-        this.selectedImageDisplayName = null;
-        this.selectedImageTexture = null;
-        this.selectedImageWidth = 0;
-        this.selectedImageHeight = 0;
+        clearMainImage();
 
         TokenStateDraft selectedState = getSelectedState();
 
@@ -272,6 +274,83 @@ public final class TokenCreationDraft {
         return state;
     }
 
+    public void replaceStates(
+            List<TokenStateDraft> newStates,
+            String stateIdToSelect
+    ) {
+        states.clear();
+
+        if (newStates != null) {
+            for (TokenStateDraft state : newStates) {
+                if (state != null) {
+                    states.add(state);
+                }
+            }
+        }
+
+        ensureDefaultState();
+
+        if (stateIdToSelect != null && hasStateId(stateIdToSelect)) {
+            selectedStateId = stateIdToSelect;
+        } else {
+            selectedStateId = states.get(0).getId();
+        }
+
+        syncMainImageFromState(getSelectedState());
+    }
+
+    public boolean hasAnyStateImage() {
+        for (TokenStateDraft state : states) {
+            if (state.hasImage()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public boolean allStatesHaveImages() {
+        ensureDefaultState();
+
+        for (TokenStateDraft state : states) {
+            if (!state.hasImage()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public String getDefaultStateIdForSave() {
+        ensureDefaultState();
+
+        for (TokenStateDraft state : states) {
+            if ("1".equals(state.getId()) && state.hasImage()) {
+                return state.getId();
+            }
+        }
+
+        for (TokenStateDraft state : states) {
+            if (state.hasImage()) {
+                return state.getId();
+            }
+        }
+
+        return states.get(0).getId();
+    }
+
+    public TokenStateDraft getDefaultStateForSave() {
+        String defaultStateId = getDefaultStateIdForSave();
+
+        for (TokenStateDraft state : states) {
+            if (state.getId().equals(defaultStateId)) {
+                return state;
+            }
+        }
+
+        return states.get(0);
+    }
+
     public String getErrorMessage() {
         return errorMessage;
     }
@@ -322,6 +401,7 @@ public final class TokenCreationDraft {
 
     private void syncMainImageFromState(TokenStateDraft state) {
         if (state == null || !state.hasImage()) {
+            clearMainImage();
             return;
         }
 
@@ -330,6 +410,14 @@ public final class TokenCreationDraft {
         this.selectedImageTexture = state.getImageTexture();
         this.selectedImageWidth = state.getImageWidth();
         this.selectedImageHeight = state.getImageHeight();
+    }
+
+    private void clearMainImage() {
+        this.selectedImageId = null;
+        this.selectedImageDisplayName = null;
+        this.selectedImageTexture = null;
+        this.selectedImageWidth = 0;
+        this.selectedImageHeight = 0;
     }
 
     private String sanitize(String value) {

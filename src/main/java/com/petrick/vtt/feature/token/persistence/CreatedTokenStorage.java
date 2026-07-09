@@ -11,6 +11,7 @@ import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.editor.token.TokenStateDraft;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -146,12 +147,9 @@ public final class CreatedTokenStorage {
             draft.setPlayer(data.player);
             draft.setNotes(data.notes);
 
-            draft.selectImage(
-                    data.selectedImageId,
-                    data.selectedImageDisplayName,
-                    ResourceLocation.parse(data.selectedImageTextureId),
-                    data.selectedImageWidth,
-                    data.selectedImageHeight
+            draft.replaceStates(
+                    createStateDraftsFromSaveData(data),
+                    data.activeStateId
             );
 
             return draft;
@@ -213,7 +211,11 @@ public final class CreatedTokenStorage {
             return null;
         }
 
-        if (!draft.hasSelectedImage()) {
+        if (!draft.hasAnyStateImage()) {
+            return null;
+        }
+
+        if (!draft.allStatesHaveImages()) {
             return null;
         }
 
@@ -443,41 +445,85 @@ public final class CreatedTokenStorage {
             CreatedTokenSaveData data,
             AssetRegistry assetRegistry
     ) {
-        String assetId = data.tokenDefinitionId + "/image";
-
-        ResourceLocation texture = ResourceLocation.parse(data.selectedImageTextureId);
-
-        LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
-                assetId,
-                texture,
-                data.selectedImageWidth,
-                data.selectedImageHeight,
-                data.selectedImageDisplayName
-        );
-
-        assetRegistry.register(assetRef);
-
-        String stateId = data.activeStateId == null || data.activeStateId.isBlank()
-                ? "1"
-                : data.activeStateId;
-
         Map<String, CanvasObjectState> states = new LinkedHashMap<>();
 
-        states.put(
-                stateId,
-                new CanvasObjectState(
-                        stateId,
-                        "Normal",
-                        new TextureVisual(assetRef)
-                )
-        );
+        if (data.states != null && !data.states.isEmpty()) {
+            for (CreatedTokenSaveData.StateSaveData stateData : data.states) {
+                if (!isValidState(stateData)) {
+                    continue;
+                }
+
+                String assetId = data.tokenDefinitionId + "/states/" + stateData.id + "/image";
+
+                ResourceLocation texture = ResourceLocation.parse(stateData.imageTextureId);
+
+                LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
+                        assetId,
+                        texture,
+                        stateData.imageWidth,
+                        stateData.imageHeight,
+                        stateData.imageId
+                );
+
+                assetRegistry.register(assetRef);
+
+                states.put(
+                        stateData.id,
+                        new CanvasObjectState(
+                                stateData.id,
+                                stateData.displayName,
+                                new TextureVisual(assetRef)
+                        )
+                );
+            }
+        }
+
+        /*
+         * Compatibilidade com JSON antigo, antes de existir data.states.
+         */
+        if (states.isEmpty()) {
+            String legacyStateId = data.activeStateId == null || data.activeStateId.isBlank()
+                    ? "1"
+                    : data.activeStateId;
+
+            String assetId = data.tokenDefinitionId + "/image";
+
+            ResourceLocation texture = ResourceLocation.parse(data.selectedImageTextureId);
+
+            LibraryTextureAssetRef assetRef = new LibraryTextureAssetRef(
+                    assetId,
+                    texture,
+                    data.selectedImageWidth,
+                    data.selectedImageHeight,
+                    data.selectedImageId
+            );
+
+            assetRegistry.register(assetRef);
+
+            states.put(
+                    legacyStateId,
+                    new CanvasObjectState(
+                            legacyStateId,
+                            "Normal",
+                            new TextureVisual(assetRef)
+                    )
+            );
+        }
+
+        String defaultStateId = data.activeStateId == null || data.activeStateId.isBlank()
+                ? states.keySet().iterator().next()
+                : data.activeStateId;
+
+        if (!states.containsKey(defaultStateId)) {
+            defaultStateId = states.keySet().iterator().next();
+        }
 
         return new TokenDefinition(
                 data.tokenDefinitionId,
                 data.displayName,
                 new Vec2d(data.defaultWidth, data.defaultHeight),
                 states,
-                stateId
+                defaultStateId
         );
     }
 
@@ -494,6 +540,23 @@ public final class CreatedTokenStorage {
             return false;
         }
 
+        if (data.defaultWidth <= 0 || data.defaultHeight <= 0) {
+            return false;
+        }
+
+        if (data.states != null && !data.states.isEmpty()) {
+            for (CreatedTokenSaveData.StateSaveData state : data.states) {
+                if (!isValidState(state)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /*
+         * Compatibilidade com JSON antigo.
+         */
         if (data.selectedImageId == null || data.selectedImageId.isBlank()) {
             return false;
         }
@@ -506,7 +569,31 @@ public final class CreatedTokenStorage {
             return false;
         }
 
-        if (data.defaultWidth <= 0 || data.defaultHeight <= 0) {
+        return true;
+    }
+
+    private static boolean isValidState(CreatedTokenSaveData.StateSaveData state) {
+        if (state == null) {
+            return false;
+        }
+
+        if (state.id == null || state.id.isBlank()) {
+            return false;
+        }
+
+        if (state.displayName == null || state.displayName.isBlank()) {
+            return false;
+        }
+
+        if (state.imageId == null || state.imageId.isBlank()) {
+            return false;
+        }
+
+        if (state.imageTextureId == null || state.imageTextureId.isBlank()) {
+            return false;
+        }
+
+        if (state.imageWidth <= 0 || state.imageHeight <= 0) {
             return false;
         }
 
@@ -522,21 +609,7 @@ public final class CreatedTokenStorage {
         data.tokenDefinitionId = definition.id();
         data.displayName = definition.displayName();
 
-        data.player = draft.getPlayer();
-        data.notes = draft.getNotes();
-
-        data.selectedImageId = draft.getSelectedImageId();
-        data.selectedImageDisplayName = draft.getSelectedImageDisplayName();
-
-        data.selectedImageTextureId = draft.getSelectedImageTexture().toString();
-
-        data.selectedImageWidth = draft.getSelectedImageWidth();
-        data.selectedImageHeight = draft.getSelectedImageHeight();
-
-        data.defaultWidth = definition.defaultSize().x();
-        data.defaultHeight = definition.defaultSize().y();
-
-        data.activeStateId = definition.defaultStateId();
+        fillSaveDataFromDraft(data, draft);
 
         return data;
     }
@@ -547,28 +620,113 @@ public final class CreatedTokenStorage {
         data.tokenDefinitionId = draft.getEditingTokenDefinitionId();
         data.displayName = draft.getResolvedDisplayName();
 
+        fillSaveDataFromDraft(data, draft);
+
+        return data;
+    }
+
+    private static void fillSaveDataFromDraft(
+            CreatedTokenSaveData data,
+            TokenCreationDraft draft
+    ) {
         data.player = draft.getPlayer();
         data.notes = draft.getNotes();
 
-        data.selectedImageId = draft.getSelectedImageId();
-        data.selectedImageDisplayName = draft.getSelectedImageDisplayName();
+        String defaultStateId = draft.getDefaultStateIdForSave();
+        TokenStateDraft defaultState = draft.getDefaultStateForSave();
 
-        data.selectedImageTextureId = draft.getSelectedImageTexture().toString();
+        data.activeStateId = defaultStateId;
 
-        data.selectedImageWidth = draft.getSelectedImageWidth();
-        data.selectedImageHeight = draft.getSelectedImageHeight();
+        data.selectedImageId = defaultState.getImageId();
+        data.selectedImageDisplayName = defaultState.getImageDisplayName();
+        data.selectedImageTextureId = defaultState.getImageTexture().toString();
+        data.selectedImageWidth = defaultState.getImageWidth();
+        data.selectedImageHeight = defaultState.getImageHeight();
 
         Vec2d defaultSize = calculateDefaultSize(
-                draft.getSelectedImageWidth(),
-                draft.getSelectedImageHeight()
+                defaultState.getImageWidth(),
+                defaultState.getImageHeight()
         );
 
         data.defaultWidth = defaultSize.x();
         data.defaultHeight = defaultSize.y();
 
-        data.activeStateId = "1";
+        data.states.clear();
 
-        return data;
+        for (TokenStateDraft stateDraft : draft.getStates()) {
+            if (!stateDraft.hasImage()) {
+                continue;
+            }
+
+            CreatedTokenSaveData.StateSaveData stateData =
+                    new CreatedTokenSaveData.StateSaveData();
+
+            stateData.id = stateDraft.getId();
+            stateData.displayName = stateDraft.getDisplayName();
+
+            stateData.imageId = stateDraft.getImageId();
+            stateData.imageDisplayName = stateDraft.getImageDisplayName();
+            stateData.imageTextureId = stateDraft.getImageTexture().toString();
+            stateData.imageWidth = stateDraft.getImageWidth();
+            stateData.imageHeight = stateDraft.getImageHeight();
+
+            data.states.add(stateData);
+        }
+    }
+
+    private static java.util.List<TokenStateDraft> createStateDraftsFromSaveData(
+            CreatedTokenSaveData data
+    ) {
+        java.util.List<TokenStateDraft> drafts = new java.util.ArrayList<>();
+
+        if (data.states != null && !data.states.isEmpty()) {
+            for (CreatedTokenSaveData.StateSaveData stateData : data.states) {
+                if (!isValidState(stateData)) {
+                    continue;
+                }
+
+                TokenStateDraft stateDraft = new TokenStateDraft(
+                        stateData.id,
+                        stateData.displayName
+                );
+
+                stateDraft.selectImage(
+                        stateData.imageId,
+                        stateData.imageDisplayName,
+                        ResourceLocation.parse(stateData.imageTextureId),
+                        stateData.imageWidth,
+                        stateData.imageHeight
+                );
+
+                drafts.add(stateDraft);
+            }
+
+            return drafts;
+        }
+
+        /*
+         * Compatibilidade com JSON antigo.
+         */
+        String legacyStateId = data.activeStateId == null || data.activeStateId.isBlank()
+                ? "1"
+                : data.activeStateId;
+
+        TokenStateDraft legacyState = new TokenStateDraft(
+                legacyStateId,
+                "Normal"
+        );
+
+        legacyState.selectImage(
+                data.selectedImageId,
+                data.selectedImageDisplayName,
+                ResourceLocation.parse(data.selectedImageTextureId),
+                data.selectedImageWidth,
+                data.selectedImageHeight
+        );
+
+        drafts.add(legacyState);
+
+        return drafts;
     }
 
     private static void deleteOldFileIfRenamed(
