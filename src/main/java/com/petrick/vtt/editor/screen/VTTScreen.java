@@ -22,6 +22,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
@@ -440,6 +441,11 @@ public final class VTTScreen extends Screen {
                 tokenCreationDraft,
                 tokenDefinitionRegistry,
                 assetRegistry
+        );
+
+        CreatedTokenStorage.saveCreatedToken(
+                tokenCreationDraft,
+                createdDefinition
         );
 
         tokenCatalogSelection.select(createdDefinition.id());
