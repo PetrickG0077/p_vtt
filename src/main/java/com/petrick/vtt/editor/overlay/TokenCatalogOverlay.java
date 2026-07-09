@@ -24,7 +24,8 @@ import java.util.Optional;
  * Nesta versão:
  * - a lista do catálogo permanece fixa;
  * - os detalhes aparecem em um popup separado;
- * - hover e seleção podem exibir o popup.
+ * - os detalhes aparecem somente com hover;
+ * - o menu de contexto pode suprimir o popup de detalhes.
  */
 public final class TokenCatalogOverlay {
 
@@ -70,9 +71,9 @@ public final class TokenCatalogOverlay {
 
     private static final int DETAILS_POPUP_WIDTH = 230;
 
-    private static final int DETAILS_POPUP_GAP = 8;
-
     private final CanvasVisualRenderer visualRenderer;
+
+    private boolean detailsPopupSuppressed;
 
     public TokenCatalogOverlay() {
         this.visualRenderer = new CanvasVisualRenderer();
@@ -93,11 +94,7 @@ public final class TokenCatalogOverlay {
                 context.mouseY()
         );
 
-        TokenDefinition detailsDefinition = resolveDetailsDefinition(
-                tokenDefinitionRegistry,
-                hoveredDefinition,
-                selection
-        );
+        TokenDefinition detailsDefinition = resolveDetailsDefinition(hoveredDefinition);
 
         int panelHeight = calculatePanelHeight(definitions.size());
 
@@ -177,23 +174,11 @@ public final class TokenCatalogOverlay {
             );
         }
 
-        if (detailsDefinition != null) {
-            int popupX;
-            int popupY;
-
-            if (hoveredDefinition.isPresent()) {
-                popupX = (int) Math.round(context.mouseX()) + 14;
-                popupY = (int) Math.round(context.mouseY())
-                        - calculateDetailsPopupHeight(detailsDefinition)
-                        - 14;
-            } else {
-                popupX = x + PANEL_WIDTH + DETAILS_POPUP_GAP;
-                popupY = resolvePopupYForDefinition(
-                        context,
-                        definitions,
-                        detailsDefinition
-                );
-            }
+        if (!detailsPopupSuppressed && detailsDefinition != null) {
+            int popupX = (int) Math.round(context.mouseX()) + 14;
+            int popupY = (int) Math.round(context.mouseY())
+                    - calculateDetailsPopupHeight(detailsDefinition)
+                    - 14;
 
             renderTokenDetailsPopup(
                     context,
@@ -205,15 +190,29 @@ public final class TokenCatalogOverlay {
         }
     }
 
+    public void suppressDetailsPopup() {
+        this.detailsPopupSuppressed = true;
+    }
+
+    public void allowDetailsPopup() {
+        this.detailsPopupSuppressed = false;
+    }
+
+    public boolean isDetailsPopupSuppressed() {
+        return detailsPopupSuppressed;
+    }
+
     public boolean containsPoint(
             TokenDefinitionRegistry tokenDefinitionRegistry,
             int screenHeight,
             double mouseX,
             double mouseY
     ) {
-        int panelHeight = calculatePanelHeight(
-                tokenDefinitionRegistry.getAll().size()
-        );
+        int tokenCount = tokenDefinitionRegistry == null
+                ? 0
+                : tokenDefinitionRegistry.getAll().size();
+
+        int panelHeight = calculatePanelHeight(tokenCount);
 
         int panelX = PANEL_X;
         int panelY = getPanelY(screenHeight, panelHeight);
@@ -426,6 +425,20 @@ public final class TokenCatalogOverlay {
                 && mouseY <= buttonY + buttonSize;
     }
 
+    public TokenDefinition findTokenAt(
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        return findTokenDefinitionAt(
+                tokenDefinitionRegistry,
+                screenHeight,
+                mouseX,
+                mouseY
+        ).orElse(null);
+    }
+
     public Optional<TokenDefinition> findTokenDefinitionAt(
             TokenDefinitionRegistry tokenDefinitionRegistry,
             int screenHeight,
@@ -558,29 +571,6 @@ public final class TokenCatalogOverlay {
         }
     }
 
-    private int resolvePopupYForDefinition(
-            VRenderContext context,
-            List<TokenDefinition> definitions,
-            TokenDefinition detailsDefinition
-    ) {
-        int panelHeight = calculatePanelHeight(definitions.size());
-        int panelY = getPanelY(context.screenHeight(), panelHeight);
-
-        int firstTokenY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
-
-        int visibleDefinitions = Math.min(definitions.size(), MAX_VISIBLE_TOKENS);
-
-        for (int i = 0; i < visibleDefinitions; i++) {
-            TokenDefinition definition = definitions.get(i);
-
-            if (definition.id().equals(detailsDefinition.id())) {
-                return firstTokenY + i * TOKEN_ROW_HEIGHT;
-            }
-        }
-
-        return panelY;
-    }
-
     private int calculateDetailsPopupHeight(TokenDefinition definition) {
         int visibleStates = Math.min(definition.states().size(), MAX_VISIBLE_STATES);
 
@@ -616,24 +606,16 @@ public final class TokenCatalogOverlay {
     }
 
     private TokenDefinition resolveDetailsDefinition(
-            TokenDefinitionRegistry tokenDefinitionRegistry,
-            Optional<TokenDefinition> hoveredDefinition,
-            TokenCatalogSelection selection
+            Optional<TokenDefinition> hoveredDefinition
     ) {
-        if (hoveredDefinition.isPresent()) {
-            return hoveredDefinition.get();
-        }
-
-        if (selection == null || !selection.hasSelection()) {
-            return null;
-        }
-
-        return tokenDefinitionRegistry
-                .findById(selection.getSelectedTokenDefinitionId())
-                .orElse(null);
+        return hoveredDefinition.orElse(null);
     }
 
     private List<TokenDefinition> getSortedDefinitions(TokenDefinitionRegistry tokenDefinitionRegistry) {
+        if (tokenDefinitionRegistry == null) {
+            return new ArrayList<>();
+        }
+
         List<TokenDefinition> definitions = new ArrayList<>(tokenDefinitionRegistry.getAll());
 
         definitions.sort(Comparator.comparing(TokenDefinition::displayName));

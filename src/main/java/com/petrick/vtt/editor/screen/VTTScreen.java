@@ -34,6 +34,9 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
+import com.petrick.vtt.editor.overlay.TokenCatalogContextMenuOverlay;
+import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -92,6 +95,10 @@ public final class VTTScreen extends Screen {
     private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
     private final TokenCreationDialog tokenCreationDialog;
+
+    private final TokenCatalogContextMenu tokenCatalogContextMenu = new TokenCatalogContextMenu();
+
+    private final TokenCatalogContextMenuOverlay tokenCatalogContextMenuOverlay = new TokenCatalogContextMenuOverlay();
 
     private TokenCreationDraft tokenCreationDraft;
 
@@ -235,6 +242,12 @@ public final class VTTScreen extends Screen {
             }
         }
 
+        tokenCatalogContextMenuOverlay.render(
+                context,
+                this.font,
+                tokenCatalogContextMenu
+        );
+
         if (renamingObjectId != null) {
             renderRenameDialog(context);
         }
@@ -340,6 +353,31 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (tokenCatalogContextMenu.isOpen()) {
+            TokenCatalogContextMenuOverlay.Action action = tokenCatalogContextMenuOverlay.getActionAt(
+                    tokenCatalogContextMenu,
+                    mouseX,
+                    mouseY
+            );
+
+            if (action != TokenCatalogContextMenuOverlay.Action.NONE) {
+                handleTokenCatalogContextMenuAction(action);
+                tokenCatalogContextMenu.close();
+                tokenCatalogOverlay.allowDetailsPopup();
+                return true;
+            }
+
+            if (!tokenCatalogContextMenuOverlay.containsPoint(
+                    tokenCatalogContextMenu,
+                    mouseX,
+                    mouseY
+            )) {
+                tokenCatalogContextMenu.close();
+                tokenCatalogOverlay.allowDetailsPopup();
+                return true;
+            }
+        }
+
         if (panelVisibility.isTokenCatalogVisible()
                 && tokenCatalogOverlay.isCreateTokenButtonAt(
                 tokenDefinitionRegistry,
@@ -352,6 +390,30 @@ public final class VTTScreen extends Screen {
             lastTokenImagePickerClickedItemId = null;
             lastTokenImagePickerClickTime = 0L;
             return true;
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT
+                && panelVisibility.isTokenCatalogVisible()) {
+            TokenDefinition clickedToken = tokenCatalogOverlay.findTokenAt(
+                    tokenDefinitionRegistry,
+                    this.height,
+                    mouseX,
+                    mouseY
+            );
+
+            if (clickedToken != null) {
+                tokenCatalogSelection.select(clickedToken.id());
+
+                tokenCatalogOverlay.suppressDetailsPopup();
+
+                tokenCatalogContextMenu.open(
+                        (int) mouseX + 8,
+                        (int) mouseY - 4,
+                        clickedToken
+                );
+
+                return true;
+            }
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -454,6 +516,37 @@ public final class VTTScreen extends Screen {
         tokenImagePickerActive = false;
         lastTokenImagePickerClickedItemId = null;
         lastTokenImagePickerClickTime = 0L;
+    }
+
+    private void handleTokenCatalogContextMenuAction(
+            TokenCatalogContextMenuOverlay.Action action
+    ) {
+        TokenDefinition tokenDefinition = tokenCatalogContextMenu.getTokenDefinition();
+
+        if (tokenDefinition == null) {
+            return;
+        }
+
+        switch (action) {
+            case EDIT -> {
+                System.out.println("Edit token: " + tokenDefinition.id());
+            }
+
+            case VIEW_IN_EXPLORER -> {
+                System.out.println("View in explorer: " + tokenDefinition.id());
+            }
+
+            case DUPLICATE -> {
+                System.out.println("Duplicate token: " + tokenDefinition.id());
+            }
+
+            case DELETE -> {
+                System.out.println("Delete token: " + tokenDefinition.id());
+            }
+
+            case NONE -> {
+            }
+        }
     }
 
     private boolean handleTokenCreationMouseClicked(
@@ -684,6 +777,12 @@ public final class VTTScreen extends Screen {
                 return true;
             }
 
+            return true;
+        }
+
+        if (tokenCatalogContextMenu.isOpen() && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            tokenCatalogContextMenu.close();
+            tokenCatalogOverlay.allowDetailsPopup();
             return true;
         }
 
