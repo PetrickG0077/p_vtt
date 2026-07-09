@@ -541,11 +541,30 @@ public final class VTTScreen extends Screen {
             }
 
             case DELETE -> {
-                System.out.println("Delete token: " + tokenDefinition.id());
+                deleteTokenDefinition(tokenDefinition);
             }
 
             case NONE -> {
             }
+        }
+    }
+
+    private void deleteTokenDefinition(TokenDefinition tokenDefinition) {
+        if (tokenDefinition == null) {
+            return;
+        }
+
+        if (!CreatedTokenStorage.isUserCreatedToken(tokenDefinition)) {
+            System.out.println("Cannot delete built-in/debug token: " + tokenDefinition.id());
+            return;
+        }
+
+        CreatedTokenStorage.deleteCreatedToken(tokenDefinition);
+
+        tokenDefinitionRegistry.removeById(tokenDefinition.id());
+
+        if (tokenCatalogSelection.isSelected(tokenDefinition.id())) {
+            tokenCatalogSelection.clear();
         }
     }
 

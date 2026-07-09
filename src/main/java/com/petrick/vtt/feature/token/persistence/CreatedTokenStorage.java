@@ -256,6 +256,47 @@ public final class CreatedTokenStorage {
         return safeName + ".json";
     }
 
+    public static void deleteCreatedToken(TokenDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+
+        if (!isUserCreatedToken(definition)) {
+            VTT.LOGGER.warn(
+                    "Ignoring delete request for non-user-created token: {}",
+                    definition.id()
+            );
+            return;
+        }
+
+        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+
+        try {
+            boolean deleted = Files.deleteIfExists(file);
+
+            if (deleted) {
+                VTT.LOGGER.info("Deleted created VTT token file: {}", file);
+            } else {
+                VTT.LOGGER.warn("Created VTT token file did not exist: {}", file);
+            }
+        } catch (IOException exception) {
+            VTT.LOGGER.error(
+                    "Failed to delete created VTT token file: {}",
+                    definition.id(),
+                    exception
+            );
+        }
+    }
+
+    public static boolean isUserCreatedToken(TokenDefinition definition) {
+        if (definition == null) {
+            return false;
+        }
+
+        return definition.id() != null
+                && definition.id().startsWith("user/tokens/");
+    }
+
     private static String sanitizeFileName(String value) {
         if (value == null) {
             return "new_token";

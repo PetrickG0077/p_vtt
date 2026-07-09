@@ -47,6 +47,22 @@ public final class TokenDefinitionRegistry {
         return definitionsById.size();
     }
 
+    public void removeById(String id) {
+        if (id == null || id.isBlank()) {
+            return;
+        }
+
+        definitionsById.remove(id);
+    }
+
+    public boolean contains(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+
+        return definitionsById.containsKey(id);
+    }
+
     public void clear() {
         definitionsById.clear();
     }
