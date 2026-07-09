@@ -6,6 +6,7 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
+import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
@@ -24,6 +25,8 @@ public final class VTTSession {
     private final AssetRegistry assetRegistry;
 
     private final TokenDefinitionRegistry tokenDefinitionRegistry;
+
+    private final TabletopStoragePaths tabletopStoragePaths;
 
     private final CanvasScene canvasScene;
 
@@ -58,6 +61,12 @@ public final class VTTSession {
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
 
+        this.tabletopStoragePaths = new TabletopStoragePaths(
+                Minecraft.getInstance().gameDirectory.toPath()
+        );
+        tabletopStoragePaths.ensureBaseFoldersExist();
+        tabletopStoragePaths.ensureTabletopFoldersExist("default");
+
         CreatedTokenStorage.loadCreatedTokens(
                 tokenDefinitionRegistry,
                 assetRegistry
@@ -82,6 +91,10 @@ public final class VTTSession {
 
     public boolean isLocalMaster() {
         return localRole == VttRole.MASTER;
+    }
+
+    public TabletopStoragePaths getTabletopStoragePaths() {
+        return tabletopStoragePaths;
     }
 
     public AssetRegistry getAssetRegistry() {
