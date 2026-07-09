@@ -7,6 +7,9 @@ import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.canvas.visual.AnimatedTextureVisual;
+import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -114,12 +117,23 @@ public final class CreatedTokenDefinitions {
                     new CanvasObjectState(
                             stateDraft.getId(),
                             stateDraft.getDisplayName(),
-                            new TextureVisual(assetRef)
+                            createVisualForState(assetRef, stateDraft.getImageFileType())
                     )
             );
         }
 
         return states;
+    }
+
+    private static CanvasVisual createVisualForState(
+            LibraryTextureAssetRef assetRef,
+            AssetLibraryFileType fileType
+    ) {
+        if (fileType == AssetLibraryFileType.ANIMATED_IMAGE) {
+            return new AnimatedTextureVisual(assetRef);
+        }
+
+        return new TextureVisual(assetRef);
     }
 
     private static String createUniqueTokenDefinitionId(

@@ -12,6 +12,8 @@ import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.editor.token.TokenStateDraft;
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.canvas.visual.AnimatedTextureVisual;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -472,7 +474,7 @@ public final class CreatedTokenStorage {
                         new CanvasObjectState(
                                 stateData.id,
                                 stateData.displayName,
-                                new TextureVisual(assetRef)
+                                createVisualForState(assetRef, parseFileType(stateData.imageFileType))
                         )
                 );
             }
@@ -505,7 +507,10 @@ public final class CreatedTokenStorage {
                     new CanvasObjectState(
                             legacyStateId,
                             "Normal",
-                            new TextureVisual(assetRef)
+                            createVisualForState(
+                                    assetRef,
+                                    parseFileType(data.selectedImageFileType)
+                            )
                     )
             );
         }
@@ -525,6 +530,17 @@ public final class CreatedTokenStorage {
                 states,
                 defaultStateId
         );
+    }
+
+    private static com.petrick.vtt.feature.canvas.visual.CanvasVisual createVisualForState(
+            LibraryTextureAssetRef assetRef,
+            AssetLibraryFileType fileType
+    ) {
+        if (fileType == AssetLibraryFileType.ANIMATED_IMAGE) {
+            return new AnimatedTextureVisual(assetRef);
+        }
+
+        return new TextureVisual(assetRef);
     }
 
     private static boolean isValid(CreatedTokenSaveData data) {
@@ -640,6 +656,7 @@ public final class CreatedTokenStorage {
         data.selectedImageId = defaultState.getImageId();
         data.selectedImageDisplayName = defaultState.getImageDisplayName();
         data.selectedImageTextureId = defaultState.getImageTexture().toString();
+        data.selectedImageFileType = defaultState.getImageFileType().name();
         data.selectedImageWidth = defaultState.getImageWidth();
         data.selectedImageHeight = defaultState.getImageHeight();
 
@@ -667,6 +684,7 @@ public final class CreatedTokenStorage {
             stateData.imageId = stateDraft.getImageId();
             stateData.imageDisplayName = stateDraft.getImageDisplayName();
             stateData.imageTextureId = stateDraft.getImageTexture().toString();
+            stateData.imageFileType = stateDraft.getImageFileType().name();
             stateData.imageWidth = stateDraft.getImageWidth();
             stateData.imageHeight = stateDraft.getImageHeight();
 
@@ -695,7 +713,8 @@ public final class CreatedTokenStorage {
                         stateData.imageDisplayName,
                         ResourceLocation.parse(stateData.imageTextureId),
                         stateData.imageWidth,
-                        stateData.imageHeight
+                        stateData.imageHeight,
+                        parseFileType(stateData.imageFileType)
                 );
 
                 drafts.add(stateDraft);
@@ -727,6 +746,18 @@ public final class CreatedTokenStorage {
         drafts.add(legacyState);
 
         return drafts;
+    }
+
+    private static AssetLibraryFileType parseFileType(String value) {
+        if (value == null || value.isBlank()) {
+            return AssetLibraryFileType.IMAGE;
+        }
+
+        try {
+            return AssetLibraryFileType.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            return AssetLibraryFileType.IMAGE;
+        }
     }
 
     private static void deleteOldFileIfRenamed(

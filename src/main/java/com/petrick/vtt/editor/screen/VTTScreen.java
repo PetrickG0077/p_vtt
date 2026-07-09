@@ -22,6 +22,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
 import com.petrick.vtt.feature.asset.AssetRegistry;
@@ -1289,7 +1290,8 @@ public final class VTTScreen extends Screen {
                     item.displayName(),
                     builtInTexture.texture(),
                     builtInTexture.textureWidth(),
-                    builtInTexture.textureHeight()
+                    builtInTexture.textureHeight(),
+                    AssetLibraryFileType.IMAGE
             );
 
             return;
@@ -1309,7 +1311,8 @@ public final class VTTScreen extends Screen {
                     item.displayName(),
                     thumbnail.texture(),
                     thumbnail.width(),
-                    thumbnail.height()
+                    thumbnail.height(),
+                    libraryFile.entry().fileType()
             );
         }
     }

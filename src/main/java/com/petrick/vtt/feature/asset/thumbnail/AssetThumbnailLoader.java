@@ -16,8 +16,8 @@ import java.nio.file.Files;
  * Carrega miniaturas de arquivos de imagem externos como DynamicTexture.
  *
  * Por enquanto:
- * - carrega apenas IMAGE;
- * - não carrega ANIMATED_IMAGE;
+ * - IMAGE carrega a imagem real;
+ * - ANIMATED_IMAGE carrega um placeholder temporário;
  * - não redimensiona a imagem;
  * - rejeita arquivos/imagens grandes demais.
  */
@@ -28,6 +28,8 @@ public final class AssetThumbnailLoader {
     private static final int MAX_IMAGE_WIDTH = 2048;
 
     private static final int MAX_IMAGE_HEIGHT = 2048;
+
+    private static final int ANIMATED_PLACEHOLDER_SIZE = 64;
 
     private final AssetThumbnailRegistry registry;
 
@@ -44,7 +46,8 @@ public final class AssetThumbnailLoader {
             return;
         }
 
-        if (entry.fileType() != AssetLibraryFileType.IMAGE) {
+        if (entry.fileType() != AssetLibraryFileType.IMAGE
+                && entry.fileType() != AssetLibraryFileType.ANIMATED_IMAGE) {
             return;
         }
 
@@ -62,6 +65,15 @@ public final class AssetThumbnailLoader {
             return;
         }
 
+        if (entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE) {
+            loadAnimatedImagePlaceholder(entry);
+            return;
+        }
+
+        loadStaticImageThumbnail(entry);
+    }
+
+    private void loadStaticImageThumbnail(AssetLibraryEntry entry) {
         try (InputStream inputStream = Files.newInputStream(entry.absolutePath())) {
             NativeImage image = NativeImage.read(inputStream);
 
@@ -77,25 +89,15 @@ public final class AssetThumbnailLoader {
                 return;
             }
 
-            DynamicTexture dynamicTexture = new DynamicTexture(image);
-
-            ResourceLocation textureLocation = Minecraft.getInstance()
-                    .getTextureManager()
-                    .register(
-                            "vtt_asset_thumbnail/" + sanitizeTextureName(thumbnailId),
-                            dynamicTexture
-                    );
-
-            registry.register(new AssetThumbnail(
-                    thumbnailId,
-                    textureLocation,
-                    image.getWidth(),
-                    image.getHeight()
-            ));
+            registerThumbnail(
+                    entry.id(),
+                    image,
+                    "vtt_asset_thumbnail/" + sanitizeTextureName(entry.id())
+            );
 
             VTT.LOGGER.info(
                     "Loaded VTT asset thumbnail: {} ({}x{})",
-                    thumbnailId,
+                    entry.id(),
                     image.getWidth(),
                     image.getHeight()
             );
@@ -112,6 +114,73 @@ public final class AssetThumbnailLoader {
                     exception
             );
         }
+    }
+
+    private void loadAnimatedImagePlaceholder(AssetLibraryEntry entry) {
+        try {
+            NativeImage image = createAnimatedImagePlaceholder();
+
+            registerThumbnail(
+                    entry.id(),
+                    image,
+                    "vtt_asset_thumbnail/animated/" + sanitizeTextureName(entry.id())
+            );
+
+            VTT.LOGGER.info(
+                    "Loaded VTT animated asset placeholder thumbnail: {}",
+                    entry.id()
+            );
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error(
+                    "Failed to create animated VTT asset placeholder thumbnail: {}",
+                    entry.absolutePath(),
+                    exception
+            );
+        }
+    }
+
+    private NativeImage createAnimatedImagePlaceholder() {
+        NativeImage image = new NativeImage(
+                ANIMATED_PLACEHOLDER_SIZE,
+                ANIMATED_PLACEHOLDER_SIZE,
+                false
+        );
+
+        for (int y = 0; y < ANIMATED_PLACEHOLDER_SIZE; y++) {
+            for (int x = 0; x < ANIMATED_PLACEHOLDER_SIZE; x++) {
+                boolean checker = ((x / 8) + (y / 8)) % 2 == 0;
+
+                int color = checker
+                        ? 0xFFFFAA33
+                        : 0xFF552266;
+
+                image.setPixelRGBA(x, y, color);
+            }
+        }
+
+        return image;
+    }
+
+    private void registerThumbnail(
+            String thumbnailId,
+            NativeImage image,
+            String textureName
+    ) {
+        DynamicTexture dynamicTexture = new DynamicTexture(image);
+
+        ResourceLocation textureLocation = Minecraft.getInstance()
+                .getTextureManager()
+                .register(
+                        textureName,
+                        dynamicTexture
+                );
+
+        registry.register(new AssetThumbnail(
+                thumbnailId,
+                textureLocation,
+                image.getWidth(),
+                image.getHeight()
+        ));
     }
 
     private boolean isFileSizeAllowed(AssetLibraryEntry entry) {

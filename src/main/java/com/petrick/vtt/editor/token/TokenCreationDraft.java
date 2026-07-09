@@ -2,6 +2,8 @@ package com.petrick.vtt.editor.token;
 
 import net.minecraft.resources.ResourceLocation;
 
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -268,6 +270,24 @@ public final class TokenCreationDraft {
             int width,
             int height
     ) {
+        selectImage(
+                imageId,
+                displayName,
+                texture,
+                width,
+                height,
+                AssetLibraryFileType.IMAGE
+        );
+    }
+
+    public void selectImage(
+            String imageId,
+            String displayName,
+            ResourceLocation texture,
+            int width,
+            int height,
+            AssetLibraryFileType imageFileType
+    ) {
         if (imageId == null || imageId.isBlank()) {
             clearSelectedImage();
             return;
@@ -294,7 +314,8 @@ public final class TokenCreationDraft {
                     displayName,
                     texture,
                     width,
-                    height
+                    height,
+                    imageFileType
             );
         }
 
