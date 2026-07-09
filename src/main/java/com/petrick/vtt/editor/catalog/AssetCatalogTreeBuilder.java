@@ -16,6 +16,10 @@ import java.util.Map;
  * tokens
  *   Kaleb
  *     kaleb_idle.png
+ *
+ * Observação:
+ * Assets internos do VTT, como imagens de tokens criados pelo usuário,
+ * não devem aparecer no Asset Catalog.
  */
 public final class AssetCatalogTreeBuilder {
 
@@ -23,6 +27,10 @@ public final class AssetCatalogTreeBuilder {
         MutableFolder root = new MutableFolder("folder:root", "root");
 
         for (AssetCatalogItem item : items) {
+            if (shouldHideItem(item)) {
+                continue;
+            }
+
             addItem(root, item);
         }
 
@@ -61,6 +69,31 @@ public final class AssetCatalogTreeBuilder {
         for (AssetCatalogTreeNode child : folder.children()) {
             appendVisibleRows(child, depth + 1, treeState, rows);
         }
+    }
+
+    private boolean shouldHideItem(AssetCatalogItem item) {
+        if (item == null) {
+            return true;
+        }
+
+        if (item instanceof AssetCatalogItem.RegisteredAsset) {
+            return isInternalAsset(item.displayName());
+        }
+
+        return false;
+    }
+
+    private boolean isInternalAsset(String assetId) {
+        if (assetId == null || assetId.isBlank()) {
+            return false;
+        }
+
+        String normalizedId = assetId
+                .replace('\\', '/')
+                .toLowerCase();
+
+        return normalizedId.startsWith("user/token_images/")
+                || normalizedId.startsWith("user/tokens/");
     }
 
     private void addItem(MutableFolder root, AssetCatalogItem item) {
