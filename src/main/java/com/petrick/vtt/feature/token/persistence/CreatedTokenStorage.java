@@ -56,15 +56,9 @@ public final class CreatedTokenStorage {
         Path folder = getTokensFolder();
 
         try {
-            Files.createDirectories(folder);
+            saveCreatedTokenData(data);
 
-            Path file = folder.resolve(createFileName(definition.displayName()));
-
-            try (Writer writer = Files.newBufferedWriter(file)) {
-                GSON.toJson(data, writer);
-            }
-
-            VTT.LOGGER.info("Saved created VTT token: {}", file);
+            VTT.LOGGER.info("Saved created VTT token: {}", definition.id());
         } catch (IOException exception) {
             VTT.LOGGER.error(
                     "Failed to save created VTT token: {}",
@@ -256,6 +250,99 @@ public final class CreatedTokenStorage {
         return safeName + ".json";
     }
 
+    public static TokenDefinition duplicateCreatedToken(
+            TokenDefinition sourceDefinition,
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            AssetRegistry assetRegistry
+    ) {
+        if (sourceDefinition == null) {
+            return null;
+        }
+
+        if (tokenDefinitionRegistry == null || assetRegistry == null) {
+            return null;
+        }
+
+        if (!isUserCreatedToken(sourceDefinition)) {
+            VTT.LOGGER.warn(
+                    "Ignoring duplicate request for non-user-created token: {}",
+                    sourceDefinition.id()
+            );
+            return null;
+        }
+
+        Path sourceFile = getTokensFolder().resolve(createFileName(sourceDefinition.displayName()));
+
+        if (!Files.exists(sourceFile)) {
+            VTT.LOGGER.warn("Cannot duplicate token because JSON file does not exist: {}", sourceFile);
+            return null;
+        }
+
+        try (Reader reader = Files.newBufferedReader(sourceFile)) {
+            CreatedTokenSaveData sourceData = GSON.fromJson(reader, CreatedTokenSaveData.class);
+
+            if (!isValid(sourceData)) {
+                VTT.LOGGER.warn("Cannot duplicate invalid created VTT token file: {}", sourceFile);
+                return null;
+            }
+
+            String newDisplayName = createUniqueDisplayName(
+                    tokenDefinitionRegistry,
+                    sourceData.displayName + " Copy"
+            );
+
+            String newTokenDefinitionId = createUniqueTokenDefinitionId(
+                    tokenDefinitionRegistry,
+                    "user/tokens/" + sanitizeFileName(newDisplayName)
+            );
+
+            CreatedTokenSaveData duplicatedData = new CreatedTokenSaveData();
+
+            duplicatedData.tokenDefinitionId = newTokenDefinitionId;
+            duplicatedData.displayName = newDisplayName;
+
+            duplicatedData.player = sourceData.player;
+            duplicatedData.notes = sourceData.notes;
+
+            duplicatedData.selectedImageId = sourceData.selectedImageId;
+            duplicatedData.selectedImageDisplayName = sourceData.selectedImageDisplayName;
+            duplicatedData.selectedImageTextureId = sourceData.selectedImageTextureId;
+
+            duplicatedData.selectedImageWidth = sourceData.selectedImageWidth;
+            duplicatedData.selectedImageHeight = sourceData.selectedImageHeight;
+
+            duplicatedData.defaultWidth = sourceData.defaultWidth;
+            duplicatedData.defaultHeight = sourceData.defaultHeight;
+
+            duplicatedData.activeStateId = sourceData.activeStateId;
+
+            TokenDefinition duplicatedDefinition = createTokenDefinitionFromSaveData(
+                    duplicatedData,
+                    assetRegistry
+            );
+
+            tokenDefinitionRegistry.register(duplicatedDefinition);
+
+            saveCreatedTokenData(duplicatedData);
+
+            VTT.LOGGER.info(
+                    "Duplicated created VTT token: {} -> {}",
+                    sourceDefinition.id(),
+                    duplicatedDefinition.id()
+            );
+
+            return duplicatedDefinition;
+        } catch (Exception exception) {
+            VTT.LOGGER.error(
+                    "Failed to duplicate created VTT token: {}",
+                    sourceDefinition.id(),
+                    exception
+            );
+
+            return null;
+        }
+    }
+
     public static void deleteCreatedToken(TokenDefinition definition) {
         if (definition == null) {
             return;
@@ -286,6 +373,61 @@ public final class CreatedTokenStorage {
                     exception
             );
         }
+    }
+
+    private static void saveCreatedTokenData(CreatedTokenSaveData data) throws IOException {
+        Path folder = getTokensFolder();
+
+        Files.createDirectories(folder);
+
+        Path file = folder.resolve(createFileName(data.displayName));
+
+        try (Writer writer = Files.newBufferedWriter(file)) {
+            GSON.toJson(data, writer);
+        }
+    }
+
+    private static String createUniqueDisplayName(
+            TokenDefinitionRegistry registry,
+            String baseDisplayName
+    ) {
+        String displayName = baseDisplayName;
+        int counter = 2;
+
+        while (hasDisplayName(registry, displayName)) {
+            displayName = baseDisplayName + " " + counter;
+            counter++;
+        }
+
+        return displayName;
+    }
+
+    private static boolean hasDisplayName(
+            TokenDefinitionRegistry registry,
+            String displayName
+    ) {
+        for (TokenDefinition definition : registry.getAll()) {
+            if (definition.displayName().equalsIgnoreCase(displayName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static String createUniqueTokenDefinitionId(
+            TokenDefinitionRegistry registry,
+            String baseId
+    ) {
+        String id = baseId;
+        int counter = 2;
+
+        while (registry.findById(id).isPresent()) {
+            id = baseId + "_" + counter;
+            counter++;
+        }
+
+        return id;
     }
 
     public static boolean isUserCreatedToken(TokenDefinition definition) {

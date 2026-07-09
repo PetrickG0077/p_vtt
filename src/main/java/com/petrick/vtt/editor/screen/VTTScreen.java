@@ -407,8 +407,8 @@ public final class VTTScreen extends Screen {
                 tokenCatalogOverlay.suppressDetailsPopup();
 
                 tokenCatalogContextMenu.open(
-                        (int) mouseX + 8,
-                        (int) mouseY - 4,
+                        (int) mouseX + 12,
+                        (int) mouseY - 80,
                         clickedToken
                 );
 
@@ -537,7 +537,7 @@ public final class VTTScreen extends Screen {
             }
 
             case DUPLICATE -> {
-                System.out.println("Duplicate token: " + tokenDefinition.id());
+                duplicateTokenDefinition(tokenDefinition);
             }
 
             case DELETE -> {
@@ -547,6 +547,24 @@ public final class VTTScreen extends Screen {
             case NONE -> {
             }
         }
+    }
+
+    private void duplicateTokenDefinition(TokenDefinition tokenDefinition) {
+        if (tokenDefinition == null) {
+            return;
+        }
+
+        TokenDefinition duplicatedDefinition = CreatedTokenStorage.duplicateCreatedToken(
+                tokenDefinition,
+                tokenDefinitionRegistry,
+                assetRegistry
+        );
+
+        if (duplicatedDefinition == null) {
+            return;
+        }
+
+        tokenCatalogSelection.select(duplicatedDefinition.id());
     }
 
     private void deleteTokenDefinition(TokenDefinition tokenDefinition) {
