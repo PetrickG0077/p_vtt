@@ -9,8 +9,13 @@ import java.nio.file.Path;
 /**
  * Serviço da biblioteca de assets.
  *
- * Por enquanto ele cria a estrutura inicial de pastas.
- * Futuramente também vai escanear arquivos e registrar assets.
+ * Ele cria a estrutura inicial de pastas e escaneia apenas a área pública de assets:
+ *
+ * config/vtt_assets/assets/
+ *
+ * Dados internos do VTT, como tokens criados em JSON, ficam em:
+ *
+ * config/vtt_assets/created/
  */
 public final class AssetLibraryService {
 
@@ -24,6 +29,17 @@ public final class AssetLibraryService {
         }
 
         this.config = config;
+
+        /*
+         * O scanner recebe config.libraryPath().
+         * Como o AssetLibraryConfig agora aponta o libraryPath para:
+         *
+         * config/vtt_assets/assets/
+         *
+         * o Asset Catalog não vai mais escanear:
+         *
+         * config/vtt_assets/created/
+         */
         this.scanner = new AssetLibraryScanner(config.libraryPath());
     }
 
@@ -36,13 +52,17 @@ public final class AssetLibraryService {
     }
 
     public void ensureDirectoriesExist() {
-        AssetLibraryPath path = config.libraryPath();
+        createDirectory(config.rootDirectory());
 
-        createDirectory(path.rootDirectory());
+        createDirectory(config.assetsDirectory());
 
         for (AssetLibraryDefaultFolder folder : AssetLibraryDefaultFolder.values()) {
-            createDirectory(path.defaultFolderDirectory(folder));
+            createDirectory(config.libraryPath().defaultFolderDirectory(folder));
         }
+
+        createDirectory(config.createdDirectory());
+
+        createDirectory(config.createdTokensDirectory());
     }
 
     private void createDirectory(Path directory) {
