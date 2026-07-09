@@ -1,9 +1,12 @@
 package com.petrick.vtt.editor.dialog;
 
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.editor.token.TokenStateDraft;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.List;
 
 /**
  * Janela visual para criação e edição básica de tokens.
@@ -60,7 +63,27 @@ public final class TokenCreationDialog {
 
     private static final int BUTTON_HEIGHT = 30;
 
+    private static final int STATE_PANEL_X_OFFSET = 26;
+
+    private static final int STATE_PANEL_Y_OFFSET = 160;
+
+    private static final int STATE_PANEL_WIDTH = 378;
+
+    private static final int STATE_PANEL_HEIGHT = 62;
+
+    private static final int STATE_ROW_HEIGHT = 15;
+
+    private static final int STATE_ADD_BUTTON_SIZE = 16;
+
+    private static final int MAX_VISIBLE_STATES = 2;
+
+    private static final int SELECTED_STATE_BACKGROUND = 0x553399FF;
+
+    private static final int HOVERED_STATE_BACKGROUND = 0x33222222;
+
     private Field activeField = Field.NONE;
+
+    private int stateListScrollOffset = 0;
 
     public void render(
             VRenderContext context,
@@ -114,14 +137,7 @@ public final class TokenCreationDialog {
                 Field.NOTES
         );
 
-        drawCenteredString(
-                context,
-                font,
-                "INFORMAÇÕES FUTURAS",
-                x + DIALOG_WIDTH / 2,
-                y + 180,
-                MUTED_TEXT_COLOR
-        );
+        renderStatesPanel(context, font, draft, x + STATE_PANEL_X_OFFSET, y + STATE_PANEL_Y_OFFSET);
 
         if (draft.hasError()) {
             drawCenteredString(
@@ -129,7 +145,7 @@ public final class TokenCreationDialog {
                     font,
                     draft.getErrorMessage(),
                     x + DIALOG_WIDTH / 2,
-                    y + 204,
+                    y + 224,
                     0xFFFF5555
             );
         }
@@ -172,6 +188,27 @@ public final class TokenCreationDialog {
         if (isMouseOverImageButton(screenWidth, screenHeight, mouseX, mouseY)) {
             activeField = Field.NONE;
             return Action.CHOOSE_IMAGE;
+        }
+
+        if (isMouseOverAddStateButton(screenWidth, screenHeight, mouseX, mouseY)) {
+            activeField = Field.NONE;
+            draft.addState();
+            stateListScrollOffset = getMaxStateListScrollOffset(draft);
+            return Action.NONE;
+        }
+
+        TokenStateDraft clickedState = findStateAt(
+                screenWidth,
+                screenHeight,
+                draft,
+                mouseX,
+                mouseY
+        );
+
+        if (clickedState != null) {
+            activeField = Field.NONE;
+            draft.selectState(clickedState.getId());
+            return Action.NONE;
         }
 
         if (isPointInside(
@@ -249,6 +286,78 @@ public final class TokenCreationDialog {
         appendToActiveField(draft, codePoint);
 
         return true;
+    }
+
+    public boolean mouseScrolled(
+            TokenCreationDraft draft,
+            double mouseX,
+            double mouseY,
+            double scrollY,
+            int screenWidth,
+            int screenHeight
+    ) {
+        if (draft == null) {
+            return false;
+        }
+
+        if (!isMouseOverStatesPanel(screenWidth, screenHeight, mouseX, mouseY)) {
+            return false;
+        }
+
+        int maxOffset = getMaxStateListScrollOffset(draft);
+
+        if (maxOffset <= 0) {
+            return true;
+        }
+
+        if (scrollY < 0) {
+            stateListScrollOffset++;
+        } else if (scrollY > 0) {
+            stateListScrollOffset--;
+        }
+
+        clampStateListScrollOffset(draft);
+
+        return true;
+    }
+
+    private boolean isMouseOverStatesPanel(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        return isPointInside(
+                mouseX,
+                mouseY,
+                x,
+                y,
+                STATE_PANEL_WIDTH,
+                STATE_PANEL_HEIGHT
+        );
+    }
+
+    private void clampStateListScrollOffset(TokenCreationDraft draft) {
+        int maxOffset = getMaxStateListScrollOffset(draft);
+
+        if (stateListScrollOffset < 0) {
+            stateListScrollOffset = 0;
+        }
+
+        if (stateListScrollOffset > maxOffset) {
+            stateListScrollOffset = maxOffset;
+        }
+    }
+
+    private int getMaxStateListScrollOffset(TokenCreationDraft draft) {
+        if (draft == null) {
+            return 0;
+        }
+
+        return Math.max(0, draft.getStates().size() - MAX_VISIBLE_STATES);
     }
 
     private void renderDimBackground(VRenderContext context) {
@@ -423,6 +532,195 @@ public final class TokenCreationDialog {
         );
     }
 
+    private void renderStatesPanel(
+            VRenderContext context,
+            Font font,
+            TokenCreationDraft draft,
+            int x,
+            int y
+    ) {
+        clampStateListScrollOffset(draft);
+
+        context.graphics().fill(
+                x,
+                y,
+                x + STATE_PANEL_WIDTH,
+                y + STATE_PANEL_HEIGHT,
+                0xAA050505
+        );
+
+        drawBorder(
+                context,
+                x,
+                y,
+                STATE_PANEL_WIDTH,
+                STATE_PANEL_HEIGHT,
+                PANEL_BORDER
+        );
+
+        context.graphics().drawString(
+                font,
+                "States",
+                x + 8,
+                y + 7,
+                TITLE_COLOR,
+                false
+        );
+
+        int addButtonX = x + STATE_PANEL_WIDTH - STATE_ADD_BUTTON_SIZE - 7;
+        int addButtonY = y + 5;
+
+        renderSmallButton(
+                context,
+                font,
+                "+",
+                addButtonX,
+                addButtonY,
+                STATE_ADD_BUTTON_SIZE,
+                STATE_ADD_BUTTON_SIZE,
+                isMouseOverAddStateButton(
+                        context.screenWidth(),
+                        context.screenHeight(),
+                        context.mouseX(),
+                        context.mouseY()
+                )
+        );
+
+        List<TokenStateDraft> states = draft.getStates();
+
+        int rowX = x + 8;
+        int rowY = y + 25;
+        int rowWidth = STATE_PANEL_WIDTH - 28;
+
+        int startIndex = stateListScrollOffset;
+        int endIndex = Math.min(states.size(), startIndex + MAX_VISIBLE_STATES);
+
+        for (int i = startIndex; i < endIndex; i++) {
+            TokenStateDraft state = states.get(i);
+
+            int visibleIndex = i - startIndex;
+
+            renderStateRow(
+                    context,
+                    font,
+                    draft,
+                    state,
+                    rowX,
+                    rowY + visibleIndex * STATE_ROW_HEIGHT,
+                    rowWidth
+            );
+        }
+
+        if (states.size() > MAX_VISIBLE_STATES) {
+            renderStateScrollIndicator(
+                    context,
+                    font,
+                    x,
+                    y,
+                    states.size()
+            );
+        }
+    }
+
+    private void renderStateScrollIndicator(
+            VRenderContext context,
+            Font font,
+            int panelX,
+            int panelY,
+            int stateCount
+    ) {
+        int maxOffset = Math.max(0, stateCount - MAX_VISIBLE_STATES);
+
+        String text = (stateListScrollOffset + 1)
+                + "-"
+                + Math.min(stateListScrollOffset + MAX_VISIBLE_STATES, stateCount)
+                + " / "
+                + stateCount;
+
+        context.graphics().drawString(
+                font,
+                text,
+                panelX + STATE_PANEL_WIDTH - 58,
+                panelY + STATE_PANEL_HEIGHT - 12,
+                MUTED_TEXT_COLOR,
+                false
+        );
+
+        int barX = panelX + STATE_PANEL_WIDTH - 12;
+        int barY = panelY + 25;
+        int barHeight = STATE_ROW_HEIGHT * MAX_VISIBLE_STATES;
+
+        context.graphics().fill(
+                barX,
+                barY,
+                barX + 3,
+                barY + barHeight,
+                0x55333333
+        );
+
+        if (maxOffset <= 0) {
+            return;
+        }
+
+        int thumbHeight = Math.max(6, barHeight / stateCount);
+        int thumbTravel = barHeight - thumbHeight;
+
+        int thumbY = barY + (int) Math.round(
+                thumbTravel * (stateListScrollOffset / (double) maxOffset)
+        );
+
+        context.graphics().fill(
+                barX,
+                thumbY,
+                barX + 3,
+                thumbY + thumbHeight,
+                PANEL_BORDER
+        );
+    }
+
+    private void renderStateRow(
+            VRenderContext context,
+            Font font,
+            TokenCreationDraft draft,
+            TokenStateDraft state,
+            int x,
+            int y,
+            int width
+    ) {
+        boolean selected = draft.isStateSelected(state.getId());
+        boolean hovered = isMouseOverStateRow(
+                context.screenWidth(),
+                context.screenHeight(),
+                context.mouseX(),
+                context.mouseY(),
+                draft,
+                state
+        );
+
+        if (selected || hovered) {
+            context.graphics().fill(
+                    x - 2,
+                    y - 1,
+                    x + width,
+                    y + STATE_ROW_HEIGHT - 1,
+                    selected ? SELECTED_STATE_BACKGROUND : HOVERED_STATE_BACKGROUND
+            );
+        }
+
+        String imageInfo = state.hasImage()
+                ? " - " + truncateText(state.getImageDisplayName(), 18)
+                : " - no image";
+
+        context.graphics().drawString(
+                font,
+                "[" + state.getId() + "] " + state.getDisplayName() + imageInfo,
+                x,
+                y + 3,
+                selected ? TITLE_COLOR : TEXT_COLOR,
+                false
+        );
+    }
+
     private void renderButton(
             VRenderContext context,
             Font font,
@@ -458,6 +756,43 @@ public final class TokenCreationDialog {
         );
     }
 
+    private void renderSmallButton(
+            VRenderContext context,
+            Font font,
+            String text,
+            int x,
+            int y,
+            int width,
+            int height,
+            boolean hovered
+    ) {
+        context.graphics().fill(
+                x,
+                y,
+                x + width,
+                y + height,
+                BUTTON_BACKGROUND
+        );
+
+        drawBorder(
+                context,
+                x,
+                y,
+                width,
+                height,
+                hovered ? BUTTON_HOVER_BORDER : BUTTON_BORDER
+        );
+
+        drawCenteredString(
+                context,
+                font,
+                text,
+                x + width / 2,
+                y + 4,
+                TEXT_COLOR
+        );
+    }
+
     private Field findFieldAt(
             int screenWidth,
             int screenHeight,
@@ -480,6 +815,101 @@ public final class TokenCreationDialog {
         }
 
         return Field.NONE;
+    }
+
+    private TokenStateDraft findStateAt(
+            int screenWidth,
+            int screenHeight,
+            TokenCreationDraft draft,
+            double mouseX,
+            double mouseY
+    ) {
+        clampStateListScrollOffset(draft);
+
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        int rowX = x + 8;
+        int rowY = y + 25;
+        int rowWidth = STATE_PANEL_WIDTH - 28;
+
+        List<TokenStateDraft> states = draft.getStates();
+
+        int startIndex = stateListScrollOffset;
+        int endIndex = Math.min(states.size(), startIndex + MAX_VISIBLE_STATES);
+
+        for (int i = startIndex; i < endIndex; i++) {
+            TokenStateDraft state = states.get(i);
+
+            int visibleIndex = i - startIndex;
+            int currentY = rowY + visibleIndex * STATE_ROW_HEIGHT;
+
+            if (isPointInside(mouseX, mouseY, rowX - 2, currentY - 1, rowWidth + 2, STATE_ROW_HEIGHT)) {
+                return state;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isMouseOverStateRow(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY,
+            TokenCreationDraft draft,
+            TokenStateDraft state
+    ) {
+        clampStateListScrollOffset(draft);
+
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        int rowX = x + 8;
+        int rowY = y + 25;
+        int rowWidth = STATE_PANEL_WIDTH - 28;
+
+        List<TokenStateDraft> states = draft.getStates();
+
+        int startIndex = stateListScrollOffset;
+        int endIndex = Math.min(states.size(), startIndex + MAX_VISIBLE_STATES);
+
+        for (int i = startIndex; i < endIndex; i++) {
+            TokenStateDraft currentState = states.get(i);
+
+            if (!currentState.getId().equals(state.getId())) {
+                continue;
+            }
+
+            int visibleIndex = i - startIndex;
+            int currentY = rowY + visibleIndex * STATE_ROW_HEIGHT;
+
+            return isPointInside(mouseX, mouseY, rowX - 2, currentY - 1, rowWidth + 2, STATE_ROW_HEIGHT);
+        }
+
+        return false;
+    }
+
+    private boolean isMouseOverAddStateButton(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        int addButtonX = x + STATE_PANEL_WIDTH - STATE_ADD_BUTTON_SIZE - 7;
+        int addButtonY = y + 5;
+
+        return isPointInside(
+                mouseX,
+                mouseY,
+                addButtonX,
+                addButtonY,
+                STATE_ADD_BUTTON_SIZE,
+                STATE_ADD_BUTTON_SIZE
+        );
     }
 
     private void appendToActiveField(

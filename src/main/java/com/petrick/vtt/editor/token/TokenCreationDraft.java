@@ -2,6 +2,10 @@ package com.petrick.vtt.editor.token;
 
 import net.minecraft.resources.ResourceLocation;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * Dados temporários enquanto o usuário está criando ou editando um token.
  */
@@ -11,6 +15,8 @@ public final class TokenCreationDraft {
         CREATE,
         EDIT
     }
+
+    private static final int MAX_STATES = 9;
 
     private Mode mode = Mode.CREATE;
 
@@ -35,6 +41,14 @@ public final class TokenCreationDraft {
     private int selectedImageWidth;
 
     private int selectedImageHeight;
+
+    private final List<TokenStateDraft> states = new ArrayList<>();
+
+    private String selectedStateId;
+
+    public TokenCreationDraft() {
+        ensureDefaultState();
+    }
 
     public Mode getMode() {
         return mode;
@@ -159,6 +173,18 @@ public final class TokenCreationDraft {
         this.selectedImageWidth = width;
         this.selectedImageHeight = height;
 
+        TokenStateDraft selectedState = getSelectedState();
+
+        if (selectedState != null) {
+            selectedState.selectImage(
+                    imageId,
+                    displayName,
+                    texture,
+                    width,
+                    height
+            );
+        }
+
         clearError();
     }
 
@@ -168,6 +194,82 @@ public final class TokenCreationDraft {
         this.selectedImageTexture = null;
         this.selectedImageWidth = 0;
         this.selectedImageHeight = 0;
+
+        TokenStateDraft selectedState = getSelectedState();
+
+        if (selectedState != null) {
+            selectedState.clearImage();
+        }
+    }
+
+    public List<TokenStateDraft> getStates() {
+        ensureDefaultState();
+        return Collections.unmodifiableList(states);
+    }
+
+    public String getSelectedStateId() {
+        ensureDefaultState();
+        return selectedStateId;
+    }
+
+    public TokenStateDraft getSelectedState() {
+        ensureDefaultState();
+
+        for (TokenStateDraft state : states) {
+            if (state.getId().equals(selectedStateId)) {
+                return state;
+            }
+        }
+
+        return states.get(0);
+    }
+
+    public boolean isStateSelected(String stateId) {
+        if (stateId == null || stateId.isBlank()) {
+            return false;
+        }
+
+        return stateId.equals(getSelectedStateId());
+    }
+
+    public void selectState(String stateId) {
+        if (stateId == null || stateId.isBlank()) {
+            return;
+        }
+
+        for (TokenStateDraft state : states) {
+            if (state.getId().equals(stateId)) {
+                this.selectedStateId = stateId;
+                syncMainImageFromState(state);
+                clearError();
+                return;
+            }
+        }
+    }
+
+    public boolean canAddState() {
+        return states.size() < MAX_STATES;
+    }
+
+    public TokenStateDraft addState() {
+        if (!canAddState()) {
+            setErrorMessage("State limit reached");
+            return null;
+        }
+
+        String id = createNextStateId();
+
+        TokenStateDraft state = new TokenStateDraft(
+                id,
+                "State " + id
+        );
+
+        states.add(state);
+        selectedStateId = id;
+        syncMainImageFromState(state);
+        clearError();
+
+        return state;
     }
 
     public String getErrorMessage() {
@@ -184,6 +286,50 @@ public final class TokenCreationDraft {
 
     public void clearError() {
         this.errorMessage = "";
+    }
+
+    private void ensureDefaultState() {
+        if (states.isEmpty()) {
+            TokenStateDraft defaultState = new TokenStateDraft("1", "Normal");
+            states.add(defaultState);
+            selectedStateId = defaultState.getId();
+        }
+
+        if (selectedStateId == null || selectedStateId.isBlank()) {
+            selectedStateId = states.get(0).getId();
+        }
+    }
+
+    private String createNextStateId() {
+        int id = 1;
+
+        while (hasStateId(Integer.toString(id))) {
+            id++;
+        }
+
+        return Integer.toString(id);
+    }
+
+    private boolean hasStateId(String stateId) {
+        for (TokenStateDraft state : states) {
+            if (state.getId().equals(stateId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void syncMainImageFromState(TokenStateDraft state) {
+        if (state == null || !state.hasImage()) {
+            return;
+        }
+
+        this.selectedImageId = state.getImageId();
+        this.selectedImageDisplayName = state.getImageDisplayName();
+        this.selectedImageTexture = state.getImageTexture();
+        this.selectedImageWidth = state.getImageWidth();
+        this.selectedImageHeight = state.getImageHeight();
     }
 
     private String sanitize(String value) {

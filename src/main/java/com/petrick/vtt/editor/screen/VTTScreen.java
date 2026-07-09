@@ -811,6 +811,21 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (tokenCreationDraft != null) {
+            if (tokenCreationDialog.mouseScrolled(
+                    tokenCreationDraft,
+                    mouseX,
+                    mouseY,
+                    scrollY,
+                    this.width,
+                    this.height
+            )) {
+                return true;
+            }
+
+            return true;
+        }
+
         if (assetCatalogController.mouseScrolled(
                 assetCatalogOverlay,
                 assetRegistry,
