@@ -1044,18 +1044,10 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_1 || keyCode == GLFW.GLFW_KEY_KP_1) {
-            inputController.setSelectedObjectsActiveState("1");
-            return true;
-        }
+        String requestedStateId = getStateIdFromNumberKey(keyCode);
 
-        if (keyCode == GLFW.GLFW_KEY_2 || keyCode == GLFW.GLFW_KEY_KP_2) {
-            inputController.setSelectedObjectsActiveState("2");
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_3 || keyCode == GLFW.GLFW_KEY_KP_3) {
-            inputController.setSelectedObjectsActiveState("3");
+        if (requestedStateId != null) {
+            inputController.setSelectedObjectsActiveState(requestedStateId);
             return true;
         }
 
@@ -1089,6 +1081,20 @@ public final class VTTScreen extends Screen {
         }
 
         return super.charTyped(codePoint, modifiers);
+    }
+
+    private String getStateIdFromNumberKey(int keyCode) {
+        if (keyCode >= GLFW.GLFW_KEY_1 && keyCode <= GLFW.GLFW_KEY_9) {
+            int number = keyCode - GLFW.GLFW_KEY_1 + 1;
+            return Integer.toString(number);
+        }
+
+        if (keyCode >= GLFW.GLFW_KEY_KP_1 && keyCode <= GLFW.GLFW_KEY_KP_9) {
+            int number = keyCode - GLFW.GLFW_KEY_KP_1 + 1;
+            return Integer.toString(number);
+        }
+
+        return null;
     }
 
     private void createTokenFromDraggedTokenDefinition(
