@@ -13,6 +13,7 @@ import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.Util;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -250,6 +251,39 @@ public final class CreatedTokenStorage {
         return safeName + ".json";
     }
 
+    public static void viewCreatedTokenInExplorer(TokenDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+
+        if (!isUserCreatedToken(definition)) {
+            VTT.LOGGER.warn(
+                    "Ignoring view in explorer request for non-user-created token: {}",
+                    definition.id()
+            );
+            return;
+        }
+
+        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+
+        if (Files.exists(file)) {
+            openInExplorer(file.getParent());
+            return;
+        }
+
+        Path folder = getTokensFolder();
+
+        if (Files.exists(folder)) {
+            openInExplorer(folder);
+            return;
+        }
+
+        VTT.LOGGER.warn(
+                "Cannot open token in explorer because file/folder does not exist: {}",
+                file
+        );
+    }
+
     public static TokenDefinition duplicateCreatedToken(
             TokenDefinition sourceDefinition,
             TokenDefinitionRegistry tokenDefinitionRegistry,
@@ -373,6 +407,14 @@ public final class CreatedTokenStorage {
                     exception
             );
         }
+    }
+
+    private static void openInExplorer(Path path) {
+        if (path == null) {
+            return;
+        }
+
+        Util.getPlatform().openFile(path.toFile());
     }
 
     private static void saveCreatedTokenData(CreatedTokenSaveData data) throws IOException {

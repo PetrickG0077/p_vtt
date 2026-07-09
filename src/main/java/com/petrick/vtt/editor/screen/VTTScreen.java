@@ -533,7 +533,7 @@ public final class VTTScreen extends Screen {
             }
 
             case VIEW_IN_EXPLORER -> {
-                System.out.println("View in explorer: " + tokenDefinition.id());
+                CreatedTokenStorage.viewCreatedTokenInExplorer(tokenDefinition);
             }
 
             case DUPLICATE -> {
