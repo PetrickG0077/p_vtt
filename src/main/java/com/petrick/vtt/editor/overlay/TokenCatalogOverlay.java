@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
@@ -76,7 +77,7 @@ public final class TokenCatalogOverlay {
     private boolean detailsPopupSuppressed;
 
     public TokenCatalogOverlay() {
-        this.visualRenderer = new CanvasVisualRenderer();
+        this.visualRenderer = new CanvasVisualRenderer(new AnimatedTextureService());
     }
 
     public void render(

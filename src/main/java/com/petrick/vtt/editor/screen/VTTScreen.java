@@ -129,7 +129,9 @@ public final class VTTScreen extends Screen {
 
         this.selectionManager = new SelectionManager();
         this.tokenPlacementService = new TokenPlacementService(scene, selectionManager);
-        this.canvasRenderer = new CanvasRenderer();
+        this.canvasRenderer = new CanvasRenderer(
+                session.getAnimatedTextureService()
+        );
         this.inputController = new InputController(camera, scene, selectionManager);
 
         this.panelVisibility = new EditorPanelVisibility();

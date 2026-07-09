@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
 import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
@@ -40,9 +41,9 @@ public final class CanvasRenderer {
 
     private final GridRenderer gridRenderer;
 
-    public CanvasRenderer() {
+    public CanvasRenderer(AnimatedTextureService animatedTextureService) {
         this.gridRenderer = new GridRenderer();
-        this.visualRenderer = new CanvasVisualRenderer();
+        this.visualRenderer = new CanvasVisualRenderer(animatedTextureService);
     }
 
     public void render(

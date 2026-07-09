@@ -9,15 +9,7 @@ import java.util.Optional;
  */
 public final class AnimatedTextureRegistry {
 
-    private static final AnimatedTextureRegistry INSTANCE = new AnimatedTextureRegistry();
-
     private final Map<String, AnimatedTexture> texturesById = new HashMap<>();
-
-    private AnimatedTextureRegistry() {}
-
-    public static AnimatedTextureRegistry getInstance() {
-        return INSTANCE;
-    }
 
     public void register(AnimatedTexture texture) {
         if (texture == null) {

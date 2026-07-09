@@ -11,6 +11,7 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -34,6 +35,9 @@ public final class VTTSession {
 
     private AssetLibraryScanResult assetLibraryScanResult;
 
+    private final AnimatedTextureService animatedTextureService;
+
+
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
         DebugAssets.registerAll(assetRegistry);
@@ -47,6 +51,8 @@ public final class VTTSession {
 
         this.assetThumbnailRegistry = new AssetThumbnailRegistry();
         this.assetThumbnailLoader = new AssetThumbnailLoader(assetThumbnailRegistry);
+
+        this.animatedTextureService = new AnimatedTextureService();
 
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
@@ -62,6 +68,10 @@ public final class VTTSession {
 
     public AssetRegistry getAssetRegistry() {
         return assetRegistry;
+    }
+
+    public AnimatedTextureService getAnimatedTextureService() {
+        return animatedTextureService;
     }
 
     public AssetLibraryService getAssetLibraryService() {

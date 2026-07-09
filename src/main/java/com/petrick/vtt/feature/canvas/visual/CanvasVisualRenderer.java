@@ -3,14 +3,10 @@ package com.petrick.vtt.feature.canvas.visual;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
-import com.petrick.vtt.feature.asset.animation.AnimatedTexture;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureFrame;
-import com.petrick.vtt.feature.asset.animation.AnimatedTextureLoader;
-import com.petrick.vtt.feature.asset.animation.AnimatedTextureRegistry;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.platform.render.VRenderContext;
-import net.minecraft.client.Minecraft;
-
-import java.nio.file.Path;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Renderizador dos diferentes tipos de visual do canvas.
@@ -29,7 +25,15 @@ public final class CanvasVisualRenderer {
 
     private static final int MISSING_TEXTURE_COLOR = 0xFFFF00FF;
 
-    private final AnimatedTextureLoader animatedTextureLoader = new AnimatedTextureLoader();
+    private final AnimatedTextureService animatedTextureService;
+
+    public CanvasVisualRenderer(AnimatedTextureService animatedTextureService) {
+        if (animatedTextureService == null) {
+            throw new IllegalArgumentException("AnimatedTextureService cannot be null");
+        }
+
+        this.animatedTextureService = animatedTextureService;
+    }
 
     public void render(
             VRenderContext context,
@@ -108,15 +112,15 @@ public final class CanvasVisualRenderer {
             return;
         }
 
-        AnimatedTexture animatedTexture = getOrLoadAnimatedTexture(libraryTexture);
+        AnimatedTextureFrame frame = animatedTextureService.getCurrentFrame(
+                libraryTexture,
+                System.currentTimeMillis()
+        );
 
-        if (animatedTexture == null) {
+        if (frame == null) {
             renderLibraryTexture(context, libraryTexture, left, top, right, bottom);
             return;
         }
-
-        long nowMs = System.currentTimeMillis();
-        AnimatedTextureFrame frame = animatedTexture.frameAtTime(nowMs);
 
         renderTexture(
                 context,
@@ -128,60 +132,6 @@ public final class CanvasVisualRenderer {
                 right,
                 bottom
         );
-    }
-
-    private AnimatedTexture getOrLoadAnimatedTexture(
-            LibraryTextureAssetRef libraryTexture
-    ) {
-        AnimatedTextureRegistry registry = AnimatedTextureRegistry.getInstance();
-
-        String animatedTextureId = libraryTexture.id();
-
-        AnimatedTexture existingTexture = registry.findById(animatedTextureId)
-                .orElse(null);
-
-        if (existingTexture != null) {
-            return existingTexture;
-        }
-
-        Path file = Minecraft.getInstance()
-                .gameDirectory
-                .toPath()
-                .resolve("config")
-                .resolve("vtt_assets")
-                .resolve("assets")
-                .resolve(normalizeLibraryRelativePath(libraryTexture.sourceRelativePath()));
-
-        AnimatedTexture loadedTexture = animatedTextureLoader.loadGif(
-                animatedTextureId,
-                file
-        );
-
-        if (loadedTexture == null) {
-            return null;
-        }
-
-        registry.register(loadedTexture);
-
-        return loadedTexture;
-    }
-
-    private String normalizeLibraryRelativePath(String sourceRelativePath) {
-        if (sourceRelativePath == null || sourceRelativePath.isBlank()) {
-            return "";
-        }
-
-        String normalized = sourceRelativePath.replace('\\', '/');
-
-        if (normalized.startsWith("library:")) {
-            normalized = normalized.substring("library:".length());
-        }
-
-        while (normalized.startsWith("/")) {
-            normalized = normalized.substring(1);
-        }
-
-        return normalized;
     }
 
     private void renderBuiltInTexture(
@@ -226,7 +176,7 @@ public final class CanvasVisualRenderer {
 
     private void renderTexture(
             VRenderContext context,
-            net.minecraft.resources.ResourceLocation texture,
+            ResourceLocation texture,
             int textureWidth,
             int textureHeight,
             int left,
@@ -250,14 +200,6 @@ public final class CanvasVisualRenderer {
                 textureWidth,
                 textureHeight
         );
-    }
-
-    private int textureHeight() {
-        /*
-         * Esse método existe só para evitar confusão no overload do blit?
-         * Não. Se o seu Java acusar erro aqui, substitua a chamada por textureHeight direto.
-         */
-        return 0;
     }
 
     private void renderMissingTexture(
