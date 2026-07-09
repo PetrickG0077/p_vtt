@@ -37,6 +37,7 @@ public final class VTTSession {
 
     private final AnimatedTextureService animatedTextureService;
 
+    private VttRole localRole = VttRole.MASTER;
 
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
@@ -64,6 +65,23 @@ public final class VTTSession {
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
 
+    }
+
+    public VttRole getLocalRole() {
+        return localRole;
+    }
+
+    public void setLocalRole(VttRole localRole) {
+        if (localRole == null) {
+            this.localRole = VttRole.PLAYER;
+            return;
+        }
+
+        this.localRole = localRole;
+    }
+
+    public boolean isLocalMaster() {
+        return localRole == VttRole.MASTER;
     }
 
     public AssetRegistry getAssetRegistry() {

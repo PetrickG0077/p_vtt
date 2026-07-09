@@ -295,7 +295,7 @@ public final class VTTScreen extends Screen {
 
         graphics.drawCenteredString(
                 this.font,
-                "Sprint 2 - Tokens & Assets | F1 Help | F3-F7 Panels",
+                "Sprint 3 - Tabletop, Scenes & Persistence",
                 this.width / 2,
                 this.height / 2,
                 0xFFAAAAAA
