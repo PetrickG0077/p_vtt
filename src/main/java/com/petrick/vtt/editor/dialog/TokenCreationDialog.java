@@ -78,6 +78,10 @@ public final class TokenCreationDialog {
 
     private static final int STATE_DELETE_BUTTON_SIZE = 12;
 
+    private static final int STATE_DUPLICATE_BUTTON_SIZE = 12;
+
+    private static final int STATE_ROW_BUTTON_GAP = 3;
+
     private static final int MAX_VISIBLE_STATES = 2;
 
     private static final int SELECTED_STATE_BACKGROUND = 0x553399FF;
@@ -198,6 +202,21 @@ public final class TokenCreationDialog {
         if (isMouseOverAddStateButton(screenWidth, screenHeight, mouseX, mouseY)) {
             activeField = Field.NONE;
             draft.addState();
+            stateListScrollOffset = getMaxStateListScrollOffset(draft);
+            return Action.NONE;
+        }
+
+        TokenStateDraft stateToDuplicate = findStateDuplicateButtonAt(
+                screenWidth,
+                screenHeight,
+                draft,
+                mouseX,
+                mouseY
+        );
+
+        if (stateToDuplicate != null) {
+            activeField = Field.NONE;
+            draft.duplicateState(stateToDuplicate.getId());
             stateListScrollOffset = getMaxStateListScrollOffset(draft);
             return Action.NONE;
         }
@@ -843,12 +862,12 @@ public final class TokenCreationDialog {
         }
 
         String imageInfo = state.hasImage()
-                ? " - " + truncateText(state.getImageDisplayName(), 14)
+                ? " - " + truncateText(state.getImageDisplayName(), 12)
                 : " - no image";
 
         context.graphics().drawString(
                 font,
-                truncateText("[" + state.getId() + "] " + state.getDisplayName() + imageInfo, 35),
+                truncateText("[" + state.getId() + "] " + state.getDisplayName() + imageInfo, 30),
                 x,
                 y + 3,
                 selected ? TITLE_COLOR : TEXT_COLOR,
@@ -857,6 +876,27 @@ public final class TokenCreationDialog {
 
         int deleteButtonX = x + width - STATE_DELETE_BUTTON_SIZE - 2;
         int deleteButtonY = y + 1;
+
+        int duplicateButtonX = deleteButtonX - STATE_DUPLICATE_BUTTON_SIZE - STATE_ROW_BUTTON_GAP;
+        int duplicateButtonY = y + 1;
+
+        renderSmallButton(
+                context,
+                font,
+                "D",
+                duplicateButtonX,
+                duplicateButtonY,
+                STATE_DUPLICATE_BUTTON_SIZE,
+                STATE_DUPLICATE_BUTTON_SIZE,
+                isMouseOverStateDuplicateButton(
+                        context.screenWidth(),
+                        context.screenHeight(),
+                        context.mouseX(),
+                        context.mouseY(),
+                        draft,
+                        state
+                )
+        );
 
         renderSmallButton(
                 context,
@@ -875,6 +915,78 @@ public final class TokenCreationDialog {
                         state
                 )
         );
+    }
+
+    private boolean isMouseOverStateDuplicateButton(
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY,
+            TokenCreationDraft draft,
+            TokenStateDraft state
+    ) {
+        int x = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int y = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+
+        int rowX = x + 8;
+        int rowY = y + 25;
+        int rowWidth = STATE_PANEL_WIDTH - 28;
+
+        List<TokenStateDraft> states = draft.getStates();
+
+        int startIndex = stateListScrollOffset;
+        int endIndex = Math.min(states.size(), startIndex + MAX_VISIBLE_STATES);
+
+        for (int i = startIndex; i < endIndex; i++) {
+            TokenStateDraft currentState = states.get(i);
+
+            if (!currentState.getId().equals(state.getId())) {
+                continue;
+            }
+
+            int visibleIndex = i - startIndex;
+            int currentY = rowY + visibleIndex * STATE_ROW_HEIGHT;
+
+            int deleteButtonX = rowX + rowWidth - STATE_DELETE_BUTTON_SIZE - 2;
+            int duplicateButtonX = deleteButtonX - STATE_DUPLICATE_BUTTON_SIZE - STATE_ROW_BUTTON_GAP;
+            int duplicateButtonY = currentY + 1;
+
+            return isPointInside(
+                    mouseX,
+                    mouseY,
+                    duplicateButtonX,
+                    duplicateButtonY,
+                    STATE_DUPLICATE_BUTTON_SIZE,
+                    STATE_DUPLICATE_BUTTON_SIZE
+            );
+        }
+
+        return false;
+    }
+
+    private TokenStateDraft findStateDuplicateButtonAt(
+            int screenWidth,
+            int screenHeight,
+            TokenCreationDraft draft,
+            double mouseX,
+            double mouseY
+    ) {
+        clampStateListScrollOffset(draft);
+
+        for (TokenStateDraft state : draft.getStates()) {
+            if (isMouseOverStateDuplicateButton(
+                    screenWidth,
+                    screenHeight,
+                    mouseX,
+                    mouseY,
+                    draft,
+                    state
+            )) {
+                return state;
+            }
+        }
+
+        return null;
     }
 
     private boolean isMouseOverStateDeleteButton(

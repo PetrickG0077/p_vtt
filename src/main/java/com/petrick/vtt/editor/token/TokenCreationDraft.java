@@ -62,6 +62,57 @@ public final class TokenCreationDraft {
         return deleteState(selectedStateId);
     }
 
+    public boolean duplicateState(String stateIdToDuplicate) {
+        ensureDefaultState();
+
+        if (!canAddState()) {
+            setErrorMessage("State limit reached");
+            return false;
+        }
+
+        if (stateIdToDuplicate == null || stateIdToDuplicate.isBlank()) {
+            return false;
+        }
+
+        TokenStateDraft sourceState = null;
+
+        for (TokenStateDraft state : states) {
+            if (state.getId().equals(stateIdToDuplicate)) {
+                sourceState = state;
+                break;
+            }
+        }
+
+        if (sourceState == null) {
+            return false;
+        }
+
+        String newId = createNextStateId();
+
+        TokenStateDraft duplicatedState = new TokenStateDraft(
+                newId,
+                sourceState.getDisplayName() + " Copy"
+        );
+
+        if (sourceState.hasImage()) {
+            duplicatedState.selectImage(
+                    sourceState.getImageId(),
+                    sourceState.getImageDisplayName(),
+                    sourceState.getImageTexture(),
+                    sourceState.getImageWidth(),
+                    sourceState.getImageHeight()
+            );
+        }
+
+        states.add(duplicatedState);
+        selectedStateId = duplicatedState.getId();
+        syncMainImageFromState(duplicatedState);
+
+        clearError();
+
+        return true;
+    }
+
     public boolean deleteState(String stateIdToDelete) {
         ensureDefaultState();
 
