@@ -6,8 +6,10 @@ import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.DebugAssets;
-import java.util.Map;
 
+import com.petrick.vtt.feature.token.TokenDefinition;
+
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -380,5 +382,24 @@ public final class CanvasScene {
         }
 
         return -1;
+    }
+
+    public void syncObjectsFromTokenDefinition(TokenDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+
+        for (int i = 0; i < objects.size(); i++) {
+            CanvasObject object = objects.get(i);
+
+            if (!definition.id().equals(object.sourceTokenDefinitionId())) {
+                continue;
+            }
+
+            objects.set(
+                    i,
+                    object.withTokenDefinition(definition)
+            );
+        }
     }
 }

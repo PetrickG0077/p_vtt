@@ -541,6 +541,8 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        scene.syncObjectsFromTokenDefinition(updatedDefinition);
+
         tokenCatalogSelection.select(updatedDefinition.id());
 
         closeTokenCreationDialog();

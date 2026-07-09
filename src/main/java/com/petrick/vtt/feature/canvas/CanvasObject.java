@@ -5,6 +5,8 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 
+import com.petrick.vtt.feature.token.TokenDefinition;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -333,6 +335,30 @@ public record CanvasObject(
                 minY,
                 maxX - minX,
                 maxY - minY
+        );
+    }
+
+    public CanvasObject withTokenDefinition(TokenDefinition definition) {
+        if (definition == null) {
+            return this;
+        }
+
+        String newActiveStateId = activeStateId;
+
+        if (!definition.states().containsKey(newActiveStateId)) {
+            newActiveStateId = definition.defaultStateId();
+        }
+
+        return new CanvasObject(
+                id,
+                displayName,
+                sourceTokenDefinitionId,
+                transform,
+                definition.defaultSize(),
+                definition.states(),
+                newActiveStateId,
+                visible,
+                flippedHorizontally
         );
     }
 
