@@ -4,6 +4,7 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.editor.catalog.AssetCatalogController;
 import com.petrick.vtt.editor.catalog.AssetCatalogItem;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
@@ -325,6 +326,10 @@ public final class VTTScreen extends Screen {
                 this.height / 2,
                 0xFFAAAAAA
         );
+
+        graphics.drawCenteredString(this.font, "Role: " + session.getLocalRole(),
+                this.width / 2, this.height / 2 + 16,
+                session.isLocalMaster() ? 0xFFFFCC66 : 0xFF66CCFF);
     }
 
     private void ensureRenderState() {
@@ -384,6 +389,14 @@ public final class VTTScreen extends Screen {
         }
 
         if (handleTokenCreationMouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+
+        if (!session.getLocalRole().canEditTabletop()) {
+            if (renderState != null) {
+                return inputController.mouseClicked(mouseX, mouseY, button,
+                        getKeyboardModifiers(), renderState);
+            }
             return true;
         }
 
@@ -1010,12 +1023,19 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_M
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            toggleLocalRole();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_F1) {
             panelVisibility.toggleHelp();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F2) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             panelVisibility.toggleSceneList();
             return true;
         }
@@ -1026,11 +1046,13 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F4) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             panelVisibility.toggleSelectionInspector();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F5) {
+            if (!session.getLocalRole().canUseCatalogs()) return true;
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
                 assetCatalogController.cycleFilter();
             } else {
@@ -1041,11 +1063,13 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F6) {
+            if (!session.getLocalRole().canUseCatalogs()) return true;
             panelVisibility.toggleTokenCatalog();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F7) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             panelVisibility.toggleSceneOutliner();
             return true;
         }
@@ -1057,12 +1081,14 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_F10
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             session.loadActiveSceneToCanvasScene();
             selectionManager.clearSelection();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F10) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             panelVisibility.showAllEditorPanels();
             return true;
         }
@@ -1073,6 +1099,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_B) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             backgroundImagePickerActive = true;
             assetCatalogSelection.clear();
             lastBackgroundImagePickerClickedItemId = null;
@@ -1082,6 +1109,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_G) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             session.saveCanvasSceneToActiveScene();
             return true;
         }
@@ -1108,6 +1136,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            if (!session.getLocalRole().canUseCatalogs()) return true;
             createSelectedTokenAtCameraCenter();
             return true;
         }
@@ -1118,77 +1147,92 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_S) {
+            if (!session.getLocalRole().canMoveAnyToken()) return true;
             inputController.selectSelectTool();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.scaleSelectedObjectsUp();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.scaleSelectedObjectsDown();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_Q) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.rotateSelectedObjectsLeft();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_E) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.rotateSelectedObjectsRight();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_F) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.flipSelectedObjectsHorizontally();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_R) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.resetSelectedObjectsScaleAndRotation();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_N) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             beginRenameSelectedObject();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.deleteSelectedObjects();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_D
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.duplicateSelectedObjects();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_PAGE_UP) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.bringSelectedObjectsForward();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.sendSelectedObjectsBackward();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_HOME) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.bringSelectedObjectsToFront();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_END) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.sendSelectedObjectsToBack();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_V) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.toggleSelectedObjectsVisibility();
             return true;
         }
@@ -1196,11 +1240,26 @@ public final class VTTScreen extends Screen {
         String requestedStateId = getStateIdFromNumberKey(keyCode);
 
         if (requestedStateId != null) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.setSelectedObjectsActiveState(requestedStateId);
             return true;
         }
 
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void toggleLocalRole() {
+        VttRole nextRole = session.isLocalMaster() ? VttRole.PLAYER : VttRole.MASTER;
+        session.setLocalRole(nextRole);
+        if (nextRole == VttRole.PLAYER) {
+            closeBackgroundImagePicker();
+            closeTokenCreationDialog();
+            tokenCatalogContextMenu.close();
+            panelVisibility.hideMasterPanels();
+            selectionManager.clearSelection();
+            inputController.selectHandTool();
+        }
+        VTT.LOGGER.info("Local VTT role changed to {}", nextRole);
     }
 
     private void applySceneBackgroundSelection(AssetCatalogItem item) {

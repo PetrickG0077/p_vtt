@@ -71,6 +71,14 @@ public final class EditorPanelVisibility {
     }
     public void toggleSceneList() { sceneListVisible = !sceneListVisible; }
 
+    public void hideMasterPanels() {
+        assetCatalogVisible = false;
+        tokenCatalogVisible = false;
+        sceneOutlinerVisible = false;
+        sceneListVisible = false;
+        selectionInspectorVisible = false;
+    }
+
     public void hideAllEditorPanels() {
         debugVisible = false;
         selectionInspectorVisible = false;
