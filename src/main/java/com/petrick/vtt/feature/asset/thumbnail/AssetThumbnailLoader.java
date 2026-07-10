@@ -28,11 +28,11 @@ import java.util.Iterator;
  */
 public final class AssetThumbnailLoader {
 
-    private static final long MAX_FILE_SIZE_BYTES = 8L * 1024L * 1024L;
+    private static final long MAX_FILE_SIZE_BYTES = 256L * 1024L * 1024L;
 
-    private static final int MAX_IMAGE_WIDTH = 2048;
+    private static final int MAX_IMAGE_WIDTH = 16000;
 
-    private static final int MAX_IMAGE_HEIGHT = 2048;
+    private static final int MAX_IMAGE_HEIGHT = 16000;
 
     private static final int ANIMATED_FALLBACK_PLACEHOLDER_SIZE = 64;
 

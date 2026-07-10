@@ -109,6 +109,12 @@ public final class VTTScreen extends Screen {
 
     private String lastTokenImagePickerClickedItemId;
 
+    private boolean backgroundImagePickerActive;
+
+    private long lastBackgroundImagePickerClickTime;
+
+    private String lastBackgroundImagePickerClickedItemId;
+
     private Viewport viewport;
 
     private RenderState renderState;
@@ -130,7 +136,7 @@ public final class VTTScreen extends Screen {
         this.selectionManager = new SelectionManager();
         this.tokenPlacementService = new TokenPlacementService(scene, selectionManager);
         this.canvasRenderer = new CanvasRenderer(
-                session.getAnimatedTextureService()
+                session.getAnimatedTextureService(), assetRegistry, session.getAssetThumbnailRegistry()
         );
         this.inputController = new InputController(camera, scene, selectionManager);
 
@@ -177,7 +183,7 @@ public final class VTTScreen extends Screen {
         updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
-        canvasRenderer.render(context, scene, selectionManager);
+        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager);
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
@@ -243,6 +249,10 @@ public final class VTTScreen extends Screen {
             if (tokenImagePickerActive) {
                 renderAssetCatalog(context);
             }
+        }
+
+        if (backgroundImagePickerActive) {
+            renderAssetCatalog(context);
         }
 
         tokenCatalogContextMenuOverlay.render(
@@ -352,6 +362,10 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+
         if (handleTokenCreationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -490,6 +504,39 @@ public final class VTTScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean handleBackgroundImagePickerMouseClicked(double mouseX, double mouseY, int button) {
+        if (!backgroundImagePickerActive) return false;
+
+        Optional<AssetCatalogVisibleRow> clickedRow = assetCatalogOverlay.findRowAt(
+                assetRegistry, session.getAssetLibraryScanResult(), assetCatalogController.getFilter(),
+                assetCatalogController.getTreeState(), assetCatalogController.getSearchQuery(),
+                this.height, mouseX, mouseY, assetCatalogController.getScrollOffset()
+        );
+
+        if (clickedRow.isPresent() && clickedRow.get().isItem()) {
+            AssetCatalogItem clickedItem = clickedRow.get().item().catalogItem();
+            assetCatalogController.mouseClicked(assetCatalogOverlay, assetRegistry,
+                    session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY);
+
+            long now = System.currentTimeMillis();
+            boolean doubleClick = clickedItem.id().equals(lastBackgroundImagePickerClickedItemId)
+                    && now - lastBackgroundImagePickerClickTime <= 350L;
+
+            if (isSelectableTokenImage(clickedItem) && doubleClick) {
+                applySceneBackgroundSelection(clickedItem);
+                closeBackgroundImagePicker();
+            } else {
+                lastBackgroundImagePickerClickedItemId = clickedItem.id();
+                lastBackgroundImagePickerClickTime = now;
+            }
+            return true;
+        }
+
+        assetCatalogController.mouseClicked(assetCatalogOverlay, assetRegistry,
+                session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY);
+        return true;
     }
 
     private void createTokenDefinitionFromDraft() {
@@ -734,6 +781,10 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (backgroundImagePickerActive) {
+            return true;
+        }
+
         if (tokenCreationDraft != null) {
             return true;
         }
@@ -774,6 +825,10 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (backgroundImagePickerActive) {
+            return true;
+        }
+
         if (tokenCreationDraft != null) {
             return true;
         }
@@ -804,6 +859,12 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (backgroundImagePickerActive) {
+            assetCatalogController.mouseScrolled(assetCatalogOverlay, assetRegistry,
+                    session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY, scrollY);
+            return true;
+        }
+
         if (tokenCreationDraft != null && tokenImagePickerActive) {
             if (assetCatalogController.mouseScrolled(
                     assetCatalogOverlay,
@@ -892,6 +953,15 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (backgroundImagePickerActive) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                closeBackgroundImagePicker();
+                return true;
+            }
+            if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) return true;
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_F1) {
             panelVisibility.toggleHelp();
             return true;
@@ -946,6 +1016,15 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_F12) {
             session.refreshAssetLibrary();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_B) {
+            backgroundImagePickerActive = true;
+            assetCatalogSelection.clear();
+            lastBackgroundImagePickerClickedItemId = null;
+            lastBackgroundImagePickerClickTime = 0L;
+            VTT.LOGGER.info("[VTT Background] Background image picker opened");
             return true;
         }
 
@@ -1071,8 +1150,30 @@ public final class VTTScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    private void applySceneBackgroundSelection(AssetCatalogItem item) {
+        if (session.getActiveScene() == null) {
+            VTT.LOGGER.warn("[VTT Background] There is no active scene");
+            return;
+        }
+        session.getActiveScene().setBackgroundAssetId(item.id());
+        session.saveActiveTabletopAndScene();
+        VTT.LOGGER.info("[VTT Background] Background saved for scene {}: {}",
+                session.getActiveScene().getId(), item.id());
+    }
+
+    private void closeBackgroundImagePicker() {
+        backgroundImagePickerActive = false;
+        lastBackgroundImagePickerClickedItemId = null;
+        lastBackgroundImagePickerClickTime = 0L;
+    }
+
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (backgroundImagePickerActive) {
+            assetCatalogController.charTyped(codePoint);
+            return true;
+        }
+
         if (isRenaming()) {
             if (isAllowedRenameCharacter(codePoint) && renameBuffer.length() < 48) {
                 renameBuffer += codePoint;

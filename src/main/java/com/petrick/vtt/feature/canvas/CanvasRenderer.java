@@ -5,9 +5,13 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
+import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
 import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
+import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.render.SceneBackgroundRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -40,18 +44,23 @@ public final class CanvasRenderer {
     private final CanvasVisualRenderer visualRenderer;
 
     private final GridRenderer gridRenderer;
+    private final SceneBackgroundRenderer sceneBackgroundRenderer;
 
-    public CanvasRenderer(AnimatedTextureService animatedTextureService) {
+    public CanvasRenderer(AnimatedTextureService animatedTextureService, AssetRegistry assetRegistry,
+                          AssetThumbnailRegistry thumbnailRegistry) {
         this.gridRenderer = new GridRenderer();
         this.visualRenderer = new CanvasVisualRenderer(animatedTextureService);
+        this.sceneBackgroundRenderer = new SceneBackgroundRenderer(assetRegistry, thumbnailRegistry);
     }
 
     public void render(
             VRenderContext context,
+            VttScene tabletopScene,
             CanvasScene scene,
             SelectionManager selectionManager
     ) {
         gridRenderer.render(context);
+        sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager);
     }
 
