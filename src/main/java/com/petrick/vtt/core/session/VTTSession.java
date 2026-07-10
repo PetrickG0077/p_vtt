@@ -13,6 +13,9 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
+import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -36,9 +39,15 @@ public final class VTTSession {
 
     private final AssetThumbnailLoader assetThumbnailLoader;
 
+    private final AnimatedTextureService animatedTextureService;
+
+    private final TabletopStorage tabletopStorage;
+
     private AssetLibraryScanResult assetLibraryScanResult;
 
-    private final AnimatedTextureService animatedTextureService;
+    private VttTabletop activeTabletop;
+
+    private VttScene activeScene;
 
     private VttRole localRole = VttRole.MASTER;
 
@@ -66,6 +75,10 @@ public final class VTTSession {
         );
         tabletopStoragePaths.ensureBaseFoldersExist();
         tabletopStoragePaths.ensureTabletopFoldersExist("default");
+
+        this.tabletopStorage = new TabletopStorage(tabletopStoragePaths);
+        this.activeTabletop = tabletopStorage.loadOrCreateDefaultTabletop();
+        this.activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
 
         CreatedTokenStorage.loadCreatedTokens(
                 tokenDefinitionRegistry,
@@ -95,6 +108,23 @@ public final class VTTSession {
 
     public TabletopStoragePaths getTabletopStoragePaths() {
         return tabletopStoragePaths;
+    }
+
+    public TabletopStorage getTabletopStorage() {
+        return tabletopStorage;
+    }
+
+    public VttTabletop getActiveTabletop() {
+        return activeTabletop;
+    }
+
+    public VttScene getActiveScene() {
+        return activeScene;
+    }
+
+    public void saveActiveTabletopAndScene() {
+        tabletopStorage.saveTabletop(activeTabletop);
+        tabletopStorage.saveScene(activeTabletop.getId(), activeScene);
     }
 
     public AssetRegistry getAssetRegistry() {
