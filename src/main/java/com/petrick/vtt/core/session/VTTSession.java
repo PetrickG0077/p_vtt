@@ -16,6 +16,8 @@ import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
+import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
+import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -86,6 +88,7 @@ public final class VTTSession {
         );
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
+        loadActiveSceneToCanvasScene();
 
     }
 
@@ -125,6 +128,35 @@ public final class VTTSession {
     public void saveActiveTabletopAndScene() {
         tabletopStorage.saveTabletop(activeTabletop);
         tabletopStorage.saveScene(activeTabletop.getId(), activeScene);
+    }
+
+    public void loadActiveSceneToCanvasScene() {
+        if (activeScene == null) {
+            return;
+        }
+
+        VttSceneToCanvasSceneMapper.copySceneObjectsToCanvas(
+                activeScene,
+                canvasScene,
+                tokenDefinitionRegistry
+        );
+    }
+
+    public void saveCanvasSceneToActiveScene() {
+        if (activeTabletop == null || activeScene == null) {
+            return;
+        }
+
+        CanvasSceneToVttSceneMapper.copyCanvasObjectsToScene(
+                canvasScene,
+                activeScene
+        );
+
+        tabletopStorage.saveTabletop(activeTabletop);
+        tabletopStorage.saveScene(
+                activeTabletop.getId(),
+                activeScene
+        );
     }
 
     public AssetRegistry getAssetRegistry() {

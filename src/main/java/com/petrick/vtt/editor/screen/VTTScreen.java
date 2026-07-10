@@ -932,6 +932,13 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_F10
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+            session.loadActiveSceneToCanvasScene();
+            selectionManager.clearSelection();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_F10) {
             panelVisibility.showAllEditorPanels();
             return true;
@@ -939,6 +946,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_F12) {
             session.refreshAssetLibrary();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_G) {
+            session.saveCanvasSceneToActiveScene();
             return true;
         }
 

@@ -402,4 +402,14 @@ public final class CanvasScene {
             );
         }
     }
+
+    public void replaceAllObjects(List<CanvasObject> newObjects) {
+        objects.clear();
+
+        if (newObjects == null || newObjects.isEmpty()) {
+            return;
+        }
+
+        objects.addAll(newObjects);
+    }
 }
