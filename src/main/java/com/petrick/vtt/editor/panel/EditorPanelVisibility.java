@@ -19,6 +19,7 @@ public final class EditorPanelVisibility {
     private boolean tokenCatalogVisible = false;
 
     private boolean sceneOutlinerVisible = false;
+    private boolean sceneListVisible = false;
 
     public boolean isHelpVisible() {
         return helpVisible;
@@ -43,6 +44,7 @@ public final class EditorPanelVisibility {
     public boolean isSceneOutlinerVisible() {
         return sceneOutlinerVisible;
     }
+    public boolean isSceneListVisible() { return sceneListVisible; }
 
     public void toggleHelp() {
         helpVisible = !helpVisible;
@@ -67,6 +69,7 @@ public final class EditorPanelVisibility {
     public void toggleSceneOutliner() {
         sceneOutlinerVisible = !sceneOutlinerVisible;
     }
+    public void toggleSceneList() { sceneListVisible = !sceneListVisible; }
 
     public void hideAllEditorPanels() {
         debugVisible = false;
@@ -74,6 +77,7 @@ public final class EditorPanelVisibility {
         assetCatalogVisible = false;
         tokenCatalogVisible = false;
         sceneOutlinerVisible = false;
+        sceneListVisible = false;
     }
 
     public void showAllEditorPanels() {
@@ -82,5 +86,6 @@ public final class EditorPanelVisibility {
         assetCatalogVisible = true;
         tokenCatalogVisible = true;
         sceneOutlinerVisible = true;
+        sceneListVisible = true;
     }
 }

@@ -34,6 +34,7 @@ public final class HelpOverlay {
         String[] lines = {
                 "Help",
                 "F1: Toggle help",
+                "F2: Scenes",
                 "",
                 "Tools:",
                 "S: Select",

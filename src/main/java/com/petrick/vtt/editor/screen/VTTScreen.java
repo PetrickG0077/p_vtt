@@ -17,6 +17,7 @@ import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
+import com.petrick.vtt.editor.overlay.SceneListOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
@@ -95,6 +96,8 @@ public final class VTTScreen extends Screen {
 
     private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
+    private final SceneListOverlay sceneListOverlay;
+
     private final TokenCreationDialog tokenCreationDialog;
 
     private final TokenCatalogContextMenu tokenCatalogContextMenu = new TokenCatalogContextMenu();
@@ -122,6 +125,8 @@ public final class VTTScreen extends Screen {
     private String renamingObjectId;
 
     private String renameBuffer;
+
+    private String newSceneNameBuffer;
 
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
@@ -155,6 +160,7 @@ public final class VTTScreen extends Screen {
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
 
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
+        this.sceneListOverlay = new SceneListOverlay();
         this.tokenCreationDialog = new TokenCreationDialog();
     }
 
@@ -225,6 +231,11 @@ public final class VTTScreen extends Screen {
             sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
         }
 
+        if (panelVisibility.isSceneListVisible()) {
+            sceneListOverlay.render(context, this.font, session.getActiveTabletop(),
+                    session.getActiveScene());
+        }
+
         TokenDefinition draggingTokenDefinition =
                 tokenCatalogController.getDraggingTokenDefinition();
 
@@ -263,6 +274,10 @@ public final class VTTScreen extends Screen {
 
         if (renamingObjectId != null) {
             renderRenameDialog(context);
+        }
+
+        if (newSceneNameBuffer != null) {
+            renderNewSceneDialog(context);
         }
     }
 
@@ -362,6 +377,8 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (newSceneNameBuffer != null) return true;
+
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -488,6 +505,22 @@ public final class VTTScreen extends Screen {
                     }
 
                     inputController.selectSelectTool();
+                    return true;
+                }
+            }
+
+            if (panelVisibility.isSceneListVisible()) {
+                if (sceneListOverlay.isCreateSceneButtonAt(
+                        session.getActiveTabletop(), mouseX, mouseY)) {
+                    newSceneNameBuffer = "";
+                    return true;
+                }
+                Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
+                        session.getActiveTabletop(), mouseX, mouseY);
+                if (clickedSceneId.isPresent()) {
+                    if (session.switchToScene(clickedSceneId.get())) {
+                        selectionManager.clearSelection();
+                    }
                     return true;
                 }
             }
@@ -925,6 +958,21 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (newSceneNameBuffer != null) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmNewScene();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                newSceneNameBuffer = null;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !newSceneNameBuffer.isEmpty()) {
+                newSceneNameBuffer = newSceneNameBuffer.substring(0, newSceneNameBuffer.length() - 1);
+            }
+            return true;
+        }
+
         if (isRenaming()) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmRename();
@@ -964,6 +1012,11 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_F1) {
             panelVisibility.toggleHelp();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_F2) {
+            panelVisibility.toggleSceneList();
             return true;
         }
 
@@ -1169,6 +1222,13 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (newSceneNameBuffer != null) {
+            if (isAllowedRenameCharacter(codePoint) && newSceneNameBuffer.length() < 48) {
+                newSceneNameBuffer += codePoint;
+            }
+            return true;
+        }
+
         if (backgroundImagePickerActive) {
             assetCatalogController.charTyped(codePoint);
             return true;
@@ -1365,6 +1425,30 @@ public final class VTTScreen extends Screen {
                 mutedColor,
                 false
         );
+    }
+
+    private void confirmNewScene() {
+        if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
+        if (session.createScene(newSceneNameBuffer) != null) {
+            selectionManager.clearSelection();
+            newSceneNameBuffer = null;
+        }
+    }
+
+    private void renderNewSceneDialog(VRenderContext context) {
+        int width = 300;
+        int height = 70;
+        int x = context.screenWidth() / 2 - width / 2;
+        int y = context.screenHeight() / 2 - height / 2;
+        context.graphics().fill(x, y, x + width, y + height, 0xEE000000);
+        context.graphics().hLine(x, x + width, y, 0xFFFFAA44);
+        context.graphics().hLine(x, x + width, y + height, 0xFFFFAA44);
+        context.graphics().vLine(x, y, y + height, 0xFFFFAA44);
+        context.graphics().vLine(x + width, y, y + height, 0xFFFFAA44);
+        context.graphics().drawString(this.font, "Create Scene", x + 10, y + 10, 0xFFFFFFFF, false);
+        context.graphics().drawString(this.font, newSceneNameBuffer + "_", x + 10, y + 28, 0xFFFFFFFF, false);
+        context.graphics().drawString(this.font, "Enter: create   Esc: cancel",
+                x + 10, y + 48, 0xFFAAAAAA, false);
     }
 
     private boolean isSelectableTokenImage(AssetCatalogItem item) {

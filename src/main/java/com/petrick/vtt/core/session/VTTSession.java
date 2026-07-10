@@ -1,5 +1,6 @@
 package com.petrick.vtt.core.session;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.feature.canvas.CanvasScene;
@@ -123,6 +124,51 @@ public final class VTTSession {
 
     public VttScene getActiveScene() {
         return activeScene;
+    }
+
+    public boolean switchToScene(String sceneId) {
+        if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
+        if (!activeTabletop.getSceneIds().contains(sceneId)) {
+            VTT.LOGGER.warn("Cannot switch to scene not registered in tabletop: {}", sceneId);
+            return false;
+        }
+        if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
+
+        VttScene targetScene = tabletopStorage.loadScene(activeTabletop.getId(), sceneId);
+        if (targetScene == null) {
+            VTT.LOGGER.warn("Cannot switch to missing scene: {}", sceneId);
+            return false;
+        }
+
+        saveCanvasSceneToActiveScene();
+        activeScene = targetScene;
+        activeTabletop.setActiveSceneId(sceneId);
+        tabletopStorage.saveTabletop(activeTabletop);
+        loadActiveSceneToCanvasScene();
+        VTT.LOGGER.info("Switched active VTT scene to: {}", sceneId);
+        return true;
+    }
+
+    public VttScene createScene(String displayName) {
+        if (activeTabletop == null || displayName == null || displayName.isBlank()) return null;
+        String baseId = displayName.trim().toLowerCase().replace('\\', '/')
+                .replaceAll("[^a-z0-9/_-]", "_").replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (baseId.isBlank()) baseId = "new_scene";
+        String sceneId = baseId;
+        int suffix = 2;
+        while (activeTabletop.getSceneIds().contains(sceneId)) sceneId = baseId + "_" + suffix++;
+
+        saveCanvasSceneToActiveScene();
+        VttScene createdScene = new VttScene(sceneId, displayName.trim());
+        tabletopStorage.saveScene(activeTabletop.getId(), createdScene);
+        activeTabletop.addSceneId(sceneId);
+        activeTabletop.setActiveSceneId(sceneId);
+        activeScene = createdScene;
+        tabletopStorage.saveTabletop(activeTabletop);
+        loadActiveSceneToCanvasScene();
+        VTT.LOGGER.info("Created and activated VTT scene: {}", sceneId);
+        return createdScene;
     }
 
     public void saveActiveTabletopAndScene() {
