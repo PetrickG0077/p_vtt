@@ -14,6 +14,7 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.render.SceneBackgroundRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneWallRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneDoorRenderer;
+import com.petrick.vtt.feature.tabletop.render.SceneFogRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -49,6 +50,7 @@ public final class CanvasRenderer {
     private final SceneBackgroundRenderer sceneBackgroundRenderer;
     private final SceneWallRenderer sceneWallRenderer;
     private final SceneDoorRenderer sceneDoorRenderer;
+    private final SceneFogRenderer sceneFogRenderer;
 
     public CanvasRenderer(AnimatedTextureService animatedTextureService, AssetRegistry assetRegistry,
                           AssetThumbnailRegistry thumbnailRegistry) {
@@ -57,6 +59,7 @@ public final class CanvasRenderer {
         this.sceneBackgroundRenderer = new SceneBackgroundRenderer(assetRegistry, thumbnailRegistry);
         this.sceneWallRenderer = new SceneWallRenderer();
         this.sceneDoorRenderer = new SceneDoorRenderer();
+        this.sceneFogRenderer = new SceneFogRenderer();
     }
 
     public void render(
@@ -70,6 +73,7 @@ public final class CanvasRenderer {
         renderObjects(context, scene, selectionManager);
         sceneWallRenderer.render(context, tabletopScene);
         sceneDoorRenderer.render(context, tabletopScene);
+        sceneFogRenderer.render(context, tabletopScene);
     }
 
     private void renderObjects(
