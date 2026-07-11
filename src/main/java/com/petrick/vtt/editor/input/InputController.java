@@ -215,6 +215,8 @@ public final class InputController {
 
     public void selectWallTool() { toolController.selectWallTool(); }
 
+    public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
+
     public void toggleSelectedObjectsVisibility() {
         scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
     }

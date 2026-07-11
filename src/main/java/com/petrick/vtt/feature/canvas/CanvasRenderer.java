@@ -12,6 +12,7 @@ import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.render.SceneBackgroundRenderer;
+import com.petrick.vtt.feature.tabletop.render.SceneWallRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -45,12 +46,14 @@ public final class CanvasRenderer {
 
     private final GridRenderer gridRenderer;
     private final SceneBackgroundRenderer sceneBackgroundRenderer;
+    private final SceneWallRenderer sceneWallRenderer;
 
     public CanvasRenderer(AnimatedTextureService animatedTextureService, AssetRegistry assetRegistry,
                           AssetThumbnailRegistry thumbnailRegistry) {
         this.gridRenderer = new GridRenderer();
         this.visualRenderer = new CanvasVisualRenderer(animatedTextureService);
         this.sceneBackgroundRenderer = new SceneBackgroundRenderer(assetRegistry, thumbnailRegistry);
+        this.sceneWallRenderer = new SceneWallRenderer();
     }
 
     public void render(
@@ -62,6 +65,7 @@ public final class CanvasRenderer {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager);
+        sceneWallRenderer.render(context, tabletopScene);
     }
 
     private void renderObjects(

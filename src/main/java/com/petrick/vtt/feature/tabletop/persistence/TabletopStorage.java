@@ -127,6 +127,10 @@ public final class TabletopStorage {
                 return null;
             }
 
+            scene.getWalls().forEach(wall -> {
+                if (wall != null) wall.normalizeLegacyGeometry();
+            });
+
             return scene;
         } catch (IOException | RuntimeException exception) {
             VTT.LOGGER.error(

@@ -1025,6 +1025,10 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && inputController.cancelWallDrawing()) {
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_M
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
             toggleLocalRole();
@@ -1587,6 +1591,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public void removed() {
+        inputController.cancelWallDrawing();
         CursorManager.reset();
         super.removed();
     }

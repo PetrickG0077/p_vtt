@@ -52,6 +52,12 @@ public final class ToolController {
 
     public void selectWallTool() { setActiveTool(wallTool); }
 
+    public boolean cancelWallDrawing() {
+        if (activeTool != wallTool || !wallTool.isDrawing()) return false;
+        wallTool.cancel();
+        return true;
+    }
+
     public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
         return activeTool.getCursor(context, mouseX, mouseY);
     }
