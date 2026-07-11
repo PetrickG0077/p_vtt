@@ -15,6 +15,7 @@ import com.petrick.vtt.feature.tabletop.render.SceneBackgroundRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneWallRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneDoorRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneFogRenderer;
+import com.petrick.vtt.feature.tabletop.render.SceneVisionDebugRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -51,6 +52,7 @@ public final class CanvasRenderer {
     private final SceneWallRenderer sceneWallRenderer;
     private final SceneDoorRenderer sceneDoorRenderer;
     private final SceneFogRenderer sceneFogRenderer;
+    private final SceneVisionDebugRenderer sceneVisionDebugRenderer;
 
     public CanvasRenderer(AnimatedTextureService animatedTextureService, AssetRegistry assetRegistry,
                           AssetThumbnailRegistry thumbnailRegistry) {
@@ -60,6 +62,7 @@ public final class CanvasRenderer {
         this.sceneWallRenderer = new SceneWallRenderer();
         this.sceneDoorRenderer = new SceneDoorRenderer();
         this.sceneFogRenderer = new SceneFogRenderer();
+        this.sceneVisionDebugRenderer = new SceneVisionDebugRenderer();
     }
 
     public void render(
@@ -67,13 +70,17 @@ public final class CanvasRenderer {
             VttScene tabletopScene,
             CanvasScene scene,
             SelectionManager selectionManager,
-            boolean masterView
+            boolean masterView,
+            boolean visionDebugVisible
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager, masterView);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
+        if (masterView && visionDebugVisible) {
+            sceneVisionDebugRenderer.render(context, tabletopScene, scene, selectionManager);
+        }
         sceneFogRenderer.render(context, tabletopScene, masterView);
     }
 

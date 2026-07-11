@@ -193,7 +193,8 @@ public final class VTTScreen extends Screen {
         updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
-        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager, isMasterView());
+        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
+                isMasterView(), panelVisibility.isDebugVisible());
         if (!playerViewPreview) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
