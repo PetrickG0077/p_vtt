@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import org.lwjgl.glfw.GLFW;
 import java.util.function.Supplier;
 
 /** Creates, selects and edits persistent rectangular wall areas. */
@@ -19,6 +20,7 @@ public final class WallTool implements Tool {
     private static final double HANDLE_HIT_PIXELS = 9.0;
     private static final double ROTATION_HANDLE_DISTANCE = 24.0;
     private static final double MIN_WALL_SIZE = 2.0;
+    private static final double SNAP_TOLERANCE_PIXELS = 8.0;
     private final Supplier<VttScene> sceneSupplier;
     private final Runnable saveAction;
     private Vec2d start;
@@ -26,6 +28,11 @@ public final class WallTool implements Tool {
     private String selectedWallId;
     private EditMode editMode = EditMode.NONE;
     private Vec2d lastWorldPosition;
+    private Vec2d interactionStartWorld;
+    private Vec2d resizeAnchorWorld;
+    private Handle activeHandle;
+    private SnapGuide snapGuideU;
+    private SnapGuide snapGuideV;
     private double rotationMouseOffset;
     private VttSceneTransform originalTransform;
     private VttSceneSize originalSize;
@@ -61,6 +68,8 @@ public final class WallTool implements Tool {
                 rotationMouseOffset = selected.getTransform().getRotationDegrees() - mouseAngle;
             } else {
                 editMode = EditMode.RESIZE;
+                activeHandle = handle;
+                resizeAnchorWorld = oppositeCorner(selected, handle);
             }
             return true;
         }
@@ -71,6 +80,7 @@ public final class WallTool implements Tool {
             snapshot(clicked);
             editMode = EditMode.MOVE;
             lastWorldPosition = world;
+            interactionStartWorld = world;
             return true;
         }
 
@@ -89,9 +99,9 @@ public final class WallTool implements Tool {
         if (editMode == EditMode.CREATE) {
             end = world;
         } else if (editMode == EditMode.MOVE) {
-            moveSelectedWall(world);
+            moveSelectedWall(context, world);
         } else if (editMode == EditMode.RESIZE) {
-            resizeSelectedWall(world);
+            resizeSelectedWall(context, world, modifiers);
         } else if (editMode == EditMode.ROTATE) {
             rotateSelectedWall(world);
         }
@@ -106,8 +116,8 @@ public final class WallTool implements Tool {
             createWallIfLargeEnough(context, mouseX, mouseY);
         } else {
             Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
-            if (editMode == EditMode.MOVE) moveSelectedWall(world);
-            if (editMode == EditMode.RESIZE) resizeSelectedWall(world);
+            if (editMode == EditMode.MOVE) moveSelectedWall(context, world);
+            if (editMode == EditMode.RESIZE) resizeSelectedWall(context, world, modifiers);
             if (editMode == EditMode.ROTATE) rotateSelectedWall(world);
             saveAction.run();
         }
@@ -120,6 +130,7 @@ public final class WallTool implements Tool {
         if (editMode == EditMode.CREATE && start != null && end != null) renderCreationPreview(context);
         VttWall selected = getSelectedWall();
         if (selected != null) renderSelection(context, selected);
+        renderSnapGuides(context);
     }
 
     public void cancel() {
@@ -191,27 +202,46 @@ public final class WallTool implements Tool {
         saveAction.run();
     }
 
-    private void moveSelectedWall(Vec2d world) {
+    private void moveSelectedWall(ToolContext context, Vec2d world) {
         VttWall wall = getSelectedWall();
-        if (wall == null || lastWorldPosition == null) return;
-        wall.getTransform().setX(wall.getTransform().getX() + world.x() - lastWorldPosition.x());
-        wall.getTransform().setY(wall.getTransform().getY() + world.y() - lastWorldPosition.y());
+        if (wall == null || interactionStartWorld == null || originalTransform == null) return;
+        double candidateX = originalTransform.getX() + world.x() - interactionStartWorld.x();
+        double candidateY = originalTransform.getY() + world.y() - interactionStartWorld.y();
+        SnapOffset snap = snapBoundsToOtherWalls(context, wall, candidateX, candidateY);
+        wall.getTransform().setX(candidateX + snap.x());
+        wall.getTransform().setY(candidateY + snap.y());
         lastWorldPosition = world;
     }
 
-    private void resizeSelectedWall(Vec2d world) {
+    private void resizeSelectedWall(ToolContext context, Vec2d world, int modifiers) {
         VttWall wall = getSelectedWall();
-        if (wall == null) return;
+        if (wall == null || resizeAnchorWorld == null || activeHandle == null) return;
+        world = snapPointToOtherWalls(context, world, wall);
         VttSceneTransform transform = wall.getTransform();
         double radians = Math.toRadians(-transform.getRotationDegrees());
-        double dx = world.x() - transform.getX();
-        double dy = world.y() - transform.getY();
+        double dx = world.x() - resizeAnchorWorld.x();
+        double dy = world.y() - resizeAnchorWorld.y();
         double localX = dx * Math.cos(radians) - dy * Math.sin(radians);
         double localY = dx * Math.sin(radians) + dy * Math.cos(radians);
         double scaleX = Math.max(0.05, Math.abs(transform.getScaleX()));
         double scaleY = Math.max(0.05, Math.abs(transform.getScaleY()));
-        wall.getSize().setWidth(Math.max(MIN_WALL_SIZE, Math.abs(localX) * 2.0 / scaleX));
-        wall.getSize().setHeight(Math.max(MIN_WALL_SIZE, Math.abs(localY) * 2.0 / scaleY));
+        double newWidth = Math.max(MIN_WALL_SIZE, Math.abs(localX));
+        double newHeight = Math.max(MIN_WALL_SIZE, Math.abs(localY));
+        if ((modifiers & GLFW.GLFW_MOD_SHIFT) != 0 && originalSize != null && originalTransform != null) {
+            double originalWidth = Math.abs(originalSize.getWidth() * originalTransform.getScaleX());
+            double originalHeight = Math.abs(originalSize.getHeight() * originalTransform.getScaleY());
+            double aspect = originalHeight <= 0.0 ? 1.0 : originalWidth / originalHeight;
+            if (newWidth / newHeight > aspect) newWidth = newHeight * aspect;
+            else newHeight = newWidth / aspect;
+        }
+        int signX = handleSignX(activeHandle);
+        int signY = handleSignY(activeHandle);
+        Vec2d centerOffset = rotate(new Vec2d(signX * newWidth / 2.0, signY * newHeight / 2.0),
+                transform.getRotationDegrees());
+        transform.setX(resizeAnchorWorld.x() + centerOffset.x());
+        transform.setY(resizeAnchorWorld.y() + centerOffset.y());
+        wall.getSize().setWidth(newWidth / scaleX);
+        wall.getSize().setHeight(newHeight / scaleY);
     }
 
     private void rotateSelectedWall(Vec2d world) {
@@ -221,6 +251,189 @@ public final class WallTool implements Tool {
                 world.y() - wall.getTransform().getY(),
                 world.x() - wall.getTransform().getX()));
         wall.getTransform().setRotationDegrees(angle + rotationMouseOffset);
+    }
+
+    private Vec2d oppositeCorner(VttWall wall, Handle handle) {
+        Vec2d[] corners = wallCorners(wall);
+        return switch (handle) {
+            case TOP_LEFT -> corners[2];
+            case TOP_RIGHT -> corners[3];
+            case BOTTOM_RIGHT -> corners[0];
+            case BOTTOM_LEFT -> corners[1];
+            case ROTATION -> new Vec2d(wall.getTransform().getX(), wall.getTransform().getY());
+        };
+    }
+
+    private int handleSignX(Handle handle) {
+        return switch (handle) {
+            case TOP_LEFT, BOTTOM_LEFT -> -1;
+            case TOP_RIGHT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
+        };
+    }
+
+    private int handleSignY(Handle handle) {
+        return switch (handle) {
+            case TOP_LEFT, TOP_RIGHT -> -1;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
+        };
+    }
+
+    private Vec2d rotate(Vec2d point, double degrees) {
+        double radians = Math.toRadians(degrees);
+        double cos = Math.cos(radians);
+        double sin = Math.sin(radians);
+        return new Vec2d(point.x() * cos - point.y() * sin,
+                point.x() * sin + point.y() * cos);
+    }
+
+    private SnapOffset snapBoundsToOtherWalls(
+            ToolContext context, VttWall wall, double candidateX, double candidateY
+    ) {
+        snapGuideU = null;
+        snapGuideV = null;
+        double tolerance = SNAP_TOLERANCE_PIXELS / Math.max(0.0001, context.camera().getZoom());
+        Vec2d u = wallAxis(wall, true);
+        Vec2d v = wallAxis(wall, false);
+        AxisSnap snapU = findMoveAxisSnap(wall, candidateX, candidateY, u, tolerance);
+        AxisSnap snapV = findMoveAxisSnap(wall, candidateX, candidateY, v, tolerance);
+        if (snapU.snapped()) snapGuideU = new SnapGuide(u, snapU.guideOffset());
+        if (snapV.snapped()) snapGuideV = new SnapGuide(v, snapV.guideOffset());
+        Vec2d deltaU = u.multiply(snapU.delta());
+        Vec2d deltaV = v.multiply(snapV.delta());
+        return new SnapOffset(deltaU.x() + deltaV.x(), deltaU.y() + deltaV.y());
+    }
+
+    private AxisSnap findMoveAxisSnap(
+            VttWall selected, double candidateX, double candidateY, Vec2d normal, double tolerance
+    ) {
+        Projection source = projectionAt(selected, normal, candidateX, candidateY);
+        Vec2d tangent = new Vec2d(-normal.y(), normal.x());
+        Projection sourceTangent = projectionAt(selected, tangent, candidateX, candidateY);
+        double proximity = tolerance * 3.0;
+        AxisSnap best = AxisSnap.none();
+        VttScene scene = sceneSupplier.get();
+        if (scene == null) return best;
+
+        for (VttWall target : scene.getWalls()) {
+            if (!isSnapTarget(selected, target) || !hasParallelAxis(target, normal)) continue;
+            Projection targetTangent = projectionAt(target, tangent,
+                    target.getTransform().getX(), target.getTransform().getY());
+            if (intervalGap(sourceTangent, targetTangent) > proximity) continue;
+            Projection targetProjection = projectionAt(target, normal,
+                    target.getTransform().getX(), target.getTransform().getY());
+            best = chooseSnap(best, targetProjection.min() - source.min(), targetProjection.min(), tolerance);
+            best = chooseSnap(best, targetProjection.max() - source.min(), targetProjection.max(), tolerance);
+            best = chooseSnap(best, targetProjection.min() - source.max(), targetProjection.min(), tolerance);
+            best = chooseSnap(best, targetProjection.max() - source.max(), targetProjection.max(), tolerance);
+            best = chooseSnap(best, targetProjection.center() - source.center(), targetProjection.center(), tolerance);
+        }
+        return best;
+    }
+
+    private Vec2d snapPointToOtherWalls(ToolContext context, Vec2d point, VttWall selected) {
+        snapGuideU = null;
+        snapGuideV = null;
+        double tolerance = SNAP_TOLERANCE_PIXELS / Math.max(0.0001, context.camera().getZoom());
+        Vec2d u = wallAxis(selected, true);
+        Vec2d v = wallAxis(selected, false);
+        AxisSnap snapU = findPointAxisSnap(selected, point, u, tolerance);
+        AxisSnap snapV = findPointAxisSnap(selected, point, v, tolerance);
+        if (snapU.snapped()) snapGuideU = new SnapGuide(u, snapU.guideOffset());
+        if (snapV.snapped()) snapGuideV = new SnapGuide(v, snapV.guideOffset());
+        Vec2d deltaU = u.multiply(snapU.delta());
+        Vec2d deltaV = v.multiply(snapV.delta());
+        return point.add(new Vec2d(deltaU.x() + deltaV.x(), deltaU.y() + deltaV.y()));
+    }
+
+    private AxisSnap findPointAxisSnap(VttWall selected, Vec2d point, Vec2d normal, double tolerance) {
+        AxisSnap best = AxisSnap.none();
+        double source = dot(point, normal);
+        Vec2d tangent = new Vec2d(-normal.y(), normal.x());
+        double sourceTangent = dot(point, tangent);
+        double proximity = tolerance * 3.0;
+        VttScene scene = sceneSupplier.get();
+        if (scene == null) return best;
+        for (VttWall target : scene.getWalls()) {
+            if (!isSnapTarget(selected, target) || !hasParallelAxis(target, normal)) continue;
+            Projection targetTangent = projectionAt(target, tangent,
+                    target.getTransform().getX(), target.getTransform().getY());
+            if (sourceTangent < targetTangent.min() - proximity
+                    || sourceTangent > targetTangent.max() + proximity) continue;
+            Projection targetProjection = projectionAt(target, normal,
+                    target.getTransform().getX(), target.getTransform().getY());
+            best = chooseSnap(best, targetProjection.min() - source, targetProjection.min(), tolerance);
+            best = chooseSnap(best, targetProjection.max() - source, targetProjection.max(), tolerance);
+        }
+        return best;
+    }
+
+    private AxisSnap chooseSnap(AxisSnap current, double delta, double guideOffset, double tolerance) {
+        if (Math.abs(delta) > tolerance) return current;
+        if (!current.snapped() || Math.abs(delta) < Math.abs(current.delta())) {
+            return new AxisSnap(delta, guideOffset, true);
+        }
+        return current;
+    }
+
+    private boolean isSnapTarget(VttWall selected, VttWall target) {
+        return target != null && target != selected && target.isVisible();
+    }
+
+    private boolean hasParallelAxis(VttWall wall, Vec2d normal) {
+        double threshold = Math.cos(Math.toRadians(0.5));
+        return Math.abs(dot(normal, wallAxis(wall, true))) >= threshold
+                || Math.abs(dot(normal, wallAxis(wall, false))) >= threshold;
+    }
+
+    private Vec2d wallAxis(VttWall wall, boolean horizontal) {
+        double radians = Math.toRadians(wall.getTransform().getRotationDegrees());
+        return horizontal
+                ? new Vec2d(Math.cos(radians), Math.sin(radians))
+                : new Vec2d(-Math.sin(radians), Math.cos(radians));
+    }
+
+    private Projection projectionAt(VttWall wall, Vec2d normal, double centerX, double centerY) {
+        Vec2d u = wallAxis(wall, true);
+        Vec2d v = wallAxis(wall, false);
+        double extent = Math.abs(dot(u, normal)) * actualWidth(wall) / 2.0
+                + Math.abs(dot(v, normal)) * actualHeight(wall) / 2.0;
+        double center = centerX * normal.x() + centerY * normal.y();
+        return new Projection(center - extent, center, center + extent);
+    }
+
+    private double intervalGap(Projection first, Projection second) {
+        if (first.max() < second.min()) return second.min() - first.max();
+        if (second.max() < first.min()) return first.min() - second.max();
+        return 0.0;
+    }
+
+    private double dot(Vec2d first, Vec2d second) {
+        return first.x() * second.x() + first.y() * second.y();
+    }
+
+    private void renderSnapGuides(VRenderContext context) {
+        if (snapGuideU != null) renderSnapGuide(context, snapGuideU);
+        if (snapGuideV != null) renderSnapGuide(context, snapGuideV);
+    }
+
+    private void renderSnapGuide(VRenderContext context, SnapGuide guide) {
+        Vec2d point = guide.normal().multiply(guide.offset());
+        Vec2d direction = new Vec2d(-guide.normal().y(), guide.normal().x());
+        double worldLength = Math.max(context.screenWidth(), context.screenHeight())
+                / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 2.0;
+        Vec2d a = context.renderState().worldToScreen(point.subtract(direction.multiply(worldLength)));
+        Vec2d b = context.renderState().worldToScreen(point.add(direction.multiply(worldLength)));
+        double dx = b.x() - a.x();
+        double dy = b.y() - a.y();
+        double length = Math.sqrt(dx * dx + dy * dy);
+        PoseStack pose = context.graphics().pose();
+        pose.pushPose();
+        pose.translate(a.x(), a.y(), 0.0);
+        pose.mulPose(Axis.ZP.rotation((float) Math.atan2(dy, dx)));
+        context.graphics().fill(0, 0, (int) Math.round(length), 1, 0xFF44FFFF);
+        pose.popPose();
     }
 
     private void renderCreationPreview(VRenderContext context) {
@@ -378,6 +591,11 @@ public final class WallTool implements Tool {
         start = null;
         end = null;
         lastWorldPosition = null;
+        interactionStartWorld = null;
+        resizeAnchorWorld = null;
+        activeHandle = null;
+        snapGuideU = null;
+        snapGuideV = null;
         originalTransform = null;
         originalSize = null;
         editMode = EditMode.NONE;
@@ -385,6 +603,16 @@ public final class WallTool implements Tool {
 
     private enum EditMode { NONE, CREATE, MOVE, RESIZE, ROTATE }
     private enum Handle { TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT, ROTATION }
+
+    private record SnapOffset(double x, double y) {}
+
+    private record AxisSnap(double delta, double guideOffset, boolean snapped) {
+        private static AxisSnap none() { return new AxisSnap(0.0, 0.0, false); }
+    }
+
+    private record Projection(double min, double center, double max) {}
+
+    private record SnapGuide(Vec2d normal, double offset) {}
 
     private String nextWallId(VttScene scene) {
         int number = scene.getWalls().size() + 1;
