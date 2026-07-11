@@ -35,6 +35,9 @@ public final class VttScene {
     /** Null is tolerated when loading scene JSON written before walls existed. */
     private List<VttWall> walls = new ArrayList<>();
 
+    /** Null is tolerated when loading scene JSON written before doors existed. */
+    private List<VttDoor> doors = new ArrayList<>();
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -101,11 +104,36 @@ public final class VttScene {
 
     public boolean removeWall(String wallId) {
         if (wallId == null || wallId.isBlank()) return false;
-        return getWalls().removeIf(wall -> wallId.equals(wall.getId()));
+        boolean removed = getWalls().removeIf(wall -> wall != null && wallId.equals(wall.getId()));
+        if (removed) {
+            for (VttDoor door : getDoors()) {
+                if (door != null && wallId.equals(door.getWallId())) door.setWallId(null);
+            }
+        }
+        return removed;
     }
 
     public void clearWalls() {
         getWalls().clear();
+    }
+
+    public List<VttDoor> getDoors() {
+        if (doors == null) doors = new ArrayList<>();
+        return doors;
+    }
+
+    public void addDoor(VttDoor door) {
+        if (door == null) return;
+        getDoors().add(door);
+    }
+
+    public boolean removeDoor(String doorId) {
+        if (doorId == null || doorId.isBlank()) return false;
+        return getDoors().removeIf(door -> door != null && doorId.equals(door.getId()));
+    }
+
+    public void clearDoors() {
+        getDoors().clear();
     }
 
     private String normalizeId(String value) {

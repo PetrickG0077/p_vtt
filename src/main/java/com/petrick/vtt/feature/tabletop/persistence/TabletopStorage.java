@@ -130,6 +130,12 @@ public final class TabletopStorage {
             scene.getWalls().forEach(wall -> {
                 if (wall != null) wall.normalizeLegacyGeometry();
             });
+            scene.getDoors().forEach(door -> {
+                if (door != null) {
+                    door.getTransform();
+                    door.getSize();
+                }
+            });
 
             return scene;
         } catch (IOException | RuntimeException exception) {
