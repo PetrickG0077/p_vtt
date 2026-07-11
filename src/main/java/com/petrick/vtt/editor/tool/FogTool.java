@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
+import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.function.Supplier;
@@ -17,6 +18,7 @@ public final class FogTool implements Tool {
     public static final String ID = "fog";
     private static final int LEFT_MOUSE_BUTTON = 0;
     private static final double MIN_DRAG_PIXELS = 4.0;
+    private static final double SNAP_TOLERANCE_PIXELS = 8.0;
 
     private final Supplier<VttScene> sceneSupplier;
     private final Runnable saveAction;
@@ -26,6 +28,8 @@ public final class FogTool implements Tool {
     private boolean moving;
     private Vec2d dragStartWorld;
     private VttSceneTransform originalTransform;
+    private SnapGuide snapGuideU;
+    private SnapGuide snapGuideV;
 
     public FogTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.sceneSupplier = sceneSupplier;
@@ -47,7 +51,7 @@ public final class FogTool implements Tool {
             return true;
         }
         selectedAreaId = null;
-        start = world;
+        start = snapPointToWalls(context, world, new Vec2d(1.0, 0.0), new Vec2d(0.0, 1.0));
         end = start;
         return true;
     }
@@ -57,8 +61,8 @@ public final class FogTool implements Tool {
                                 double dragX, double dragY, int modifiers) {
         if (button != LEFT_MOUSE_BUTTON || (!moving && start == null)) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
-        if (moving) moveSelectedArea(world);
-        else end = world;
+        if (moving) moveSelectedArea(context, world);
+        else end = snapPointToWalls(context, world, new Vec2d(1.0, 0.0), new Vec2d(0.0, 1.0));
         return true;
     }
 
@@ -67,10 +71,10 @@ public final class FogTool implements Tool {
         if (button != LEFT_MOUSE_BUTTON || (!moving && start == null)) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         if (moving) {
-            moveSelectedArea(world);
+            moveSelectedArea(context, world);
             saveAction.run();
         } else {
-            end = world;
+            end = snapPointToWalls(context, world, new Vec2d(1.0, 0.0), new Vec2d(0.0, 1.0));
             Vec2d startScreen = context.renderState().worldToScreen(start);
             boolean largeEnough = Math.abs(mouseX - startScreen.x()) >= MIN_DRAG_PIXELS
                     && Math.abs(mouseY - startScreen.y()) >= MIN_DRAG_PIXELS;
@@ -85,6 +89,7 @@ public final class FogTool implements Tool {
         if (start != null && end != null) renderCreationPreview(context);
         VttFogArea selected = getSelectedArea();
         if (selected != null) renderSelection(context, selected);
+        renderSnapGuides(context);
     }
 
     public boolean isDrawing() { return start != null || moving; }
@@ -183,11 +188,160 @@ public final class FogTool implements Tool {
         saveAction.run();
     }
 
-    private void moveSelectedArea(Vec2d world) {
+    private void moveSelectedArea(ToolContext context, Vec2d world) {
         VttFogArea area = getSelectedArea();
         if (area == null || originalTransform == null || dragStartWorld == null) return;
-        area.getTransform().setX(originalTransform.getX() + world.x() - dragStartWorld.x());
-        area.getTransform().setY(originalTransform.getY() + world.y() - dragStartWorld.y());
+        double candidateX = originalTransform.getX() + world.x() - dragStartWorld.x();
+        double candidateY = originalTransform.getY() + world.y() - dragStartWorld.y();
+        SnapOffset snap = snapAreaToWalls(context, area, candidateX, candidateY);
+        area.getTransform().setX(candidateX + snap.x());
+        area.getTransform().setY(candidateY + snap.y());
+    }
+
+    private SnapOffset snapAreaToWalls(
+            ToolContext context, VttFogArea area, double candidateX, double candidateY
+    ) {
+        snapGuideU = null;
+        snapGuideV = null;
+        double tolerance = SNAP_TOLERANCE_PIXELS / Math.max(0.0001, context.camera().getZoom());
+        Vec2d u = areaAxis(area, true);
+        Vec2d v = areaAxis(area, false);
+        AxisSnap snapU = findAreaAxisSnap(area, candidateX, candidateY, u, tolerance);
+        AxisSnap snapV = findAreaAxisSnap(area, candidateX, candidateY, v, tolerance);
+        if (snapU.snapped()) snapGuideU = new SnapGuide(u, snapU.guideOffset());
+        if (snapV.snapped()) snapGuideV = new SnapGuide(v, snapV.guideOffset());
+        Vec2d deltaU = u.multiply(snapU.delta());
+        Vec2d deltaV = v.multiply(snapV.delta());
+        return new SnapOffset(deltaU.x() + deltaV.x(), deltaU.y() + deltaV.y());
+    }
+
+    private AxisSnap findAreaAxisSnap(
+            VttFogArea area, double candidateX, double candidateY, Vec2d normal, double tolerance
+    ) {
+        Projection source = areaProjection(area, normal, candidateX, candidateY);
+        Vec2d tangent = new Vec2d(-normal.y(), normal.x());
+        Projection sourceTangent = areaProjection(area, tangent, candidateX, candidateY);
+        AxisSnap best = AxisSnap.none();
+        VttScene scene = sceneSupplier.get();
+        if (scene == null) return best;
+        for (VttWall wall : scene.getWalls()) {
+            if (wall == null || !wall.isVisible() || !hasParallelAxis(wall, normal)) continue;
+            Projection wallTangent = wallProjection(wall, tangent);
+            if (intervalGap(sourceTangent, wallTangent) > tolerance * 3.0) continue;
+            Projection target = wallProjection(wall, normal);
+            best = chooseSnap(best, target.min() - source.min(), target.min(), tolerance);
+            best = chooseSnap(best, target.max() - source.min(), target.max(), tolerance);
+            best = chooseSnap(best, target.min() - source.max(), target.min(), tolerance);
+            best = chooseSnap(best, target.max() - source.max(), target.max(), tolerance);
+        }
+        return best;
+    }
+
+    private Vec2d snapPointToWalls(ToolContext context, Vec2d point, Vec2d u, Vec2d v) {
+        snapGuideU = null;
+        snapGuideV = null;
+        double tolerance = SNAP_TOLERANCE_PIXELS / Math.max(0.0001, context.camera().getZoom());
+        AxisSnap snapU = findPointAxisSnap(point, u, tolerance);
+        AxisSnap snapV = findPointAxisSnap(point, v, tolerance);
+        if (snapU.snapped()) snapGuideU = new SnapGuide(u, snapU.guideOffset());
+        if (snapV.snapped()) snapGuideV = new SnapGuide(v, snapV.guideOffset());
+        Vec2d deltaU = u.multiply(snapU.delta());
+        Vec2d deltaV = v.multiply(snapV.delta());
+        return point.add(new Vec2d(deltaU.x() + deltaV.x(), deltaU.y() + deltaV.y()));
+    }
+
+    private AxisSnap findPointAxisSnap(Vec2d point, Vec2d normal, double tolerance) {
+        AxisSnap best = AxisSnap.none();
+        double source = dot(point, normal);
+        Vec2d tangent = new Vec2d(-normal.y(), normal.x());
+        double sourceTangent = dot(point, tangent);
+        VttScene scene = sceneSupplier.get();
+        if (scene == null) return best;
+        for (VttWall wall : scene.getWalls()) {
+            if (wall == null || !wall.isVisible() || !hasParallelAxis(wall, normal)) continue;
+            Projection tangentProjection = wallProjection(wall, tangent);
+            if (sourceTangent < tangentProjection.min() - tolerance * 3.0
+                    || sourceTangent > tangentProjection.max() + tolerance * 3.0) continue;
+            Projection target = wallProjection(wall, normal);
+            best = chooseSnap(best, target.min() - source, target.min(), tolerance);
+            best = chooseSnap(best, target.max() - source, target.max(), tolerance);
+        }
+        return best;
+    }
+
+    private AxisSnap chooseSnap(AxisSnap current, double delta, double guideOffset, double tolerance) {
+        if (Math.abs(delta) > tolerance) return current;
+        if (!current.snapped() || Math.abs(delta) < Math.abs(current.delta())) {
+            return new AxisSnap(delta, guideOffset, true);
+        }
+        return current;
+    }
+
+    private boolean hasParallelAxis(VttWall wall, Vec2d normal) {
+        double threshold = Math.cos(Math.toRadians(0.5));
+        return Math.abs(dot(normal, wallAxis(wall, true))) >= threshold
+                || Math.abs(dot(normal, wallAxis(wall, false))) >= threshold;
+    }
+
+    private Vec2d areaAxis(VttFogArea area, boolean horizontal) {
+        return axis(area.getTransform().getRotationDegrees(), horizontal);
+    }
+
+    private Vec2d wallAxis(VttWall wall, boolean horizontal) {
+        return axis(wall.getTransform().getRotationDegrees(), horizontal);
+    }
+
+    private Vec2d axis(double degrees, boolean horizontal) {
+        double radians = Math.toRadians(degrees);
+        return horizontal ? new Vec2d(Math.cos(radians), Math.sin(radians))
+                : new Vec2d(-Math.sin(radians), Math.cos(radians));
+    }
+
+    private Projection areaProjection(
+            VttFogArea area, Vec2d normal, double centerX, double centerY
+    ) {
+        Vec2d u = areaAxis(area, true);
+        Vec2d v = areaAxis(area, false);
+        double extent = Math.abs(dot(u, normal)) * actualWidth(area) / 2.0
+                + Math.abs(dot(v, normal)) * actualHeight(area) / 2.0;
+        double center = centerX * normal.x() + centerY * normal.y();
+        return new Projection(center - extent, center + extent);
+    }
+
+    private Projection wallProjection(VttWall wall, Vec2d normal) {
+        Vec2d u = wallAxis(wall, true);
+        Vec2d v = wallAxis(wall, false);
+        double extent = Math.abs(dot(u, normal)) * actualWidth(wall) / 2.0
+                + Math.abs(dot(v, normal)) * actualHeight(wall) / 2.0;
+        double center = wall.getTransform().getX() * normal.x()
+                + wall.getTransform().getY() * normal.y();
+        return new Projection(center - extent, center + extent);
+    }
+
+    private double actualWidth(VttFogArea area) {
+        return Math.abs(area.getSize().getWidth() * area.getTransform().getScaleX());
+    }
+
+    private double actualHeight(VttFogArea area) {
+        return Math.abs(area.getSize().getHeight() * area.getTransform().getScaleY());
+    }
+
+    private double actualWidth(VttWall wall) {
+        return Math.abs(wall.getSize().getWidth() * wall.getTransform().getScaleX());
+    }
+
+    private double actualHeight(VttWall wall) {
+        return Math.abs(wall.getSize().getHeight() * wall.getTransform().getScaleY());
+    }
+
+    private double intervalGap(Projection first, Projection second) {
+        if (first.max() < second.min()) return second.min() - first.max();
+        if (second.max() < first.min()) return first.min() - second.max();
+        return 0.0;
+    }
+
+    private double dot(Vec2d first, Vec2d second) {
+        return first.x() * second.x() + first.y() * second.y();
     }
 
     private VttFogArea findTopmostAreaAt(Vec2d world) {
@@ -274,12 +428,38 @@ public final class FogTool implements Tool {
         context.graphics().vLine(right, top, bottom, color);
     }
 
+    private void renderSnapGuides(VRenderContext context) {
+        if (snapGuideU != null) renderSnapGuide(context, snapGuideU);
+        if (snapGuideV != null) renderSnapGuide(context, snapGuideV);
+    }
+
+    private void renderSnapGuide(VRenderContext context, SnapGuide guide) {
+        Vec2d point = guide.normal().multiply(guide.offset());
+        Vec2d direction = new Vec2d(-guide.normal().y(), guide.normal().x());
+        double worldLength = Math.max(context.screenWidth(), context.screenHeight())
+                / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 2.0;
+        Vec2d a = context.renderState().worldToScreen(point.subtract(direction.multiply(worldLength)));
+        Vec2d b = context.renderState().worldToScreen(point.add(direction.multiply(worldLength)));
+        double dx = b.x() - a.x();
+        double dy = b.y() - a.y();
+        double length = Math.sqrt(dx * dx + dy * dy);
+        if (length < 1.0) return;
+        PoseStack pose = context.graphics().pose();
+        pose.pushPose();
+        pose.translate(a.x(), a.y(), 0.0);
+        pose.mulPose(Axis.ZP.rotation((float) Math.atan2(dy, dx)));
+        context.graphics().fill(0, 0, (int) Math.round(length), 1, 0xFF44FFFF);
+        pose.popPose();
+    }
+
     private void finishOperation() {
         start = null;
         end = null;
         moving = false;
         dragStartWorld = null;
         originalTransform = null;
+        snapGuideU = null;
+        snapGuideV = null;
     }
 
     private String nextAreaId(VttFogOfWar fog, String prefix) {
@@ -293,5 +473,15 @@ public final class FogTool implements Tool {
         return fog.getRevealedAreas().stream().anyMatch(area -> area != null && id.equals(area.getId()))
                 || fog.getHiddenAreas().stream().anyMatch(area -> area != null && id.equals(area.getId()));
     }
+
+    private record SnapOffset(double x, double y) {}
+
+    private record AxisSnap(double delta, double guideOffset, boolean snapped) {
+        private static AxisSnap none() { return new AxisSnap(0.0, 0.0, false); }
+    }
+
+    private record Projection(double min, double max) {}
+
+    private record SnapGuide(Vec2d normal, double offset) {}
 
 }
