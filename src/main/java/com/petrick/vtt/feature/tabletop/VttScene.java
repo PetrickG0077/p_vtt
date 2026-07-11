@@ -32,6 +32,9 @@ public final class VttScene {
 
     private final List<VttSceneObject> objects = new ArrayList<>();
 
+    /** Null is tolerated when loading scene JSON written before walls existed. */
+    private List<VttWall> walls = new ArrayList<>();
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -84,6 +87,25 @@ public final class VttScene {
 
     public void clearObjects() {
         objects.clear();
+    }
+
+    public List<VttWall> getWalls() {
+        if (walls == null) walls = new ArrayList<>();
+        return walls;
+    }
+
+    public void addWall(VttWall wall) {
+        if (wall == null) return;
+        getWalls().add(wall);
+    }
+
+    public boolean removeWall(String wallId) {
+        if (wallId == null || wallId.isBlank()) return false;
+        return getWalls().removeIf(wall -> wallId.equals(wall.getId()));
+    }
+
+    public void clearWalls() {
+        getWalls().clear();
     }
 
     private String normalizeId(String value) {
