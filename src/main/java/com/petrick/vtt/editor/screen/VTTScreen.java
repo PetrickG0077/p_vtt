@@ -144,7 +144,8 @@ public final class VTTScreen extends Screen {
         this.canvasRenderer = new CanvasRenderer(
                 session.getAnimatedTextureService(), assetRegistry, session.getAssetThumbnailRegistry()
         );
-        this.inputController = new InputController(camera, scene, selectionManager);
+        this.inputController = new InputController(camera, scene, selectionManager,
+                session::getActiveScene, session::saveCanvasSceneToActiveScene);
 
         this.panelVisibility = new EditorPanelVisibility();
 
@@ -533,6 +534,7 @@ public final class VTTScreen extends Screen {
                 if (clickedSceneId.isPresent()) {
                     if (session.switchToScene(clickedSceneId.get())) {
                         selectionManager.clearSelection();
+                        inputController.selectHandTool();
                     }
                     return true;
                 }
@@ -1152,6 +1154,13 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_W) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            selectionManager.clearSelection();
+            inputController.selectWallTool();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.scaleSelectedObjectsUp();
@@ -1490,6 +1499,7 @@ public final class VTTScreen extends Screen {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
         if (session.createScene(newSceneNameBuffer) != null) {
             selectionManager.clearSelection();
+            inputController.selectHandTool();
             newSceneNameBuffer = null;
         }
     }

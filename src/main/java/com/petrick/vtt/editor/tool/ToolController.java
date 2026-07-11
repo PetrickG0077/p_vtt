@@ -1,6 +1,8 @@
 package com.petrick.vtt.editor.tool;
 
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.feature.tabletop.VttScene;
+import java.util.function.Supplier;
 
 /**
  * Controla qual ferramenta está ativa no editor.
@@ -10,12 +12,14 @@ public final class ToolController {
     private final HandTool handTool;
 
     private final SelectTool selectTool;
+    private final WallTool wallTool;
 
     private Tool activeTool;
 
-    public ToolController() {
+    public ToolController(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.handTool = new HandTool();
         this.selectTool = new SelectTool();
+        this.wallTool = new WallTool(sceneSupplier, saveAction);
 
         this.activeTool = handTool;
     }
@@ -37,12 +41,16 @@ public final class ToolController {
     }
 
     public void selectHandTool() {
+        wallTool.cancel();
         setActiveTool(handTool);
     }
 
     public void selectSelectTool() {
+        wallTool.cancel();
         setActiveTool(selectTool);
     }
+
+    public void selectWallTool() { setActiveTool(wallTool); }
 
     public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
         return activeTool.getCursor(context, mouseX, mouseY);

@@ -9,6 +9,8 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import java.util.Set;
+import java.util.function.Supplier;
+import com.petrick.vtt.feature.tabletop.VttScene;
 
 /**
  * Controla os inputs principais do VTT.
@@ -36,12 +38,14 @@ public final class InputController {
     public InputController(
             Camera2D camera,
             CanvasScene scene,
-            SelectionManager selectionManager
+            SelectionManager selectionManager,
+            Supplier<VttScene> tabletopSceneSupplier,
+            Runnable saveTabletopAction
     ) {
         this.camera = camera;
         this.scene = scene;
         this.selectionManager = selectionManager;
-        this.toolController = new ToolController();
+        this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction);
     }
 
     public boolean mouseClicked(
@@ -208,6 +212,8 @@ public final class InputController {
     public void selectSelectTool() {
         toolController.selectSelectTool();
     }
+
+    public void selectWallTool() { toolController.selectWallTool(); }
 
     public void toggleSelectedObjectsVisibility() {
         scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());

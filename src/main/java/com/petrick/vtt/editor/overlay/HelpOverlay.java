@@ -40,6 +40,7 @@ public final class HelpOverlay {
                 "Tools:",
                 "S: Select",
                 "H: Hand",
+                "W: Wall",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",
