@@ -71,7 +71,7 @@ public final class CanvasRenderer {
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
-        renderObjects(context, scene, selectionManager);
+        renderObjects(context, scene, selectionManager, masterView);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         sceneFogRenderer.render(context, tabletopScene, masterView);
@@ -80,7 +80,8 @@ public final class CanvasRenderer {
     private void renderObjects(
             VRenderContext context,
             CanvasScene scene,
-            SelectionManager selectionManager
+            SelectionManager selectionManager,
+            boolean masterView
     ) {
         for (CanvasObject object : scene.getObjects()) {
             if (!object.visible()) {
@@ -89,7 +90,7 @@ public final class CanvasRenderer {
 
             renderObject(context, object);
 
-            if (selectionManager.isSelected(object.id())) {
+            if (masterView && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
                 renderSelectionHandles(context, object);
                 renderRotationHandle(context, object);

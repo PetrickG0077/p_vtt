@@ -45,6 +45,7 @@ public final class HelpOverlay {
                 "O/L: Open / Lock door",
                 "Shift+F: Fog tool",
                 "X/Y: Reveal fog / toggle",
+                "Ctrl+P: Player view preview",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",

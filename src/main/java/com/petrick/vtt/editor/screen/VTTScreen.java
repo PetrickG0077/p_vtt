@@ -129,6 +129,8 @@ public final class VTTScreen extends Screen {
 
     private String newSceneNameBuffer;
 
+    private boolean playerViewPreview;
+
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
 
@@ -191,9 +193,11 @@ public final class VTTScreen extends Screen {
         updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
-        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager, session.isLocalMaster());
-        inputController.renderToolOverlay(context, renderState);
+        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager, isMasterView());
+        if (!playerViewPreview) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
+
+        if (playerViewPreview) return;
 
         if (panelVisibility.isHelpVisible()) {
             helpOverlay.render(context, this.font);
@@ -328,9 +332,16 @@ public final class VTTScreen extends Screen {
                 0xFFAAAAAA
         );
 
-        graphics.drawCenteredString(this.font, "Role: " + session.getLocalRole(),
+        graphics.drawCenteredString(this.font,
+                playerViewPreview ? "View: PLAYER PREVIEW" : "Role: " + session.getLocalRole(),
                 this.width / 2, this.height / 2 + 16,
-                session.isLocalMaster() ? 0xFFFFCC66 : 0xFF66CCFF);
+                playerViewPreview ? 0xFFFF6666
+                        : session.isLocalMaster() ? 0xFFFFCC66 : 0xFF66CCFF);
+
+        if (playerViewPreview) {
+            graphics.drawCenteredString(this.font, "PLAYER PREVIEW - Ctrl+P to exit",
+                    this.width / 2, 8, 0xFFFF6666);
+        }
     }
 
     private void ensureRenderState() {
@@ -346,7 +357,7 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        if (tokenCreationDraft != null) {
+        if (playerViewPreview || tokenCreationDraft != null) {
             CursorManager.reset();
             return;
         }
@@ -383,6 +394,10 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (playerViewPreview) {
+            return renderState == null || inputController.mouseClicked(
+                    mouseX, mouseY, button, getKeyboardModifiers(), renderState);
+        }
         if (newSceneNameBuffer != null) return true;
 
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
@@ -829,6 +844,10 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (playerViewPreview) {
+            return renderState == null || inputController.mouseReleased(
+                    mouseX, mouseY, button, getKeyboardModifiers(), renderState);
+        }
         if (backgroundImagePickerActive) {
             return true;
         }
@@ -873,6 +892,10 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (playerViewPreview) {
+            return renderState == null || inputController.mouseDragged(
+                    mouseX, mouseY, button, dragX, dragY, getKeyboardModifiers(), renderState);
+        }
         if (backgroundImagePickerActive) {
             return true;
         }
@@ -907,6 +930,10 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (playerViewPreview) {
+            return renderState == null || inputController.mouseScrolled(
+                    mouseX, mouseY, scrollX, scrollY, renderState);
+        }
         if (backgroundImagePickerActive) {
             assetCatalogController.mouseScrolled(assetCatalogOverlay, assetRegistry,
                     session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY, scrollY);
@@ -973,6 +1000,15 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_P
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0
+                && session.isLocalMaster()) {
+            togglePlayerViewPreview();
+            return true;
+        }
+
+        if (playerViewPreview) return super.keyPressed(keyCode, scanCode, modifiers);
+
         if (newSceneNameBuffer != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmNewScene();
@@ -1330,6 +1366,24 @@ public final class VTTScreen extends Screen {
             inputController.selectHandTool();
         }
         VTT.LOGGER.info("Local VTT role changed to {}", nextRole);
+    }
+
+    private boolean isMasterView() {
+        return session.isLocalMaster() && !playerViewPreview;
+    }
+
+    private void togglePlayerViewPreview() {
+        playerViewPreview = !playerViewPreview;
+        if (playerViewPreview) {
+            closeBackgroundImagePicker();
+            closeTokenCreationDialog();
+            tokenCatalogContextMenu.close();
+            newSceneNameBuffer = null;
+            cancelRename();
+            selectionManager.clearSelection();
+            inputController.selectHandTool();
+        }
+        VTT.LOGGER.info("Player view preview {}", playerViewPreview ? "enabled" : "disabled");
     }
 
     private void applySceneBackgroundSelection(AssetCatalogItem item) {
