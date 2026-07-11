@@ -43,6 +43,8 @@ public final class HelpOverlay {
                 "W: Wall box (drag)",
                 "D: Door box (drag)",
                 "O/L: Open / Lock door",
+                "Shift+F: Fog tool",
+                "X/Y: Reveal fog / toggle",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",

@@ -191,7 +191,7 @@ public final class VTTScreen extends Screen {
         updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
-        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager);
+        canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager, session.isLocalMaster());
         inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
@@ -1026,7 +1026,9 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_ESCAPE
-                && (inputController.cancelWallDrawing() || inputController.cancelDoorEditing())) {
+                && (inputController.cancelWallDrawing()
+                || inputController.cancelDoorEditing()
+                || inputController.cancelFogDrawing())) {
             return true;
         }
 
@@ -1166,6 +1168,24 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_F
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            selectionManager.clearSelection();
+            inputController.selectFogTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_X) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.toggleSelectedFogVisibility()) return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_Y) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.toggleFogEnabled()) return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_D
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) == 0) {
             if (!session.getLocalRole().canEditTabletop()) return true;
@@ -1188,6 +1208,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.scaleSelectedWall(1.1)) return true;
             if (inputController.scaleSelectedDoor(1.1)) return true;
+            if (inputController.scaleSelectedFogArea(1.1)) return true;
             inputController.scaleSelectedObjectsUp();
             return true;
         }
@@ -1196,6 +1217,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.scaleSelectedWall(0.9)) return true;
             if (inputController.scaleSelectedDoor(0.9)) return true;
+            if (inputController.scaleSelectedFogArea(0.9)) return true;
             inputController.scaleSelectedObjectsDown();
             return true;
         }
@@ -1204,6 +1226,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.rotateSelectedWall(-15.0)) return true;
             if (inputController.rotateSelectedDoor(-15.0)) return true;
+            if (inputController.rotateSelectedFogArea(-15.0)) return true;
             inputController.rotateSelectedObjectsLeft();
             return true;
         }
@@ -1212,6 +1235,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.rotateSelectedWall(15.0)) return true;
             if (inputController.rotateSelectedDoor(15.0)) return true;
+            if (inputController.rotateSelectedFogArea(15.0)) return true;
             inputController.rotateSelectedObjectsRight();
             return true;
         }
@@ -1226,6 +1250,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.resetSelectedWallTransform()) return true;
             if (inputController.resetSelectedDoorTransform()) return true;
+            if (inputController.resetSelectedFogAreaTransform()) return true;
             inputController.resetSelectedObjectsScaleAndRotation();
             return true;
         }
@@ -1240,6 +1265,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.deleteSelectedWall()) return true;
             if (inputController.deleteSelectedDoor()) return true;
+            if (inputController.deleteSelectedFogArea()) return true;
             inputController.deleteSelectedObjects();
             return true;
         }
@@ -1624,6 +1650,7 @@ public final class VTTScreen extends Screen {
     public void removed() {
         inputController.cancelWallDrawing();
         inputController.cancelDoorEditing();
+        inputController.cancelFogDrawing();
         CursorManager.reset();
         super.removed();
     }

@@ -14,6 +14,7 @@ public final class ToolController {
     private final SelectTool selectTool;
     private final WallTool wallTool;
     private final DoorTool doorTool;
+    private final FogTool fogTool;
 
     private Tool activeTool;
 
@@ -22,6 +23,7 @@ public final class ToolController {
         this.selectTool = new SelectTool();
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
+        this.fogTool = new FogTool(sceneSupplier, saveAction);
 
         this.activeTool = handTool;
     }
@@ -45,23 +47,34 @@ public final class ToolController {
     public void selectHandTool() {
         wallTool.deactivate();
         doorTool.deactivate();
+        fogTool.deactivate();
         setActiveTool(handTool);
     }
 
     public void selectSelectTool() {
         wallTool.deactivate();
         doorTool.deactivate();
+        fogTool.deactivate();
         setActiveTool(selectTool);
     }
 
     public void selectWallTool() {
         doorTool.deactivate();
+        fogTool.deactivate();
         setActiveTool(wallTool);
     }
 
     public void selectDoorTool() {
         wallTool.deactivate();
+        fogTool.deactivate();
         setActiveTool(doorTool);
+    }
+
+    public void selectFogTool() {
+        wallTool.deactivate();
+        doorTool.deactivate();
+        fogTool.activateLocalizedMode();
+        setActiveTool(fogTool);
     }
 
     public boolean cancelWallDrawing() {
@@ -74,6 +87,36 @@ public final class ToolController {
         if (activeTool != doorTool || !doorTool.isEditing()) return false;
         doorTool.cancel();
         return true;
+    }
+
+    public boolean cancelFogDrawing() {
+        if (activeTool != fogTool || !fogTool.isDrawing()) return false;
+        fogTool.cancel();
+        return true;
+    }
+
+    public boolean toggleSelectedFogVisibility() {
+        return activeTool == fogTool && fogTool.toggleSelectedVisibility();
+    }
+
+    public boolean toggleFogEnabled() {
+        return activeTool == fogTool && fogTool.toggleEnabled();
+    }
+
+    public boolean deleteSelectedFogArea() {
+        return activeTool == fogTool && fogTool.deleteSelectedArea();
+    }
+
+    public boolean scaleSelectedFogArea(double factor) {
+        return activeTool == fogTool && fogTool.scaleSelectedArea(factor);
+    }
+
+    public boolean rotateSelectedFogArea(double degrees) {
+        return activeTool == fogTool && fogTool.rotateSelectedArea(degrees);
+    }
+
+    public boolean resetSelectedFogAreaTransform() {
+        return activeTool == fogTool && fogTool.resetSelectedAreaTransform();
     }
 
     public boolean deleteSelectedWall() {

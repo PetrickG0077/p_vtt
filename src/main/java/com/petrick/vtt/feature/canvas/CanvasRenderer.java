@@ -66,14 +66,15 @@ public final class CanvasRenderer {
             VRenderContext context,
             VttScene tabletopScene,
             CanvasScene scene,
-            SelectionManager selectionManager
+            SelectionManager selectionManager,
+            boolean masterView
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager);
         sceneWallRenderer.render(context, tabletopScene);
         sceneDoorRenderer.render(context, tabletopScene);
-        sceneFogRenderer.render(context, tabletopScene);
+        sceneFogRenderer.render(context, tabletopScene, masterView);
     }
 
     private void renderObjects(

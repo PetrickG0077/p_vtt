@@ -6,7 +6,7 @@ import java.util.List;
 /** Persistent fog configuration and rectangular editing operations for one scene. */
 public final class VttFogOfWar {
     private boolean enabled;
-    private boolean defaultHidden = true;
+    private boolean defaultHidden;
     private List<VttFogArea> revealedAreas = new ArrayList<>();
     private List<VttFogArea> hiddenAreas = new ArrayList<>();
 

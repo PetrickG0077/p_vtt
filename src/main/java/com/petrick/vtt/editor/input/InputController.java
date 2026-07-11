@@ -217,9 +217,25 @@ public final class InputController {
 
     public void selectDoorTool() { toolController.selectDoorTool(); }
 
+    public void selectFogTool() { toolController.selectFogTool(); }
+
     public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
 
     public boolean cancelDoorEditing() { return toolController.cancelDoorEditing(); }
+
+    public boolean cancelFogDrawing() { return toolController.cancelFogDrawing(); }
+
+    public boolean toggleSelectedFogVisibility() { return toolController.toggleSelectedFogVisibility(); }
+
+    public boolean toggleFogEnabled() { return toolController.toggleFogEnabled(); }
+
+    public boolean deleteSelectedFogArea() { return toolController.deleteSelectedFogArea(); }
+
+    public boolean scaleSelectedFogArea(double factor) { return toolController.scaleSelectedFogArea(factor); }
+
+    public boolean rotateSelectedFogArea(double degrees) { return toolController.rotateSelectedFogArea(degrees); }
+
+    public boolean resetSelectedFogAreaTransform() { return toolController.resetSelectedFogAreaTransform(); }
 
     public boolean deleteSelectedWall() { return toolController.deleteSelectedWall(); }
 
