@@ -19,7 +19,7 @@ public final class PanelVisibility {
 
     public PanelVisibility() {
         this.helpVisible = false;
-        this.debugVisible = true;
+        this.debugVisible = false;
         this.selectionInspectorVisible = false;
         this.assetCatalogVisible = false;
         this.tokenCatalogVisible = false;

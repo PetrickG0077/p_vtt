@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.tool;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.core.render.RenderState;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
@@ -10,6 +11,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.platform.render.VRenderContext;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Supplier;
 
@@ -19,6 +21,9 @@ public final class FogTool implements Tool {
     private static final int LEFT_MOUSE_BUTTON = 0;
     private static final double MIN_DRAG_PIXELS = 4.0;
     private static final double SNAP_TOLERANCE_PIXELS = 8.0;
+    private static final double HANDLE_HIT_PIXELS = 9.0;
+    private static final double ROTATION_HANDLE_DISTANCE = 24.0;
+    private static final double MIN_FOG_SIZE = 2.0;
 
     private final Supplier<VttScene> sceneSupplier;
     private final Runnable saveAction;
@@ -26,8 +31,14 @@ public final class FogTool implements Tool {
     private Vec2d end;
     private String selectedAreaId;
     private boolean moving;
+    private boolean resizing;
+    private boolean rotating;
     private Vec2d dragStartWorld;
     private VttSceneTransform originalTransform;
+    private VttSceneSize originalSize;
+    private Vec2d resizeAnchorWorld;
+    private Handle activeHandle;
+    private double rotationMouseOffset;
     private SnapGuide snapGuideU;
     private SnapGuide snapGuideV;
 
@@ -39,13 +50,38 @@ public final class FogTool implements Tool {
     @Override public String getId() { return ID; }
 
     @Override
+    public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
+        Handle handle = findHandleAt(context, mouseX, mouseY);
+        if (handle == Handle.TOP_LEFT || handle == Handle.BOTTOM_RIGHT) return EditorCursor.RESIZE_NWSE;
+        if (handle == Handle.TOP_RIGHT || handle == Handle.BOTTOM_LEFT) return EditorCursor.RESIZE_NESW;
+        return EditorCursor.DEFAULT;
+    }
+
+    @Override
     public boolean mouseClicked(ToolContext context, double mouseX, double mouseY, int button, int modifiers) {
         if (button != LEFT_MOUSE_BUTTON) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+        VttFogArea selected = getSelectedArea();
+        Handle handle = findHandleAt(context, mouseX, mouseY);
+        if (selected != null && handle != null) {
+            snapshot(selected);
+            activeHandle = handle;
+            if (handle == Handle.ROTATION) {
+                rotating = true;
+                double mouseAngle = Math.toDegrees(Math.atan2(
+                        world.y() - selected.getTransform().getY(),
+                        world.x() - selected.getTransform().getX()));
+                rotationMouseOffset = selected.getTransform().getRotationDegrees() - mouseAngle;
+            } else {
+                resizing = true;
+                resizeAnchorWorld = oppositeCorner(selected, handle);
+            }
+            return true;
+        }
         VttFogArea clicked = findTopmostAreaAt(world);
         if (clicked != null) {
             selectedAreaId = clicked.getId();
-            originalTransform = copyTransform(clicked.getTransform());
+            snapshot(clicked);
             dragStartWorld = world;
             moving = true;
             return true;
@@ -59,19 +95,27 @@ public final class FogTool implements Tool {
     @Override
     public boolean mouseDragged(ToolContext context, double mouseX, double mouseY, int button,
                                 double dragX, double dragY, int modifiers) {
-        if (button != LEFT_MOUSE_BUTTON || (!moving && start == null)) return false;
+        if (button != LEFT_MOUSE_BUTTON || (!moving && !resizing && !rotating && start == null)) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         if (moving) moveSelectedArea(context, world);
+        else if (resizing) resizeSelectedArea(context, world, modifiers);
+        else if (rotating) rotateSelectedArea(world);
         else end = snapPointToWalls(context, world, new Vec2d(1.0, 0.0), new Vec2d(0.0, 1.0));
         return true;
     }
 
     @Override
     public boolean mouseReleased(ToolContext context, double mouseX, double mouseY, int button, int modifiers) {
-        if (button != LEFT_MOUSE_BUTTON || (!moving && start == null)) return false;
+        if (button != LEFT_MOUSE_BUTTON || (!moving && !resizing && !rotating && start == null)) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         if (moving) {
             moveSelectedArea(context, world);
+            saveAction.run();
+        } else if (resizing) {
+            resizeSelectedArea(context, world, modifiers);
+            saveAction.run();
+        } else if (rotating) {
+            rotateSelectedArea(world);
             saveAction.run();
         } else {
             end = snapPointToWalls(context, world, new Vec2d(1.0, 0.0), new Vec2d(0.0, 1.0));
@@ -92,11 +136,14 @@ public final class FogTool implements Tool {
         renderSnapGuides(context);
     }
 
-    public boolean isDrawing() { return start != null || moving; }
+    public boolean isDrawing() { return start != null || moving || resizing || rotating; }
 
     public void cancel() {
         VttFogArea selected = getSelectedArea();
-        if (selected != null && originalTransform != null) selected.setTransform(originalTransform);
+        if (selected != null && originalTransform != null) {
+            selected.setTransform(originalTransform);
+            if (originalSize != null) selected.setSize(originalSize);
+        }
         finishOperation();
     }
 
@@ -196,6 +243,81 @@ public final class FogTool implements Tool {
         SnapOffset snap = snapAreaToWalls(context, area, candidateX, candidateY);
         area.getTransform().setX(candidateX + snap.x());
         area.getTransform().setY(candidateY + snap.y());
+    }
+
+    private void resizeSelectedArea(ToolContext context, Vec2d world, int modifiers) {
+        VttFogArea area = getSelectedArea();
+        if (area == null || resizeAnchorWorld == null || activeHandle == null) return;
+        Vec2d u = areaAxis(area, true);
+        Vec2d v = areaAxis(area, false);
+        world = snapPointToWalls(context, world, u, v);
+        VttSceneTransform transform = area.getTransform();
+        double radians = Math.toRadians(-transform.getRotationDegrees());
+        double dx = world.x() - resizeAnchorWorld.x();
+        double dy = world.y() - resizeAnchorWorld.y();
+        double localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+        double localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+        double newWidth = Math.max(MIN_FOG_SIZE, Math.abs(localX));
+        double newHeight = Math.max(MIN_FOG_SIZE, Math.abs(localY));
+        if ((modifiers & GLFW.GLFW_MOD_SHIFT) != 0 && originalSize != null && originalTransform != null) {
+            double oldWidth = Math.abs(originalSize.getWidth() * originalTransform.getScaleX());
+            double oldHeight = Math.abs(originalSize.getHeight() * originalTransform.getScaleY());
+            double aspect = oldHeight <= 0.0 ? 1.0 : oldWidth / oldHeight;
+            if (newWidth / newHeight > aspect) newWidth = newHeight * aspect;
+            else newHeight = newWidth / aspect;
+        }
+        int signX = handleSignX(activeHandle);
+        int signY = handleSignY(activeHandle);
+        Vec2d centerOffset = rotate(new Vec2d(signX * newWidth / 2.0, signY * newHeight / 2.0),
+                transform.getRotationDegrees());
+        transform.setX(resizeAnchorWorld.x() + centerOffset.x());
+        transform.setY(resizeAnchorWorld.y() + centerOffset.y());
+        double scaleX = Math.max(0.05, Math.abs(transform.getScaleX()));
+        double scaleY = Math.max(0.05, Math.abs(transform.getScaleY()));
+        area.getSize().setWidth(newWidth / scaleX);
+        area.getSize().setHeight(newHeight / scaleY);
+    }
+
+    private void rotateSelectedArea(Vec2d world) {
+        VttFogArea area = getSelectedArea();
+        if (area == null) return;
+        double angle = Math.toDegrees(Math.atan2(
+                world.y() - area.getTransform().getY(),
+                world.x() - area.getTransform().getX()));
+        area.getTransform().setRotationDegrees(angle + rotationMouseOffset);
+    }
+
+    private Vec2d oppositeCorner(VttFogArea area, Handle handle) {
+        Vec2d[] corners = areaCorners(area);
+        return switch (handle) {
+            case TOP_LEFT -> corners[2];
+            case TOP_RIGHT -> corners[3];
+            case BOTTOM_RIGHT -> corners[0];
+            case BOTTOM_LEFT -> corners[1];
+            case ROTATION -> new Vec2d(area.getTransform().getX(), area.getTransform().getY());
+        };
+    }
+
+    private int handleSignX(Handle handle) {
+        return switch (handle) {
+            case TOP_LEFT, BOTTOM_LEFT -> -1;
+            case TOP_RIGHT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
+        };
+    }
+
+    private int handleSignY(Handle handle) {
+        return switch (handle) {
+            case TOP_LEFT, TOP_RIGHT -> -1;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> 1;
+            case ROTATION -> 0;
+        };
+    }
+
+    private Vec2d rotate(Vec2d point, double degrees) {
+        double radians = Math.toRadians(degrees);
+        return new Vec2d(point.x() * Math.cos(radians) - point.y() * Math.sin(radians),
+                point.x() * Math.sin(radians) + point.y() * Math.cos(radians));
     }
 
     private SnapOffset snapAreaToWalls(
@@ -389,6 +511,11 @@ public final class FogTool implements Tool {
                 source.getScaleY(), source.getRotationDegrees());
     }
 
+    private void snapshot(VttFogArea area) {
+        originalTransform = copyTransform(area.getTransform());
+        originalSize = new VttSceneSize(area.getSize().getWidth(), area.getSize().getHeight());
+    }
+
     private void renderCreationPreview(VRenderContext context) {
         Vec2d a = context.renderState().worldToScreen(start);
         Vec2d b = context.renderState().worldToScreen(end);
@@ -419,6 +546,63 @@ public final class FogTool implements Tool {
         pose.mulPose(Axis.ZP.rotationDegrees((float) transform.getRotationDegrees()));
         drawBorder(context, left, top, right, bottom, color);
         pose.popPose();
+
+        for (Vec2d corner : areaCorners(area)) {
+            renderHandle(context, context.renderState().worldToScreen(corner), 0xFFFFFFFF);
+        }
+        renderHandle(context, rotationHandleScreenPosition(context.renderState(), area), 0xFFFFCC66);
+    }
+
+    private void renderHandle(VRenderContext context, Vec2d position, int color) {
+        int x = (int) Math.round(position.x());
+        int y = (int) Math.round(position.y());
+        context.graphics().fill(x - 3, y - 3, x + 3, y + 3, color);
+    }
+
+    private Handle findHandleAt(ToolContext context, double mouseX, double mouseY) {
+        VttFogArea area = getSelectedArea();
+        if (area == null) return null;
+        Vec2d rotation = rotationHandleScreenPosition(context.renderState(), area);
+        if (distance(rotation, mouseX, mouseY) <= HANDLE_HIT_PIXELS) return Handle.ROTATION;
+        Vec2d[] corners = areaCorners(area);
+        Handle[] handles = {Handle.TOP_LEFT, Handle.TOP_RIGHT, Handle.BOTTOM_RIGHT, Handle.BOTTOM_LEFT};
+        for (int index = 0; index < corners.length; index++) {
+            Vec2d screen = context.renderState().worldToScreen(corners[index]);
+            if (distance(screen, mouseX, mouseY) <= HANDLE_HIT_PIXELS) return handles[index];
+        }
+        return null;
+    }
+
+    private Vec2d[] areaCorners(VttFogArea area) {
+        double halfWidth = actualWidth(area) / 2.0;
+        double halfHeight = actualHeight(area) / 2.0;
+        return new Vec2d[]{
+                localToWorld(area, -halfWidth, -halfHeight),
+                localToWorld(area, halfWidth, -halfHeight),
+                localToWorld(area, halfWidth, halfHeight),
+                localToWorld(area, -halfWidth, halfHeight)
+        };
+    }
+
+    private Vec2d localToWorld(VttFogArea area, double localX, double localY) {
+        Vec2d rotated = rotate(new Vec2d(localX, localY), area.getTransform().getRotationDegrees());
+        return new Vec2d(area.getTransform().getX() + rotated.x(),
+                area.getTransform().getY() + rotated.y());
+    }
+
+    private Vec2d rotationHandleScreenPosition(RenderState renderState, VttFogArea area) {
+        Vec2d center = renderState.worldToScreen(
+                new Vec2d(area.getTransform().getX(), area.getTransform().getY()));
+        Vec2d top = renderState.worldToScreen(localToWorld(area, 0.0, -actualHeight(area) / 2.0));
+        Vec2d direction = top.subtract(center);
+        direction = direction.length() < 0.001 ? new Vec2d(0.0, -1.0) : direction.normalize();
+        return top.add(direction.multiply(ROTATION_HANDLE_DISTANCE));
+    }
+
+    private double distance(Vec2d position, double x, double y) {
+        double dx = position.x() - x;
+        double dy = position.y() - y;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     private void drawBorder(VRenderContext context, int left, int top, int right, int bottom, int color) {
@@ -458,6 +642,11 @@ public final class FogTool implements Tool {
         moving = false;
         dragStartWorld = null;
         originalTransform = null;
+        originalSize = null;
+        resizeAnchorWorld = null;
+        activeHandle = null;
+        resizing = false;
+        rotating = false;
         snapGuideU = null;
         snapGuideV = null;
     }
@@ -483,5 +672,7 @@ public final class FogTool implements Tool {
     private record Projection(double min, double max) {}
 
     private record SnapGuide(Vec2d normal, double offset) {}
+
+    private enum Handle { TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT, ROTATION }
 
 }
