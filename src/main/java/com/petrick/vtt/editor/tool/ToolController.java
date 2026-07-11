@@ -41,12 +41,12 @@ public final class ToolController {
     }
 
     public void selectHandTool() {
-        wallTool.cancel();
+        wallTool.deactivate();
         setActiveTool(handTool);
     }
 
     public void selectSelectTool() {
-        wallTool.cancel();
+        wallTool.deactivate();
         setActiveTool(selectTool);
     }
 
@@ -56,6 +56,22 @@ public final class ToolController {
         if (activeTool != wallTool || !wallTool.isDrawing()) return false;
         wallTool.cancel();
         return true;
+    }
+
+    public boolean deleteSelectedWall() {
+        return activeTool == wallTool && wallTool.deleteSelectedWall();
+    }
+
+    public boolean scaleSelectedWall(double factor) {
+        return activeTool == wallTool && wallTool.scaleSelectedWall(factor);
+    }
+
+    public boolean rotateSelectedWall(double degrees) {
+        return activeTool == wallTool && wallTool.rotateSelectedWall(degrees);
+    }
+
+    public boolean resetSelectedWallTransform() {
+        return activeTool == wallTool && wallTool.resetSelectedWallTransform();
     }
 
     public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {

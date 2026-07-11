@@ -1167,24 +1167,28 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.scaleSelectedWall(1.1)) return true;
             inputController.scaleSelectedObjectsUp();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.scaleSelectedWall(0.9)) return true;
             inputController.scaleSelectedObjectsDown();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_Q) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.rotateSelectedWall(-15.0)) return true;
             inputController.rotateSelectedObjectsLeft();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_E) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.rotateSelectedWall(15.0)) return true;
             inputController.rotateSelectedObjectsRight();
             return true;
         }
@@ -1197,6 +1201,7 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_R) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.resetSelectedWallTransform()) return true;
             inputController.resetSelectedObjectsScaleAndRotation();
             return true;
         }
@@ -1209,6 +1214,7 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.deleteSelectedWall()) return true;
             inputController.deleteSelectedObjects();
             return true;
         }

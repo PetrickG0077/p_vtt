@@ -217,6 +217,14 @@ public final class InputController {
 
     public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
 
+    public boolean deleteSelectedWall() { return toolController.deleteSelectedWall(); }
+
+    public boolean scaleSelectedWall(double factor) { return toolController.scaleSelectedWall(factor); }
+
+    public boolean rotateSelectedWall(double degrees) { return toolController.rotateSelectedWall(degrees); }
+
+    public boolean resetSelectedWallTransform() { return toolController.resetSelectedWallTransform(); }
+
     public void toggleSelectedObjectsVisibility() {
         scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
     }
