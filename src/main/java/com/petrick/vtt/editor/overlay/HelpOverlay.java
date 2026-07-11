@@ -41,6 +41,8 @@ public final class HelpOverlay {
                 "S: Select",
                 "H: Hand",
                 "W: Wall box (drag)",
+                "D: Door box (drag)",
+                "O/L: Open / Lock door",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",

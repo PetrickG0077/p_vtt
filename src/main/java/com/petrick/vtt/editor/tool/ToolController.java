@@ -13,6 +13,7 @@ public final class ToolController {
 
     private final SelectTool selectTool;
     private final WallTool wallTool;
+    private final DoorTool doorTool;
 
     private Tool activeTool;
 
@@ -20,6 +21,7 @@ public final class ToolController {
         this.handTool = new HandTool();
         this.selectTool = new SelectTool();
         this.wallTool = new WallTool(sceneSupplier, saveAction);
+        this.doorTool = new DoorTool(sceneSupplier, saveAction);
 
         this.activeTool = handTool;
     }
@@ -42,19 +44,35 @@ public final class ToolController {
 
     public void selectHandTool() {
         wallTool.deactivate();
+        doorTool.deactivate();
         setActiveTool(handTool);
     }
 
     public void selectSelectTool() {
         wallTool.deactivate();
+        doorTool.deactivate();
         setActiveTool(selectTool);
     }
 
-    public void selectWallTool() { setActiveTool(wallTool); }
+    public void selectWallTool() {
+        doorTool.deactivate();
+        setActiveTool(wallTool);
+    }
+
+    public void selectDoorTool() {
+        wallTool.deactivate();
+        setActiveTool(doorTool);
+    }
 
     public boolean cancelWallDrawing() {
         if (activeTool != wallTool || !wallTool.isDrawing()) return false;
         wallTool.cancel();
+        return true;
+    }
+
+    public boolean cancelDoorEditing() {
+        if (activeTool != doorTool || !doorTool.isEditing()) return false;
+        doorTool.cancel();
         return true;
     }
 
@@ -72,6 +90,30 @@ public final class ToolController {
 
     public boolean resetSelectedWallTransform() {
         return activeTool == wallTool && wallTool.resetSelectedWallTransform();
+    }
+
+    public boolean deleteSelectedDoor() {
+        return activeTool == doorTool && doorTool.deleteSelectedDoor();
+    }
+
+    public boolean toggleSelectedDoorOpen() {
+        return activeTool == doorTool && doorTool.toggleSelectedDoorOpen();
+    }
+
+    public boolean toggleSelectedDoorLocked() {
+        return activeTool == doorTool && doorTool.toggleSelectedDoorLocked();
+    }
+
+    public boolean scaleSelectedDoor(double factor) {
+        return activeTool == doorTool && doorTool.scaleSelectedDoor(factor);
+    }
+
+    public boolean rotateSelectedDoor(double degrees) {
+        return activeTool == doorTool && doorTool.rotateSelectedDoor(degrees);
+    }
+
+    public boolean resetSelectedDoorTransform() {
+        return activeTool == doorTool && doorTool.resetSelectedDoorTransform();
     }
 
     public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {

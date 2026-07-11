@@ -215,7 +215,11 @@ public final class InputController {
 
     public void selectWallTool() { toolController.selectWallTool(); }
 
+    public void selectDoorTool() { toolController.selectDoorTool(); }
+
     public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
+
+    public boolean cancelDoorEditing() { return toolController.cancelDoorEditing(); }
 
     public boolean deleteSelectedWall() { return toolController.deleteSelectedWall(); }
 
@@ -224,6 +228,18 @@ public final class InputController {
     public boolean rotateSelectedWall(double degrees) { return toolController.rotateSelectedWall(degrees); }
 
     public boolean resetSelectedWallTransform() { return toolController.resetSelectedWallTransform(); }
+
+    public boolean deleteSelectedDoor() { return toolController.deleteSelectedDoor(); }
+
+    public boolean toggleSelectedDoorOpen() { return toolController.toggleSelectedDoorOpen(); }
+
+    public boolean toggleSelectedDoorLocked() { return toolController.toggleSelectedDoorLocked(); }
+
+    public boolean scaleSelectedDoor(double factor) { return toolController.scaleSelectedDoor(factor); }
+
+    public boolean rotateSelectedDoor(double degrees) { return toolController.rotateSelectedDoor(degrees); }
+
+    public boolean resetSelectedDoorTransform() { return toolController.resetSelectedDoorTransform(); }
 
     public void toggleSelectedObjectsVisibility() {
         scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
