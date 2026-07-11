@@ -38,6 +38,9 @@ public final class VttScene {
     /** Null is tolerated when loading scene JSON written before doors existed. */
     private List<VttDoor> doors = new ArrayList<>();
 
+    /** Null is tolerated when loading scene JSON written before fog existed. */
+    private VttFogOfWar fogOfWar;
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -134,6 +137,15 @@ public final class VttScene {
 
     public void clearDoors() {
         getDoors().clear();
+    }
+
+    public VttFogOfWar getFogOfWar() {
+        if (fogOfWar == null) fogOfWar = new VttFogOfWar();
+        return fogOfWar;
+    }
+
+    public void setFogOfWar(VttFogOfWar fogOfWar) {
+        this.fogOfWar = fogOfWar == null ? new VttFogOfWar() : fogOfWar;
     }
 
     private String normalizeId(String value) {

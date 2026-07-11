@@ -136,6 +136,18 @@ public final class TabletopStorage {
                     door.getSize();
                 }
             });
+            scene.getFogOfWar().getRevealedAreas().forEach(area -> {
+                if (area != null) {
+                    area.getTransform();
+                    area.getSize();
+                }
+            });
+            scene.getFogOfWar().getHiddenAreas().forEach(area -> {
+                if (area != null) {
+                    area.getTransform();
+                    area.getSize();
+                }
+            });
 
             return scene;
         } catch (IOException | RuntimeException exception) {
