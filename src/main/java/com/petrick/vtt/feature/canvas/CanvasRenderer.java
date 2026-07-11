@@ -72,8 +72,8 @@ public final class CanvasRenderer {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager);
-        sceneWallRenderer.render(context, tabletopScene);
-        sceneDoorRenderer.render(context, tabletopScene);
+        sceneWallRenderer.render(context, tabletopScene, masterView);
+        sceneDoorRenderer.render(context, tabletopScene, masterView);
         sceneFogRenderer.render(context, tabletopScene, masterView);
     }
 

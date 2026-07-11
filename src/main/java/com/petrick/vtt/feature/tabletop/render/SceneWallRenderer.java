@@ -17,15 +17,16 @@ public final class SceneWallRenderer {
     private static final int BLOCKS_VISION_COLOR = 0xFFCC66FF;
     private static final int BLOCKS_MOVEMENT_COLOR = 0xFF66AAFF;
     private static final int DECORATIVE_COLOR = 0xFFAAAAAA;
+    private static final int PLAYER_WALL_COLOR = 0xFF08080C;
 
-    public void render(VRenderContext context, VttScene scene) {
+    public void render(VRenderContext context, VttScene scene, boolean masterView) {
         if (scene == null) return;
         for (VttWall wall : scene.getWalls()) {
-            if (wall != null && wall.isVisible()) renderWall(context, scene, wall);
+            if (wall != null && wall.isVisible()) renderWall(context, scene, wall, masterView);
         }
     }
 
-    private void renderWall(VRenderContext context, VttScene scene, VttWall wall) {
+    private void renderWall(VRenderContext context, VttScene scene, VttWall wall, boolean masterView) {
         var transform = wall.getTransform();
         var size = wall.getSize();
         Vec2d center = context.renderState().worldToScreen(
@@ -36,8 +37,10 @@ public final class SceneWallRenderer {
                 Math.abs(size.getHeight() * transform.getScaleY()) * zoom));
         int top = -height / 2;
         int bottom = top + height;
-        int borderColor = getWallColor(wall);
-        int fillColor = (borderColor & 0x00FFFFFF) | 0x66000000;
+        int borderColor = masterView ? getWallColor(wall) : PLAYER_WALL_COLOR;
+        int fillColor = masterView
+                ? (borderColor & 0x00FFFFFF) | 0x66000000
+                : PLAYER_WALL_COLOR;
 
         PoseStack pose = context.graphics().pose();
         pose.pushPose();
