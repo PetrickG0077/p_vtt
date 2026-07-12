@@ -77,7 +77,8 @@ public final class CreatedTokenDefinitions {
                         defaultState.getImageHeight()
                 ),
                 states,
-                defaultStateId
+                defaultStateId,
+                draft.getPlayer()
         );
 
         tokenDefinitionRegistry.register(definition);

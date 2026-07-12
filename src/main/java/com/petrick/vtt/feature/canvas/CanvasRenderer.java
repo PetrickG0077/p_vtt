@@ -75,11 +75,12 @@ public final class CanvasRenderer {
             SelectionManager selectionManager,
             boolean masterView,
             boolean editorSelectionVisible,
+            boolean resizeHandlesVisible,
             boolean visionDebugVisible
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
-        renderObjects(context, scene, selectionManager, editorSelectionVisible);
+        renderObjects(context, scene, selectionManager, editorSelectionVisible, resizeHandlesVisible);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         if (masterView && visionDebugVisible) {
@@ -93,7 +94,8 @@ public final class CanvasRenderer {
             VRenderContext context,
             CanvasScene scene,
             SelectionManager selectionManager,
-            boolean editorSelectionVisible
+            boolean editorSelectionVisible,
+            boolean resizeHandlesVisible
     ) {
         for (CanvasObject object : scene.getObjects()) {
             if (!object.visible()) {
@@ -104,7 +106,7 @@ public final class CanvasRenderer {
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
-                renderSelectionHandles(context, object);
+                if (resizeHandlesVisible) renderSelectionHandles(context, object);
                 renderRotationHandle(context, object);
             }
         }

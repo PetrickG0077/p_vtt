@@ -528,7 +528,8 @@ public final class CreatedTokenStorage {
                 data.displayName,
                 new Vec2d(data.defaultWidth, data.defaultHeight),
                 states,
-                defaultStateId
+                defaultStateId,
+                data.player
         );
     }
 

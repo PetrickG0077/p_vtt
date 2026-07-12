@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.dialog;
 
 import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.TokenStateDraft;
+import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
@@ -95,11 +96,15 @@ public final class TokenCreationDialog {
     private String stateNameEditBuffer = "";
 
     private int stateListScrollOffset = 0;
+    private String playerSearch = "";
+    private static final int PLAYER_ROW_HEIGHT = 18;
+    private static final int MAX_VISIBLE_PLAYERS = 5;
 
     public void render(
             VRenderContext context,
             Font font,
-            TokenCreationDraft draft
+            TokenCreationDraft draft,
+            List<VttPlayerOption> playerOptions
     ) {
         int x = getDialogX(context);
         int y = getDialogY(context);
@@ -132,7 +137,7 @@ public final class TokenCreationDialog {
                 context,
                 font,
                 "Player:",
-                draft.getPlayer(),
+                playerFieldText(draft, playerOptions),
                 x + 145,
                 y + 88,
                 Field.PLAYER
@@ -149,6 +154,10 @@ public final class TokenCreationDialog {
         );
 
         renderStatesPanel(context, font, draft, x + STATE_PANEL_X_OFFSET, y + STATE_PANEL_Y_OFFSET);
+
+        if (activeField == Field.PLAYER) {
+            renderPlayerDropdown(context, font, draft, playerOptions);
+        }
 
         if (draft.hasError()) {
             drawCenteredString(
@@ -186,7 +195,8 @@ public final class TokenCreationDialog {
             TokenCreationDraft draft,
             double mouseX,
             double mouseY,
-            int button
+            int button,
+            List<VttPlayerOption> playerOptions
     ) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return Action.NONE;
@@ -194,6 +204,16 @@ public final class TokenCreationDialog {
 
         if (!containsPoint(screenWidth, screenHeight, mouseX, mouseY)) {
             return Action.NONE;
+        }
+
+        if (activeField == Field.PLAYER) {
+            PlayerChoice choice = findPlayerChoiceAt(screenWidth, screenHeight, mouseX, mouseY, playerOptions);
+            if (choice != null) {
+                draft.setPlayer(choice.playerId());
+                playerSearch = "";
+                activeField = Field.NONE;
+                return Action.NONE;
+            }
         }
 
         if (isMouseOverImageButton(screenWidth, screenHeight, mouseX, mouseY)) {
@@ -303,6 +323,7 @@ public final class TokenCreationDialog {
         }
 
         activeField = findFieldAt(screenWidth, screenHeight, mouseX, mouseY);
+        if (activeField == Field.PLAYER) playerSearch = "";
 
         return Action.NONE;
     }
@@ -688,6 +709,74 @@ public final class TokenCreationDialog {
                 TEXT_COLOR,
                 false
         );
+    }
+
+    private String playerFieldText(TokenCreationDraft draft, List<VttPlayerOption> playerOptions) {
+        if (activeField == Field.PLAYER) return playerSearch;
+        if (draft.getPlayer() == null || draft.getPlayer().isBlank()) return "Unassigned";
+        for (VttPlayerOption option : safePlayerOptions(playerOptions)) {
+            if (draft.getPlayer().equals(option.id())) return option.displayName();
+        }
+        return "Offline: " + truncateText(draft.getPlayer(), 12);
+    }
+
+    private void renderPlayerDropdown(
+            VRenderContext context, Font font, TokenCreationDraft draft,
+            List<VttPlayerOption> playerOptions
+    ) {
+        int x = getDialogX(context.screenWidth()) + 201;
+        int y = getDialogY(context.screenHeight()) + 110;
+        List<PlayerChoice> choices = filteredPlayerChoices(playerOptions);
+        int visibleCount = Math.min(MAX_VISIBLE_PLAYERS, choices.size());
+        for (int index = 0; index < visibleCount; index++) {
+            PlayerChoice choice = choices.get(index);
+            int rowY = y + index * PLAYER_ROW_HEIGHT;
+            boolean selected = choice.playerId().equals(draft.getPlayer());
+            context.graphics().fill(x, rowY, x + INPUT_WIDTH, rowY + PLAYER_ROW_HEIGHT,
+                    selected ? 0xEE332255 : 0xEE080808);
+            drawBorder(context, x, rowY, INPUT_WIDTH, PLAYER_ROW_HEIGHT,
+                    selected ? INPUT_ACTIVE_BORDER : INPUT_BORDER);
+            context.graphics().drawString(font, truncateText(choice.label(), 28),
+                    x + 5, rowY + 5, TEXT_COLOR, false);
+        }
+        if (choices.isEmpty()) {
+            context.graphics().fill(x, y, x + INPUT_WIDTH, y + PLAYER_ROW_HEIGHT, 0xEE080808);
+            context.graphics().drawString(font, "No connected players", x + 5, y + 5,
+                    MUTED_TEXT_COLOR, false);
+        }
+    }
+
+    private PlayerChoice findPlayerChoiceAt(
+            int screenWidth, int screenHeight, double mouseX, double mouseY,
+            List<VttPlayerOption> playerOptions
+    ) {
+        int x = getDialogX(screenWidth) + 201;
+        int y = getDialogY(screenHeight) + 110;
+        List<PlayerChoice> choices = filteredPlayerChoices(playerOptions);
+        int visibleCount = Math.min(MAX_VISIBLE_PLAYERS, choices.size());
+        for (int index = 0; index < visibleCount; index++) {
+            if (isPointInside(mouseX, mouseY, x, y + index * PLAYER_ROW_HEIGHT,
+                    INPUT_WIDTH, PLAYER_ROW_HEIGHT)) return choices.get(index);
+        }
+        return null;
+    }
+
+    private List<PlayerChoice> filteredPlayerChoices(List<VttPlayerOption> playerOptions) {
+        List<PlayerChoice> choices = new java.util.ArrayList<>();
+        String query = playerSearch == null ? "" : playerSearch.trim().toLowerCase(java.util.Locale.ROOT);
+        if (query.isEmpty() || "unassigned".contains(query)) choices.add(new PlayerChoice("", "Unassigned"));
+        for (VttPlayerOption option : safePlayerOptions(playerOptions)) {
+            if (query.isEmpty()
+                    || option.displayName().toLowerCase(java.util.Locale.ROOT).contains(query)
+                    || option.id().toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                choices.add(new PlayerChoice(option.id(), option.displayName()));
+            }
+        }
+        return choices;
+    }
+
+    private List<VttPlayerOption> safePlayerOptions(List<VttPlayerOption> playerOptions) {
+        return playerOptions == null ? List.of() : playerOptions;
     }
 
     private void renderStatesPanel(
@@ -1424,8 +1513,8 @@ public final class TokenCreationDialog {
             return;
         }
 
-        if (activeField == Field.PLAYER && draft.getPlayer().length() < 48) {
-            draft.setPlayer(draft.getPlayer() + character);
+        if (activeField == Field.PLAYER && playerSearch.length() < 48) {
+            playerSearch += character;
             return;
         }
 
@@ -1441,7 +1530,7 @@ public final class TokenCreationDialog {
         }
 
         if (activeField == Field.PLAYER) {
-            draft.setPlayer(removeLastCharacter(draft.getPlayer()));
+            playerSearch = removeLastCharacter(playerSearch);
             return;
         }
 
@@ -1630,4 +1719,6 @@ public final class TokenCreationDialog {
 
         return text.substring(0, maxLength - 3) + "...";
     }
+
+    private record PlayerChoice(String playerId, String label) {}
 }

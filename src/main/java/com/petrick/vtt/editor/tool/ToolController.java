@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.tool;
 
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import java.util.function.Supplier;
 
@@ -16,12 +17,17 @@ public final class ToolController {
     private final WallTool wallTool;
     private final DoorTool doorTool;
     private final FogTool fogTool;
+    private final Supplier<VttRole> roleSupplier;
 
     private Tool activeTool;
 
-    public ToolController(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
+    public ToolController(
+            Supplier<VttScene> sceneSupplier, Runnable saveAction,
+            Supplier<VttRole> roleSupplier, Supplier<String> playerIdSupplier
+    ) {
+        this.roleSupplier = roleSupplier;
         this.handTool = new HandTool();
-        this.selectTool = new SelectTool(sceneSupplier);
+        this.selectTool = new SelectTool(sceneSupplier, roleSupplier, playerIdSupplier);
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);
@@ -175,7 +181,7 @@ public final class ToolController {
             int button,
             int modifiers
     ) {
-        if (activeTool == selectTool && button == 0) {
+        if (activeTool == selectTool && button == 0 && roleSupplier.get() == VttRole.MASTER) {
             Vec2d worldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
             if (doorTool.selectDoorAt(worldPosition)) {
                 context.selectionManager().clearSelection();

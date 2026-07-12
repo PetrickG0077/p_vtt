@@ -22,8 +22,16 @@ public record TokenDefinition(
         String displayName,
         Vec2d defaultSize,
         Map<String, CanvasObjectState> states,
-        String defaultStateId
+        String defaultStateId,
+        String defaultOwnerId
 ) {
+
+    public TokenDefinition(
+            String id, String displayName, Vec2d defaultSize,
+            Map<String, CanvasObjectState> states, String defaultStateId
+    ) {
+        this(id, displayName, defaultSize, states, defaultStateId, null);
+    }
 
     public TokenDefinition {
         if (id == null || id.isBlank()) {
@@ -49,6 +57,9 @@ public record TokenDefinition(
         if (!states.containsKey(defaultStateId)) {
             throw new IllegalArgumentException("Default state does not exist: " + defaultStateId);
         }
+
+        defaultOwnerId = defaultOwnerId == null || defaultOwnerId.isBlank()
+                ? null : defaultOwnerId.trim();
 
         states = Collections.unmodifiableMap(new LinkedHashMap<>(states));
     }

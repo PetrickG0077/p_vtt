@@ -24,6 +24,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
@@ -44,10 +45,13 @@ import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -150,7 +154,8 @@ public final class VTTScreen extends Screen {
                 session.getAnimatedTextureService(), assetRegistry, session.getAssetThumbnailRegistry()
         );
         this.inputController = new InputController(camera, scene, selectionManager,
-                session::getActiveScene, session::saveCanvasSceneToActiveScene);
+                session::getActiveScene, session::saveCanvasSceneToActiveScene,
+                session::getLocalRole, session::getLocalPlayerId);
 
         this.panelVisibility = new EditorPanelVisibility();
 
@@ -197,7 +202,7 @@ public final class VTTScreen extends Screen {
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
-                isMasterView(), session.isLocalMaster(), panelVisibility.isDebugVisible());
+                isMasterView(), true, session.isLocalMaster(), panelVisibility.isDebugVisible());
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
@@ -265,7 +270,8 @@ public final class VTTScreen extends Screen {
             tokenCreationDialog.render(
                     context,
                     this.font,
-                    tokenCreationDraft
+                    tokenCreationDraft,
+                    getConnectedPlayerOptions()
             );
 
             if (tokenImagePickerActive) {
@@ -661,6 +667,17 @@ public final class VTTScreen extends Screen {
 
         scene.syncObjectsFromTokenDefinition(updatedDefinition);
 
+        if (session.getActiveScene() != null) {
+            session.saveCanvasSceneToActiveScene();
+            for (var sceneObject : session.getActiveScene().getObjects()) {
+                if (sceneObject != null
+                        && updatedDefinition.id().equals(sceneObject.getSourceTokenDefinitionId())) {
+                    sceneObject.setOwnerId(updatedDefinition.defaultOwnerId());
+                }
+            }
+            session.saveActiveTabletopAndScene();
+        }
+
         tokenCatalogSelection.select(updatedDefinition.id());
 
         closeTokenCreationDialog();
@@ -827,7 +844,8 @@ public final class VTTScreen extends Screen {
                 tokenCreationDraft,
                 mouseX,
                 mouseY,
-                button
+                button,
+                getConnectedPlayerOptions()
         );
 
         if (action == TokenCreationDialog.Action.DISCARD) {
@@ -1195,7 +1213,6 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_S) {
-            if (!session.getLocalRole().canMoveAnyToken()) return true;
             inputController.selectSelectTool();
             return true;
         }
@@ -1269,7 +1286,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_Q) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (!canTransformSelectedTokens()) return true;
             if (inputController.rotateSelectedWall(-15.0)) return true;
             if (inputController.rotateSelectedDoor(-15.0)) return true;
             if (inputController.rotateSelectedFogArea(-15.0)) return true;
@@ -1278,7 +1295,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_E) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (!canTransformSelectedTokens()) return true;
             if (inputController.rotateSelectedWall(15.0)) return true;
             if (inputController.rotateSelectedDoor(15.0)) return true;
             if (inputController.rotateSelectedFogArea(15.0)) return true;
@@ -1287,7 +1304,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (!canTransformSelectedTokens()) return true;
             inputController.flipSelectedObjectsHorizontally();
             return true;
         }
@@ -1381,7 +1398,7 @@ public final class VTTScreen extends Screen {
         String requestedStateId = getStateIdFromNumberKey(keyCode);
 
         if (requestedStateId != null) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
+            if (!canTransformSelectedTokens()) return true;
             inputController.setSelectedObjectsActiveState(requestedStateId);
             return true;
         }
@@ -1427,6 +1444,19 @@ public final class VTTScreen extends Screen {
                     VTT.LOGGER.info("Token {} ownership {}", selectedId,
                             removeOwnership ? "cleared" : "assigned to local player");
                 });
+    }
+
+    private boolean canTransformSelectedTokens() {
+        if (session.isLocalMaster()) return true;
+        if (selectionManager.getSelectedObjectIds().isEmpty() || session.getActiveScene() == null) return false;
+        String localPlayerId = session.getLocalPlayerId();
+        for (String selectedId : selectionManager.getSelectedObjectIds()) {
+            boolean owned = session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && selectedId.equals(object.getId()))
+                    .anyMatch(object -> localPlayerId.equals(object.getOwnerId()));
+            if (!owned) return false;
+        }
+        return true;
     }
 
     private void adjustTokenVisionRange(double delta) {
@@ -1573,6 +1603,16 @@ public final class VTTScreen extends Screen {
         return null;
     }
 
+    private List<VttPlayerOption> getConnectedPlayerOptions() {
+        var connection = Minecraft.getInstance().getConnection();
+        if (connection == null) return List.of();
+        return connection.getOnlinePlayers().stream()
+                .map(info -> new VttPlayerOption(
+                        info.getProfile().getId().toString(), info.getProfile().getName()))
+                .sorted(Comparator.comparing(VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
     private void createTokenFromDraggedTokenDefinition(
             double mouseX,
             double mouseY,
@@ -1625,7 +1665,17 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        tokenPlacementService.placeToken(definition, worldPosition);
+        CanvasObject placedToken = tokenPlacementService.placeToken(definition, worldPosition);
+        if (definition.defaultOwnerId() != null && session.getActiveScene() != null) {
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && placedToken.id().equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        object.setOwnerId(definition.defaultOwnerId());
+                        session.saveActiveTabletopAndScene();
+                    });
+        }
         inputController.selectSelectTool();
     }
 

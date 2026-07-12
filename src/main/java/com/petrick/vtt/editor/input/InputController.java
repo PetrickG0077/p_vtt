@@ -11,6 +11,7 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import java.util.Set;
 import java.util.function.Supplier;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.core.session.VttRole;
 
 /**
  * Controla os inputs principais do VTT.
@@ -44,14 +45,17 @@ public final class InputController {
             CanvasScene scene,
             SelectionManager selectionManager,
             Supplier<VttScene> tabletopSceneSupplier,
-            Runnable saveTabletopAction
+            Runnable saveTabletopAction,
+            Supplier<VttRole> roleSupplier,
+            Supplier<String> playerIdSupplier
     ) {
         this.camera = camera;
         this.scene = scene;
         this.selectionManager = selectionManager;
         this.tabletopSceneSupplier = tabletopSceneSupplier;
         this.saveTabletopAction = saveTabletopAction;
-        this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction);
+        this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction,
+                roleSupplier, playerIdSupplier);
     }
 
     public boolean mouseClicked(

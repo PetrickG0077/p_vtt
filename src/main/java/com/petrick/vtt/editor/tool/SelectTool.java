@@ -5,6 +5,7 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.platform.render.VRenderContext;
 import org.lwjgl.glfw.GLFW;
 
@@ -44,6 +45,8 @@ public final class SelectTool implements Tool {
     private final Supplier<VttScene> tabletopSceneSupplier;
 
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
+    private final Supplier<VttRole> roleSupplier;
+    private final Supplier<String> playerIdSupplier;
 
     private boolean selecting;
 
@@ -77,8 +80,14 @@ public final class SelectTool implements Tool {
 
     private double rotationStartObjectRotation;
 
-    public SelectTool(Supplier<VttScene> tabletopSceneSupplier) {
+    public SelectTool(
+            Supplier<VttScene> tabletopSceneSupplier,
+            Supplier<VttRole> roleSupplier,
+            Supplier<String> playerIdSupplier
+    ) {
         this.tabletopSceneSupplier = tabletopSceneSupplier;
+        this.roleSupplier = roleSupplier;
+        this.playerIdSupplier = playerIdSupplier;
     }
 
     @Override
@@ -143,6 +152,11 @@ public final class SelectTool implements Tool {
             return true;
         }
 
+        if (!canControl(clickedObject)) {
+            if (!isControlDown(modifiers)) context.selectionManager().clearSelection();
+            return true;
+        }
+
         if (isControlDown(modifiers)) {
             context.selectionManager().toggle(clickedObject.id());
         } else if (!context.selectionManager().isSelected(clickedObject.id())) {
@@ -187,6 +201,7 @@ public final class SelectTool implements Tool {
             } else {
                 context.selectionManager().selectObjectsInside(context.scene(), worldSelectionBounds);
             }
+            removeUnauthorizedSelection(context);
 
             this.selecting = false;
             this.additiveSelection = false;
@@ -338,6 +353,7 @@ public final class SelectTool implements Tool {
     }
 
     private void beginResize(ToolContext context, HandleHit handleHit) {
+        if (roleSupplier.get() != VttRole.MASTER) return;
         CanvasObject object = context.scene().findObjectById(handleHit.objectId());
 
         if (object == null) {
@@ -595,6 +611,25 @@ public final class SelectTool implements Tool {
 
     private static boolean isControlDown(int modifiers) {
         return (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+    }
+
+    private boolean canControl(CanvasObject object) {
+        if (object == null) return false;
+        if (roleSupplier.get() == VttRole.MASTER) return true;
+        VttScene scene = tabletopSceneSupplier.get();
+        String playerId = playerIdSupplier.get();
+        if (scene == null || playerId == null) return false;
+        return scene.getObjects().stream()
+                .filter(sceneObject -> sceneObject != null && object.id().equals(sceneObject.getId()))
+                .anyMatch(sceneObject -> playerId.equals(sceneObject.getOwnerId()));
+    }
+
+    private void removeUnauthorizedSelection(ToolContext context) {
+        for (String selectedId : java.util.Set.copyOf(
+                context.selectionManager().getSelectedObjectIds())) {
+            CanvasObject object = context.scene().findObjectById(selectedId);
+            if (!canControl(object)) context.selectionManager().deselect(selectedId);
+        }
     }
 
     private record HandleHit(
