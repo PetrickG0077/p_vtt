@@ -39,6 +39,9 @@ public final class VttSceneObject {
     /** Vision radius in world units. Zero means unlimited. */
     private double visionRange;
 
+    /** Stable player identifier that owns this placed token. Null means unowned. */
+    private String ownerId;
+
     public VttSceneObject() {}
 
     public VttSceneObject(
@@ -119,5 +122,13 @@ public final class VttSceneObject {
 
     public void setVisionRange(double visionRange) {
         this.visionRange = Math.max(0.0, visionRange);
+    }
+
+    public String getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(String ownerId) {
+        this.ownerId = ownerId == null || ownerId.isBlank() ? null : ownerId.trim();
     }
 }

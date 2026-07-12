@@ -44,6 +44,7 @@ public final class HelpOverlay {
                 "D: Door box (drag)",
                 "Select: click a door to edit it",
                 "O/L: Open / Lock door",
+                "Ctrl+O: Toggle local token owner",
                 "Shift+F: Fog tool",
                 "X/Y: Reveal fog / toggle",
                 "Ctrl+P: Player view preview",

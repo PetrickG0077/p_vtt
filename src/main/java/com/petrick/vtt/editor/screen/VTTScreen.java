@@ -221,7 +221,8 @@ public final class VTTScreen extends Screen {
         }
 
         if (panelVisibility.isSelectionInspectorVisible()) {
-            selectionInspectorOverlay.render(context, this.font, scene, selectionManager);
+            selectionInspectorOverlay.render(context, this.font, scene, selectionManager,
+                    session.getActiveScene(), session.getLocalPlayerId());
         }
 
         if (panelVisibility.isAssetCatalogVisible()) {
@@ -1232,6 +1233,13 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_O
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            toggleSelectedTokenOwnership();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_O) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.toggleSelectedDoorOpen()) return true;
@@ -1399,6 +1407,26 @@ public final class VTTScreen extends Screen {
         session.saveActiveTabletopAndScene();
         VTT.LOGGER.info("Token {} {} scene vision sources", selectedId,
                 removed ? "removed from" : "added to");
+    }
+
+    private void toggleSelectedTokenOwnership() {
+        if (session.getActiveScene() == null
+                || selectionManager.getSelectedObjectIds().size() != 1) return;
+        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+        CanvasObject selected = scene.findObjectById(selectedId);
+        if (selected == null || !selected.hasSourceTokenDefinition()) return;
+        session.saveCanvasSceneToActiveScene();
+        session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && selectedId.equals(object.getId()))
+                .findFirst()
+                .ifPresent(object -> {
+                    String localPlayerId = session.getLocalPlayerId();
+                    boolean removeOwnership = localPlayerId.equals(object.getOwnerId());
+                    object.setOwnerId(removeOwnership ? null : localPlayerId);
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Token {} ownership {}", selectedId,
+                            removeOwnership ? "cleared" : "assigned to local player");
+                });
     }
 
     private void adjustTokenVisionRange(double delta) {

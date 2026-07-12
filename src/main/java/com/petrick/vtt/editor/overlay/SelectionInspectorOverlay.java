@@ -10,6 +10,7 @@ import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 import net.minecraft.client.gui.Font;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
+import com.petrick.vtt.feature.tabletop.VttScene;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +45,9 @@ public final class  SelectionInspectorOverlay {
             VRenderContext context,
             Font font,
             CanvasScene scene,
-            SelectionManager selectionManager
+            SelectionManager selectionManager,
+            VttScene tabletopScene,
+            String localPlayerId
     ) {
         Set<String> selectedIds = selectionManager.getSelectedObjectIds();
 
@@ -80,7 +83,8 @@ public final class  SelectionInspectorOverlay {
         textY += LINE_HEIGHT + 4;
 
         if (selectedObjects.size() == 1) {
-            renderSingleObjectInfo(context, font, scene, selectedObjects.getFirst(), textX, textY);
+            renderSingleObjectInfo(context, font, scene, selectedObjects.getFirst(),
+                    tabletopScene, localPlayerId, textX, textY);
         } else {
             renderMultipleObjectsInfo(context, font, selectedObjects, textX, textY);
         }
@@ -108,12 +112,22 @@ public final class  SelectionInspectorOverlay {
             Font font,
             CanvasScene scene,
             CanvasObject object,
+            VttScene tabletopScene,
+            String localPlayerId,
             int x,
             int y
     ) {
         Rectd bounds = object.bounds();
 
         drawLine(context, font, "ID: " + object.id(), x, y, TEXT_COLOR);
+        y += LINE_HEIGHT;
+
+        String ownerId = tabletopScene == null ? null : tabletopScene.getObjects().stream()
+                .filter(sceneObject -> sceneObject != null && object.id().equals(sceneObject.getId()))
+                .findFirst()
+                .map(sceneObject -> sceneObject.getOwnerId())
+                .orElse(null);
+        drawLine(context, font, "Owner: " + ownerLabel(ownerId, localPlayerId), x, y, TEXT_COLOR);
         y += LINE_HEIGHT;
 
         drawLine(
@@ -474,10 +488,16 @@ public final class  SelectionInspectorOverlay {
                 extraStateLines++;
             }
 
-            return 20 + extraStateLines;
+            return 21 + extraStateLines;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;
+    }
+
+    private String ownerLabel(String ownerId, String localPlayerId) {
+        if (ownerId == null || ownerId.isBlank()) return "Unowned";
+        if (ownerId.equals(localPlayerId)) return "Local Player";
+        return ownerId.length() <= 16 ? ownerId : ownerId.substring(0, 16) + "...";
     }
 
     private void renderPanelBackground(

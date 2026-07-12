@@ -54,6 +54,8 @@ public final class VTTSession {
 
     private VttRole localRole = VttRole.MASTER;
 
+    private String localPlayerId;
+
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
         DebugAssets.registerAll(assetRegistry);
@@ -108,6 +110,14 @@ public final class VTTSession {
 
     public boolean isLocalMaster() {
         return localRole == VttRole.MASTER;
+    }
+
+    public String getLocalPlayerId() {
+        if (localPlayerId == null) {
+            var player = Minecraft.getInstance().player;
+            localPlayerId = player == null ? "local_player" : player.getUUID().toString();
+        }
+        return localPlayerId;
     }
 
     public TabletopStoragePaths getTabletopStoragePaths() {
