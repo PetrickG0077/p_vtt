@@ -16,6 +16,7 @@ import com.petrick.vtt.feature.tabletop.render.SceneWallRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneDoorRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneFogRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneVisionDebugRenderer;
+import com.petrick.vtt.feature.tabletop.render.SceneVisionMaskRenderer;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 /**
@@ -53,6 +54,7 @@ public final class CanvasRenderer {
     private final SceneDoorRenderer sceneDoorRenderer;
     private final SceneFogRenderer sceneFogRenderer;
     private final SceneVisionDebugRenderer sceneVisionDebugRenderer;
+    private final SceneVisionMaskRenderer sceneVisionMaskRenderer;
 
     public CanvasRenderer(AnimatedTextureService animatedTextureService, AssetRegistry assetRegistry,
                           AssetThumbnailRegistry thumbnailRegistry) {
@@ -63,6 +65,7 @@ public final class CanvasRenderer {
         this.sceneDoorRenderer = new SceneDoorRenderer();
         this.sceneFogRenderer = new SceneFogRenderer();
         this.sceneVisionDebugRenderer = new SceneVisionDebugRenderer();
+        this.sceneVisionMaskRenderer = new SceneVisionMaskRenderer();
     }
 
     public void render(
@@ -71,16 +74,18 @@ public final class CanvasRenderer {
             CanvasScene scene,
             SelectionManager selectionManager,
             boolean masterView,
+            boolean editorSelectionVisible,
             boolean visionDebugVisible
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
-        renderObjects(context, scene, selectionManager, masterView);
+        renderObjects(context, scene, selectionManager, editorSelectionVisible);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         if (masterView && visionDebugVisible) {
             sceneVisionDebugRenderer.render(context, tabletopScene, scene, selectionManager);
         }
+        if (!masterView) sceneVisionMaskRenderer.render(context, tabletopScene, scene, selectionManager);
         sceneFogRenderer.render(context, tabletopScene, masterView);
     }
 
@@ -88,7 +93,7 @@ public final class CanvasRenderer {
             VRenderContext context,
             CanvasScene scene,
             SelectionManager selectionManager,
-            boolean masterView
+            boolean editorSelectionVisible
     ) {
         for (CanvasObject object : scene.getObjects()) {
             if (!object.visible()) {
@@ -97,7 +102,7 @@ public final class CanvasRenderer {
 
             renderObject(context, object);
 
-            if (masterView && selectionManager.isSelected(object.id())) {
+            if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
                 renderSelectionHandles(context, object);
                 renderRotationHandle(context, object);

@@ -194,8 +194,8 @@ public final class VTTScreen extends Screen {
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
-                isMasterView(), panelVisibility.isDebugVisible());
-        if (!playerViewPreview) inputController.renderToolOverlay(context, renderState);
+                isMasterView(), session.isLocalMaster(), panelVisibility.isDebugVisible());
+        if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
         if (playerViewPreview) return;
@@ -358,7 +358,7 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        if (playerViewPreview || tokenCreationDraft != null) {
+        if (tokenCreationDraft != null) {
             CursorManager.reset();
             return;
         }
@@ -1008,8 +1008,6 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (playerViewPreview) return super.keyPressed(keyCode, scanCode, modifiers);
-
         if (newSceneNameBuffer != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmNewScene();
@@ -1381,7 +1379,6 @@ public final class VTTScreen extends Screen {
             tokenCatalogContextMenu.close();
             newSceneNameBuffer = null;
             cancelRename();
-            selectionManager.clearSelection();
             inputController.selectHandTool();
         }
         VTT.LOGGER.info("Player view preview {}", playerViewPreview ? "enabled" : "disabled");
