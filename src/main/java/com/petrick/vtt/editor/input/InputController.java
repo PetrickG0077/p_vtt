@@ -209,12 +209,11 @@ public final class InputController {
     public void deleteSelectedObjects() {
         VttScene tabletopScene = tabletopSceneSupplier.get();
         boolean deletesVisionSource = tabletopScene != null
-                && tabletopScene.getVisionSourceObjectId() != null
-                && selectionManager.getSelectedObjectIds().contains(tabletopScene.getVisionSourceObjectId());
+                && tabletopScene.getVisionSourceObjectIds().removeIf(
+                selectionManager.getSelectedObjectIds()::contains);
         scene.removeObjects(selectionManager.getSelectedObjectIds());
         selectionManager.clearSelection();
         if (deletesVisionSource) {
-            tabletopScene.setVisionSourceObjectId(null);
             saveTabletopAction.run();
         }
     }

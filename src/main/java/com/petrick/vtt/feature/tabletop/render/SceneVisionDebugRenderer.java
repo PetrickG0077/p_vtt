@@ -10,6 +10,7 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionSourceResolver;
+import com.petrick.vtt.feature.tabletop.vision.VisionSegment;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.List;
@@ -26,11 +27,21 @@ public final class SceneVisionDebugRenderer {
             VRenderContext context, VttScene tabletopScene,
             CanvasScene canvasScene, SelectionManager selectionManager
     ) {
-        CanvasObject source = sourceResolver.resolve(tabletopScene, canvasScene, selectionManager);
-        if (source == null || tabletopScene == null) return;
-        Vec2d origin = source.transform().position();
+        if (tabletopScene == null) return;
+        List<CanvasObject> sources = sourceResolver.resolveAll(tabletopScene, canvasScene, selectionManager);
+        if (sources.isEmpty()) return;
         var segments = geometry.build(tabletopScene);
         if (segments.isEmpty()) return;
+        for (CanvasObject source : sources) {
+            renderSource(context, tabletopScene, source, segments);
+        }
+    }
+
+    private void renderSource(
+            VRenderContext context, VttScene tabletopScene,
+            CanvasObject source, List<VisionSegment> segments
+    ) {
+        Vec2d origin = source.transform().position();
         double maxDistance = tabletopScene.getObjects().stream()
                 .filter(object -> object != null && source.id().equals(object.getId()))
                 .mapToDouble(object -> object.getVisionRange())
@@ -40,7 +51,6 @@ public final class SceneVisionDebugRenderer {
                         / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 1.5);
         List<Vec2d> polygon = raycaster.buildVisibilityPolygon(origin, maxDistance, segments);
         if (polygon.size() < 2) return;
-
         for (int index = 0; index < polygon.size(); index++) {
             Vec2d point = polygon.get(index);
             renderWorldLine(context, point, polygon.get((index + 1) % polygon.size()), POLYGON_COLOR);

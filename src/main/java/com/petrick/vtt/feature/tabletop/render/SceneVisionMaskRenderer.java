@@ -29,16 +29,19 @@ public final class SceneVisionMaskRenderer {
             VRenderContext context, VttScene tabletopScene,
             CanvasScene canvasScene, SelectionManager selectionManager
     ) {
-        CanvasObject source = sourceResolver.resolve(tabletopScene, canvasScene, selectionManager);
-        if (source == null || tabletopScene == null) return;
-        List<Vec2d> worldPolygon = raycaster.buildVisibilityPolygon(
-                source.transform().position(), resolveVisionRange(context, tabletopScene, source.id()),
-                geometry.build(tabletopScene));
-        if (worldPolygon.size() < 3) return;
-        List<Vec2d> screenPolygon = worldPolygon.stream()
-                .map(context.renderState()::worldToScreen)
-                .toList();
-        fillOutsidePolygon(context, screenPolygon);
+        if (tabletopScene == null) return;
+        List<CanvasObject> sources = sourceResolver.resolveAll(tabletopScene, canvasScene, selectionManager);
+        if (sources.isEmpty()) return;
+        var segments = geometry.build(tabletopScene);
+        List<List<Vec2d>> screenPolygons = new ArrayList<>();
+        for (CanvasObject source : sources) {
+            List<Vec2d> worldPolygon = raycaster.buildVisibilityPolygon(
+                    source.transform().position(), resolveVisionRange(context, tabletopScene, source.id()), segments);
+            if (worldPolygon.size() >= 3) {
+                screenPolygons.add(worldPolygon.stream().map(context.renderState()::worldToScreen).toList());
+            }
+        }
+        if (!screenPolygons.isEmpty()) fillOutsidePolygons(context, screenPolygons);
     }
 
     private double maximumDistance(VRenderContext context) {
@@ -55,15 +58,16 @@ public final class SceneVisionMaskRenderer {
                 .orElseGet(() -> maximumDistance(context));
     }
 
-    private void fillOutsidePolygon(VRenderContext context, List<Vec2d> polygon) {
+    private void fillOutsidePolygons(VRenderContext context, List<List<Vec2d>> polygons) {
         for (int left = 0; left < context.screenWidth(); left += COLUMN_WIDTH) {
             int right = Math.min(context.screenWidth(), left + COLUMN_WIDTH);
             double sampleX = left + (right - left) / 2.0;
-            List<Double> intersections = intersectionsAtX(polygon, sampleX);
+            List<VisibleInterval> visibleIntervals = visibleIntervalsAtX(
+                    polygons, sampleX, context.screenHeight());
             int cursor = 0;
-            for (int index = 0; index + 1 < intersections.size(); index += 2) {
-                double insideStart = clampToScreen(intersections.get(index), context.screenHeight());
-                double insideEnd = clampToScreen(intersections.get(index + 1), context.screenHeight());
+            for (VisibleInterval interval : visibleIntervals) {
+                double insideStart = interval.start();
+                double insideEnd = interval.end();
                 int opaqueEnd = Math.max(cursor, (int) Math.floor(insideStart));
                 if (opaqueEnd > cursor) context.graphics().fill(left, cursor, right, opaqueEnd, MASK_COLOR);
                 renderFeather(context, left, right, insideStart, insideEnd);
@@ -73,6 +77,31 @@ public final class SceneVisionMaskRenderer {
                 context.graphics().fill(left, cursor, right, context.screenHeight(), MASK_COLOR);
             }
         }
+    }
+
+    private List<VisibleInterval> visibleIntervalsAtX(
+            List<List<Vec2d>> polygons, double x, int screenHeight
+    ) {
+        List<VisibleInterval> intervals = new ArrayList<>();
+        for (List<Vec2d> polygon : polygons) {
+            List<Double> intersections = intersectionsAtX(polygon, x);
+            for (int index = 0; index + 1 < intersections.size(); index += 2) {
+                double start = clampToScreen(intersections.get(index), screenHeight);
+                double end = clampToScreen(intersections.get(index + 1), screenHeight);
+                if (end > start) intervals.add(new VisibleInterval(start, end));
+            }
+        }
+        intervals.sort(Comparator.comparingDouble(VisibleInterval::start));
+        List<VisibleInterval> merged = new ArrayList<>();
+        for (VisibleInterval interval : intervals) {
+            if (merged.isEmpty() || interval.start() > merged.getLast().end()) {
+                merged.add(interval);
+            } else {
+                VisibleInterval previous = merged.removeLast();
+                merged.add(new VisibleInterval(previous.start(), Math.max(previous.end(), interval.end())));
+            }
+        }
+        return merged;
     }
 
     private void renderFeather(
@@ -116,4 +145,6 @@ public final class SceneVisionMaskRenderer {
     private double clampToScreen(double value, int screenHeight) {
         return Math.max(0.0, Math.min(screenHeight, value));
     }
+
+    private record VisibleInterval(double start, double end) {}
 }

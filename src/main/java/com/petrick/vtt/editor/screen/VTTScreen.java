@@ -1383,22 +1383,22 @@ public final class VTTScreen extends Screen {
 
     private void toggleSelectedTokenAsVisionSource() {
         if (session.getActiveScene() == null) return;
-        String currentSourceId = session.getActiveScene().getVisionSourceObjectId();
         if (selectionManager.getSelectedObjectIds().size() != 1) {
-            if (currentSourceId != null) {
-                session.getActiveScene().setVisionSourceObjectId(null);
+            if (!session.getActiveScene().getVisionSourceObjectIds().isEmpty()) {
+                session.getActiveScene().clearVisionSourceObjectIds();
                 session.saveActiveTabletopAndScene();
-                VTT.LOGGER.info("Cleared scene vision source");
+                VTT.LOGGER.info("Cleared all scene vision sources");
             }
             return;
         }
         String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
         CanvasObject selected = scene.findObjectById(selectedId);
         if (selected == null || !selected.visible() || !selected.hasSourceTokenDefinition()) return;
-        String nextSourceId = selectedId.equals(currentSourceId) ? null : selectedId;
-        session.getActiveScene().setVisionSourceObjectId(nextSourceId);
+        boolean removed = session.getActiveScene().removeVisionSourceObjectId(selectedId);
+        if (!removed) session.getActiveScene().addVisionSourceObjectId(selectedId);
         session.saveActiveTabletopAndScene();
-        VTT.LOGGER.info("Scene vision source changed to {}", nextSourceId);
+        VTT.LOGGER.info("Token {} {} scene vision sources", selectedId,
+                removed ? "removed from" : "added to");
     }
 
     private void adjustTokenVisionRange(double delta) {

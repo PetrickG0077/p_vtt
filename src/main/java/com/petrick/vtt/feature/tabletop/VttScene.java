@@ -33,6 +33,9 @@ public final class VttScene {
     /** Canvas object currently used as the persistent player vision origin. */
     private String visionSourceObjectId;
 
+    /** Persistent player vision origins. The singular field above is retained for JSON migration. */
+    private List<String> visionSourceObjectIds = new ArrayList<>();
+
     private final List<VttSceneObject> objects = new ArrayList<>();
 
     /** Null is tolerated when loading scene JSON written before walls existed. */
@@ -83,15 +86,43 @@ public final class VttScene {
     }
 
     public String getVisionSourceObjectId() {
-        return visionSourceObjectId;
+        List<String> sourceIds = getVisionSourceObjectIds();
+        return sourceIds.isEmpty() ? null : sourceIds.getFirst();
     }
 
     public void setVisionSourceObjectId(String visionSourceObjectId) {
+        getVisionSourceObjectIds().clear();
         if (visionSourceObjectId == null || visionSourceObjectId.isBlank()) {
             this.visionSourceObjectId = null;
             return;
         }
-        this.visionSourceObjectId = visionSourceObjectId.trim();
+        this.visionSourceObjectId = null;
+        addVisionSourceObjectId(visionSourceObjectId);
+    }
+
+    public List<String> getVisionSourceObjectIds() {
+        if (visionSourceObjectIds == null) visionSourceObjectIds = new ArrayList<>();
+        if (visionSourceObjectId != null && !visionSourceObjectId.isBlank()) {
+            String legacyId = visionSourceObjectId.trim();
+            if (!visionSourceObjectIds.contains(legacyId)) visionSourceObjectIds.add(legacyId);
+            visionSourceObjectId = null;
+        }
+        return visionSourceObjectIds;
+    }
+
+    public boolean addVisionSourceObjectId(String objectId) {
+        if (objectId == null || objectId.isBlank()) return false;
+        String normalizedId = objectId.trim();
+        if (getVisionSourceObjectIds().contains(normalizedId)) return false;
+        return getVisionSourceObjectIds().add(normalizedId);
+    }
+
+    public boolean removeVisionSourceObjectId(String objectId) {
+        return objectId != null && getVisionSourceObjectIds().remove(objectId);
+    }
+
+    public void clearVisionSourceObjectIds() {
+        getVisionSourceObjectIds().clear();
     }
 
     public List<VttSceneObject> getObjects() {
