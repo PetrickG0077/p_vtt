@@ -31,6 +31,10 @@ public final class InputController {
 
     private final ToolController toolController;
 
+    private final Supplier<VttScene> tabletopSceneSupplier;
+
+    private final Runnable saveTabletopAction;
+
     private boolean globalPanning;
 
     private Vec2d lastGlobalPanMousePosition;
@@ -45,6 +49,8 @@ public final class InputController {
         this.camera = camera;
         this.scene = scene;
         this.selectionManager = selectionManager;
+        this.tabletopSceneSupplier = tabletopSceneSupplier;
+        this.saveTabletopAction = saveTabletopAction;
         this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction);
     }
 
@@ -201,8 +207,16 @@ public final class InputController {
     }
 
     public void deleteSelectedObjects() {
+        VttScene tabletopScene = tabletopSceneSupplier.get();
+        boolean deletesVisionSource = tabletopScene != null
+                && tabletopScene.getVisionSourceObjectId() != null
+                && selectionManager.getSelectedObjectIds().contains(tabletopScene.getVisionSourceObjectId());
         scene.removeObjects(selectionManager.getSelectedObjectIds());
         selectionManager.clearSelection();
+        if (deletesVisionSource) {
+            tabletopScene.setVisionSourceObjectId(null);
+            saveTabletopAction.run();
+        }
     }
 
     public void selectHandTool() {

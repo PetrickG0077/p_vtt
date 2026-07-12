@@ -47,6 +47,7 @@ public final class HelpOverlay {
                 "Shift+F: Fog tool",
                 "X/Y: Reveal fog / toggle",
                 "Ctrl+P: Player view preview",
+                "Ctrl+V: Set / clear vision source",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",

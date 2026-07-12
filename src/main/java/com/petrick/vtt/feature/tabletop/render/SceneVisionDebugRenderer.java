@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
+import com.petrick.vtt.feature.tabletop.vision.SceneVisionSourceResolver;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.List;
@@ -19,12 +20,13 @@ public final class SceneVisionDebugRenderer {
     private static final int RAY_COLOR = 0x5544FFFF;
     private final SceneVisionGeometry geometry = new SceneVisionGeometry();
     private final SceneVisionRaycaster raycaster = new SceneVisionRaycaster();
+    private final SceneVisionSourceResolver sourceResolver = new SceneVisionSourceResolver();
 
     public void render(
             VRenderContext context, VttScene tabletopScene,
             CanvasScene canvasScene, SelectionManager selectionManager
     ) {
-        CanvasObject source = selectedToken(canvasScene, selectionManager);
+        CanvasObject source = sourceResolver.resolve(tabletopScene, canvasScene, selectionManager);
         if (source == null || tabletopScene == null) return;
         Vec2d origin = source.transform().position();
         var segments = geometry.build(tabletopScene);
@@ -43,14 +45,6 @@ public final class SceneVisionDebugRenderer {
         int x = (int) Math.round(screenOrigin.x());
         int y = (int) Math.round(screenOrigin.y());
         context.graphics().fill(x - 3, y - 3, x + 4, y + 4, 0xFFFFFF44);
-    }
-
-    private CanvasObject selectedToken(CanvasScene scene, SelectionManager selectionManager) {
-        if (scene == null || selectionManager == null
-                || selectionManager.getSelectedObjectIds().size() != 1) return null;
-        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
-        CanvasObject object = scene.findObjectById(selectedId);
-        return object != null && object.visible() && object.hasSourceTokenDefinition() ? object : null;
     }
 
     private void renderWorldLine(VRenderContext context, Vec2d worldStart, Vec2d worldEnd, int color) {

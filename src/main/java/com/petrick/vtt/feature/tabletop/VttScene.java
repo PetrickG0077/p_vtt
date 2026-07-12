@@ -30,6 +30,9 @@ public final class VttScene {
      */
     private String backgroundAssetId;
 
+    /** Canvas object currently used as the persistent player vision origin. */
+    private String visionSourceObjectId;
+
     private final List<VttSceneObject> objects = new ArrayList<>();
 
     /** Null is tolerated when loading scene JSON written before walls existed. */
@@ -77,6 +80,18 @@ public final class VttScene {
         }
 
         this.backgroundAssetId = backgroundAssetId;
+    }
+
+    public String getVisionSourceObjectId() {
+        return visionSourceObjectId;
+    }
+
+    public void setVisionSourceObjectId(String visionSourceObjectId) {
+        if (visionSourceObjectId == null || visionSourceObjectId.isBlank()) {
+            this.visionSourceObjectId = null;
+            return;
+        }
+        this.visionSourceObjectId = visionSourceObjectId.trim();
     }
 
     public List<VttSceneObject> getObjects() {

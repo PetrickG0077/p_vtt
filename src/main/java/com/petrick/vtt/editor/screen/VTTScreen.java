@@ -1336,6 +1336,13 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_V
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            toggleSelectedTokenAsVisionSource();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_V) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             inputController.toggleSelectedObjectsVisibility();
@@ -1351,6 +1358,26 @@ public final class VTTScreen extends Screen {
         }
 
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void toggleSelectedTokenAsVisionSource() {
+        if (session.getActiveScene() == null) return;
+        String currentSourceId = session.getActiveScene().getVisionSourceObjectId();
+        if (selectionManager.getSelectedObjectIds().size() != 1) {
+            if (currentSourceId != null) {
+                session.getActiveScene().setVisionSourceObjectId(null);
+                session.saveActiveTabletopAndScene();
+                VTT.LOGGER.info("Cleared scene vision source");
+            }
+            return;
+        }
+        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+        CanvasObject selected = scene.findObjectById(selectedId);
+        if (selected == null || !selected.visible() || !selected.hasSourceTokenDefinition()) return;
+        String nextSourceId = selectedId.equals(currentSourceId) ? null : selectedId;
+        session.getActiveScene().setVisionSourceObjectId(nextSourceId);
+        session.saveActiveTabletopAndScene();
+        VTT.LOGGER.info("Scene vision source changed to {}", nextSourceId);
     }
 
     private void toggleLocalRole() {

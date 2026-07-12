@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
+import com.petrick.vtt.feature.tabletop.vision.SceneVisionSourceResolver;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.ArrayList;
@@ -20,12 +21,13 @@ public final class SceneVisionMaskRenderer {
 
     private final SceneVisionGeometry geometry = new SceneVisionGeometry();
     private final SceneVisionRaycaster raycaster = new SceneVisionRaycaster();
+    private final SceneVisionSourceResolver sourceResolver = new SceneVisionSourceResolver();
 
     public void render(
             VRenderContext context, VttScene tabletopScene,
             CanvasScene canvasScene, SelectionManager selectionManager
     ) {
-        CanvasObject source = selectedToken(canvasScene, selectionManager);
+        CanvasObject source = sourceResolver.resolve(tabletopScene, canvasScene, selectionManager);
         if (source == null || tabletopScene == null) return;
         List<Vec2d> worldPolygon = raycaster.buildVisibilityPolygon(
                 source.transform().position(), maximumDistance(context), geometry.build(tabletopScene));
@@ -34,14 +36,6 @@ public final class SceneVisionMaskRenderer {
                 .map(context.renderState()::worldToScreen)
                 .toList();
         fillOutsidePolygon(context, screenPolygon);
-    }
-
-    private CanvasObject selectedToken(CanvasScene scene, SelectionManager selectionManager) {
-        if (scene == null || selectionManager == null
-                || selectionManager.getSelectedObjectIds().size() != 1) return null;
-        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
-        CanvasObject object = scene.findObjectById(selectedId);
-        return object != null && object.visible() && object.hasSourceTokenDefinition() ? object : null;
     }
 
     private double maximumDistance(VRenderContext context) {
