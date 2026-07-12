@@ -8,6 +8,9 @@ import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Converte o estado atual do CanvasScene para o modelo persistente VttScene.
  *
@@ -33,6 +36,13 @@ public final class CanvasSceneToVttSceneMapper {
             return;
         }
 
+        Map<String, Double> existingVisionRanges = new HashMap<>();
+        for (VttSceneObject existingObject : targetScene.getObjects()) {
+            if (existingObject != null && existingObject.getId() != null) {
+                existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
+            }
+        }
+
         targetScene.clearObjects();
 
         int layerIndex = 0;
@@ -40,7 +50,8 @@ public final class CanvasSceneToVttSceneMapper {
         for (CanvasObject canvasObject : canvasScene.getObjects()) {
             VttSceneObject sceneObject = convertObject(
                     canvasObject,
-                    layerIndex
+                    layerIndex,
+                    existingVisionRanges.getOrDefault(canvasObject.id(), 0.0)
             );
 
             targetScene.addObject(sceneObject);
@@ -51,7 +62,8 @@ public final class CanvasSceneToVttSceneMapper {
 
     private static VttSceneObject convertObject(
             CanvasObject canvasObject,
-            int layerIndex
+            int layerIndex,
+            double visionRange
     ) {
         VttSceneObject sceneObject = new VttSceneObject();
 
@@ -59,6 +71,7 @@ public final class CanvasSceneToVttSceneMapper {
         sceneObject.setDisplayName(canvasObject.displayName());
         sceneObject.setSourceTokenDefinitionId(canvasObject.sourceTokenDefinitionId());
         sceneObject.setLayerIndex(layerIndex);
+        sceneObject.setVisionRange(visionRange);
 
         sceneObject.setTransform(new VttSceneTransform(
                 canvasObject.transform().position().x(),

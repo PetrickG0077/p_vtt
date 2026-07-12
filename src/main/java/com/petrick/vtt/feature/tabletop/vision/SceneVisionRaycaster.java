@@ -37,16 +37,17 @@ public final class SceneVisionRaycaster {
     public List<Vec2d> buildVisibilityPolygon(
             Vec2d origin, double maxDistance, List<VisionSegment> segments
     ) {
-        if (origin == null || segments == null || segments.isEmpty()) return List.of();
-        List<AngularPoint> hits = new ArrayList<>(segments.size() * 6);
+        if (origin == null) return List.of();
+        List<VisionSegment> safeSegments = segments == null ? List.of() : segments;
+        List<AngularPoint> hits = new ArrayList<>(BASE_RAY_COUNT + safeSegments.size() * 6);
         for (int index = 0; index < BASE_RAY_COUNT; index++) {
             double angle = Math.PI * 2.0 * index / BASE_RAY_COUNT - Math.PI;
-            addRay(hits, origin, angle, maxDistance, segments);
+            addRay(hits, origin, angle, maxDistance, safeSegments);
         }
-        for (VisionSegment segment : segments) {
+        for (VisionSegment segment : safeSegments) {
             if (segment == null) continue;
-            addEndpointRays(hits, origin, segment.start(), maxDistance, segments);
-            addEndpointRays(hits, origin, segment.end(), maxDistance, segments);
+            addEndpointRays(hits, origin, segment.start(), maxDistance, safeSegments);
+            addEndpointRays(hits, origin, segment.end(), maxDistance, safeSegments);
         }
         hits.sort(Comparator.comparingDouble(AngularPoint::angle));
         List<Vec2d> polygon = new ArrayList<>(hits.size());

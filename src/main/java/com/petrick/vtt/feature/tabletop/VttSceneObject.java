@@ -36,6 +36,9 @@ public final class VttSceneObject {
      */
     private int layerIndex;
 
+    /** Vision radius in world units. Zero means unlimited. */
+    private double visionRange;
+
     public VttSceneObject() {}
 
     public VttSceneObject(
@@ -108,5 +111,13 @@ public final class VttSceneObject {
 
     public void setLayerIndex(int layerIndex) {
         this.layerIndex = Math.max(0, layerIndex);
+    }
+
+    public double getVisionRange() {
+        return visionRange;
+    }
+
+    public void setVisionRange(double visionRange) {
+        this.visionRange = Math.max(0.0, visionRange);
     }
 }

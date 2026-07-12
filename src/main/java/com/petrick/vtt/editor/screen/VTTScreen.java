@@ -57,6 +57,9 @@ import java.util.Optional;
  */
 public final class VTTScreen extends Screen {
 
+    private static final double DEFAULT_TOKEN_VISION_RANGE = 512.0;
+    private static final double TOKEN_VISION_RANGE_STEP = 64.0;
+
     private final VTTSession session;
 
     private final Camera2D camera;
@@ -1349,6 +1352,24 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_LEFT_BRACKET) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            adjustTokenVisionRange(-TOKEN_VISION_RANGE_STEP);
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_RIGHT_BRACKET) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            adjustTokenVisionRange(TOKEN_VISION_RANGE_STEP);
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_BACKSLASH) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            resetTokenVisionRange();
+            return true;
+        }
+
         String requestedStateId = getStateIdFromNumberKey(keyCode);
 
         if (requestedStateId != null) {
@@ -1378,6 +1399,47 @@ public final class VTTScreen extends Screen {
         session.getActiveScene().setVisionSourceObjectId(nextSourceId);
         session.saveActiveTabletopAndScene();
         VTT.LOGGER.info("Scene vision source changed to {}", nextSourceId);
+    }
+
+    private void adjustTokenVisionRange(double delta) {
+        String objectId = resolveVisionRangeTargetId();
+        if (objectId == null || session.getActiveScene() == null) return;
+        session.saveCanvasSceneToActiveScene();
+        session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst()
+                .ifPresent(object -> {
+                    double current = object.getVisionRange();
+                    double next = current <= 0.0
+                            ? DEFAULT_TOKEN_VISION_RANGE
+                            : Math.max(TOKEN_VISION_RANGE_STEP, current + delta);
+                    object.setVisionRange(next);
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Token {} vision range changed to {}", objectId, next);
+                });
+    }
+
+    private void resetTokenVisionRange() {
+        String objectId = resolveVisionRangeTargetId();
+        if (objectId == null || session.getActiveScene() == null) return;
+        session.saveCanvasSceneToActiveScene();
+        session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst()
+                .ifPresent(object -> {
+                    object.setVisionRange(0.0);
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Token {} vision range reset to unlimited", objectId);
+                });
+    }
+
+    private String resolveVisionRangeTargetId() {
+        if (selectionManager.getSelectedObjectIds().size() == 1) {
+            String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+            CanvasObject selected = scene.findObjectById(selectedId);
+            if (selected != null && selected.hasSourceTokenDefinition()) return selectedId;
+        }
+        return session.getActiveScene() == null ? null : session.getActiveScene().getVisionSourceObjectId();
     }
 
     private void toggleLocalRole() {

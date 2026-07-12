@@ -31,8 +31,13 @@ public final class SceneVisionDebugRenderer {
         Vec2d origin = source.transform().position();
         var segments = geometry.build(tabletopScene);
         if (segments.isEmpty()) return;
-        double maxDistance = Math.hypot(context.screenWidth(), context.screenHeight())
-                / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 1.5;
+        double maxDistance = tabletopScene.getObjects().stream()
+                .filter(object -> object != null && source.id().equals(object.getId()))
+                .mapToDouble(object -> object.getVisionRange())
+                .filter(range -> range > 0.0)
+                .findFirst()
+                .orElseGet(() -> Math.hypot(context.screenWidth(), context.screenHeight())
+                        / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 1.5);
         List<Vec2d> polygon = raycaster.buildVisibilityPolygon(origin, maxDistance, segments);
         if (polygon.size() < 2) return;
 

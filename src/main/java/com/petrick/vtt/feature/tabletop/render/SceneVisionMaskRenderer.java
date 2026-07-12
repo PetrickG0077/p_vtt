@@ -30,7 +30,8 @@ public final class SceneVisionMaskRenderer {
         CanvasObject source = sourceResolver.resolve(tabletopScene, canvasScene, selectionManager);
         if (source == null || tabletopScene == null) return;
         List<Vec2d> worldPolygon = raycaster.buildVisibilityPolygon(
-                source.transform().position(), maximumDistance(context), geometry.build(tabletopScene));
+                source.transform().position(), resolveVisionRange(context, tabletopScene, source.id()),
+                geometry.build(tabletopScene));
         if (worldPolygon.size() < 3) return;
         List<Vec2d> screenPolygon = worldPolygon.stream()
                 .map(context.renderState()::worldToScreen)
@@ -41,6 +42,15 @@ public final class SceneVisionMaskRenderer {
     private double maximumDistance(VRenderContext context) {
         return Math.hypot(context.screenWidth(), context.screenHeight())
                 / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 1.5;
+    }
+
+    private double resolveVisionRange(VRenderContext context, VttScene scene, String objectId) {
+        return scene.getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .mapToDouble(object -> object.getVisionRange())
+                .filter(range -> range > 0.0)
+                .findFirst()
+                .orElseGet(() -> maximumDistance(context));
     }
 
     private void fillOutsidePolygon(VRenderContext context, List<Vec2d> polygon) {

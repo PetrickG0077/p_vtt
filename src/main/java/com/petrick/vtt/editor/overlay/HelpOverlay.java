@@ -48,6 +48,8 @@ public final class HelpOverlay {
                 "X/Y: Reveal fog / toggle",
                 "Ctrl+P: Player view preview",
                 "Ctrl+V: Set / clear vision source",
+                "[ / ]: Decrease / increase vision",
+                "\\: Reset vision to unlimited",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",
