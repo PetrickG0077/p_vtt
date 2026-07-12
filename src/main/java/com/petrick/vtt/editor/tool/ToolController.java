@@ -21,7 +21,7 @@ public final class ToolController {
 
     public ToolController(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.handTool = new HandTool();
-        this.selectTool = new SelectTool();
+        this.selectTool = new SelectTool(sceneSupplier);
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);

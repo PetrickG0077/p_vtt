@@ -3,8 +3,12 @@ package com.petrick.vtt.editor.tool;
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObject;
+import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
+import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.platform.render.VRenderContext;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.function.Supplier;
 
 /**
  * Ferramenta de seleção.
@@ -37,6 +41,10 @@ public final class SelectTool implements Tool {
 
     private static final int SELECTION_BORDER_COLOR = 0xCC3399FF;
 
+    private final Supplier<VttScene> tabletopSceneSupplier;
+
+    private final SceneMovementCollision movementCollision = new SceneMovementCollision();
+
     private boolean selecting;
 
     private boolean additiveSelection;
@@ -68,6 +76,10 @@ public final class SelectTool implements Tool {
     private double rotationStartMouseAngle;
 
     private double rotationStartObjectRotation;
+
+    public SelectTool(Supplier<VttScene> tabletopSceneSupplier) {
+        this.tabletopSceneSupplier = tabletopSceneSupplier;
+    }
 
     @Override
     public String getId() {
@@ -226,9 +238,16 @@ public final class SelectTool implements Tool {
             Vec2d currentWorldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
             Vec2d worldDelta = currentWorldPosition.subtract(lastDragWorldPosition);
 
-            context.scene().moveObjects(
+            Vec2d allowedDelta = movementCollision.clipMovement(
+                    tabletopSceneSupplier.get(),
+                    context.scene(),
                     context.selectionManager().getSelectedObjectIds(),
                     worldDelta
+            );
+
+            context.scene().moveObjects(
+                    context.selectionManager().getSelectedObjectIds(),
+                    allowedDelta
             );
 
             this.lastDragWorldPosition = currentWorldPosition;
