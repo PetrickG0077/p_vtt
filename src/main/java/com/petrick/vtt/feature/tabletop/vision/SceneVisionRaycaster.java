@@ -10,7 +10,7 @@ import java.util.List;
 public final class SceneVisionRaycaster {
     private static final double ANGLE_EPSILON = 0.00001;
     private static final double INTERSECTION_EPSILON = 0.0000001;
-    private static final int BASE_RAY_COUNT = 128;
+    private static final int BASE_RAY_COUNT = 256;
 
     public VisionRayHit castRay(
             Vec2d origin, double angleRadians, double maxDistance, List<VisionSegment> segments
