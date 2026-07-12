@@ -42,6 +42,7 @@ public final class HelpOverlay {
                 "H: Hand",
                 "W: Wall box (drag)",
                 "D: Door box (drag)",
+                "Select: click a door to edit it",
                 "O/L: Open / Lock door",
                 "Shift+F: Fog tool",
                 "X/Y: Reveal fog / toggle",

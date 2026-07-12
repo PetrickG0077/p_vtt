@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.tool;
 
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import java.util.function.Supplier;
 
@@ -174,6 +175,14 @@ public final class ToolController {
             int button,
             int modifiers
     ) {
+        if (activeTool == selectTool && button == 0) {
+            Vec2d worldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+            if (doorTool.selectDoorAt(worldPosition)) {
+                context.selectionManager().clearSelection();
+                setActiveTool(doorTool);
+                return true;
+            }
+        }
         return activeTool.mouseClicked(context, mouseX, mouseY, button, modifiers);
     }
 

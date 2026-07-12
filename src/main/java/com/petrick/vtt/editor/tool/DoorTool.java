@@ -112,6 +112,15 @@ public final class DoorTool implements Tool {
         selectedDoorId = null;
     }
 
+    /** Selects a door without beginning a drag operation. */
+    public boolean selectDoorAt(Vec2d worldPosition) {
+        VttDoor door = findTopmostDoorAt(worldPosition);
+        if (door == null) return false;
+        finishOperation();
+        selectedDoorId = door.getId();
+        return true;
+    }
+
     public boolean deleteSelectedDoor() {
         VttScene scene = sceneSupplier.get();
         if (scene == null || selectedDoorId == null) return false;
@@ -126,7 +135,7 @@ public final class DoorTool implements Tool {
 
     public boolean toggleSelectedDoorOpen() {
         VttDoor door = getSelectedDoor();
-        if (door == null) return false;
+        if (door == null || door.isLocked()) return false;
         door.setOpen(!door.isOpen());
         saveAction.run();
         return true;
