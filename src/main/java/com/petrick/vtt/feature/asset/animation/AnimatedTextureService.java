@@ -59,13 +59,19 @@ public final class AnimatedTextureService {
             return existingTexture;
         }
 
-        Path file = Minecraft.getInstance()
+        Path gameDirectory = Minecraft.getInstance()
                 .gameDirectory
-                .toPath()
+                .toPath();
+        String relativePath = normalizeLibraryRelativePath(libraryTexture.sourceRelativePath());
+        Path syncedFile = gameDirectory
+                .resolve("config/vtt_assets/cache/server/assets")
+                .resolve(relativePath);
+        Path localFile = gameDirectory
                 .resolve("config")
                 .resolve("vtt_assets")
                 .resolve("assets")
-                .resolve(normalizeLibraryRelativePath(libraryTexture.sourceRelativePath()));
+                .resolve(relativePath);
+        Path file = java.nio.file.Files.isRegularFile(syncedFile) ? syncedFile : localFile;
 
         AnimatedTexture loadedTexture = loader.loadGif(
                 animatedTextureId,

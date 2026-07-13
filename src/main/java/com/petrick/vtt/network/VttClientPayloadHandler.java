@@ -8,6 +8,10 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
+import com.petrick.vtt.network.payload.VttAssetChunkPayload;
+import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
+import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
+import com.petrick.vtt.network.client.VttClientAssetCache;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public final class VttClientPayloadHandler {
@@ -39,5 +43,17 @@ public final class VttClientPayloadHandler {
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT scene snapshot from server", exception);
         }
+    }
+
+    public static void handleAssetSyncStart(VttAssetSyncStartPayload payload, IPayloadContext context) {
+        VttClientAssetCache.begin(payload.fileCount());
+    }
+
+    public static void handleAssetChunk(VttAssetChunkPayload payload, IPayloadContext context) {
+        VttClientAssetCache.accept(payload);
+    }
+
+    public static void handleAssetSyncComplete(VttAssetSyncCompletePayload payload, IPayloadContext context) {
+        VttClientAssetCache.finish();
     }
 }

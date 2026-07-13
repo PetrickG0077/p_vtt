@@ -11,6 +11,8 @@ import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
+import com.petrick.vtt.feature.asset.library.AssetLibraryPath;
+import com.petrick.vtt.feature.asset.library.AssetLibraryScanner;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
@@ -20,6 +22,9 @@ import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import net.minecraft.client.Minecraft;
+
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 
 /**
  * Representa uma sessão ativa do VTT.
@@ -253,6 +258,28 @@ public final class VTTSession {
     public void refreshAssetLibrary() {
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
         loadAssetThumbnails();
+    }
+
+    public void reloadSyncedServerAssets() {
+        Path cacheRoot = Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("config/vtt_assets/cache/server");
+        AssetLibraryScanResult synced = new AssetLibraryScanner(
+                new AssetLibraryPath(cacheRoot.resolve("assets"))
+        ).scan();
+        AssetLibraryScanResult local = assetLibraryService.scanLibrary();
+
+        var entriesById = new LinkedHashMap<String, com.petrick.vtt.feature.asset.library.AssetLibraryEntry>();
+        synced.entries().forEach(entry -> entriesById.put(entry.id(), entry));
+        local.entries().forEach(entry -> entriesById.putIfAbsent(entry.id(), entry));
+        this.assetLibraryScanResult = new AssetLibraryScanResult(entriesById.values().stream().toList());
+
+        assetThumbnailRegistry.clear();
+        animatedTextureService.clear();
+        loadAssetThumbnails();
+        CreatedTokenStorage.loadCreatedTokensFromFolder(
+                cacheRoot.resolve("tokens"), tokenDefinitionRegistry, assetRegistry
+        );
+        VTT.LOGGER.info("Loaded {} synchronized VTT assets from server", synced.totalCount());
     }
 
     public TokenDefinitionRegistry getTokenDefinitionRegistry() {

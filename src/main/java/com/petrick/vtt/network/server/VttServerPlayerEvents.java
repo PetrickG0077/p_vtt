@@ -35,6 +35,8 @@ public final class VttServerPlayerEvents {
                 player,
                 new VttIdentityPayload(player.getUUID().toString(), role.name())
         );
-        PacketDistributor.sendToPlayer(player, VttServerTabletopState.get().createSnapshotPayload());
+        VttServerTabletopState state = VttServerTabletopState.get();
+        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene());
+        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
     }
 }
