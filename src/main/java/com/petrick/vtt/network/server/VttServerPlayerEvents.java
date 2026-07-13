@@ -19,6 +19,10 @@ public final class VttServerPlayerEvents {
     private VttServerPlayerEvents() {
     }
 
+    public static boolean isMaster(ServerPlayer player) {
+        return player != null && masterPlayerId != null && masterPlayerId.equals(player.getUUID());
+    }
+
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
@@ -30,7 +34,7 @@ public final class VttServerPlayerEvents {
             VTT.LOGGER.info("Assigned VTT master role to {} ({})", player.getGameProfile().getName(), masterPlayerId);
         }
 
-        VttRole role = masterPlayerId.equals(player.getUUID()) ? VttRole.MASTER : VttRole.PLAYER;
+        VttRole role = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
         PacketDistributor.sendToPlayer(
                 player,
                 new VttIdentityPayload(player.getUUID().toString(), role.name())

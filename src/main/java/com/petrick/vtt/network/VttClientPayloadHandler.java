@@ -12,6 +12,8 @@ import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
 import com.petrick.vtt.network.client.VttClientAssetCache;
+import com.petrick.vtt.network.client.VttClientTokenTransformSync;
+import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public final class VttClientPayloadHandler {
@@ -55,5 +57,9 @@ public final class VttClientPayloadHandler {
 
     public static void handleAssetSyncComplete(VttAssetSyncCompletePayload payload, IPayloadContext context) {
         VttClientAssetCache.finish();
+    }
+
+    public static void handleTokenTransformUpdate(VttTokenTransformUpdatePayload payload, IPayloadContext context) {
+        VttClientTokenTransformSync.acceptConfirmed(VTT.getApplication().getActiveSession(), payload);
     }
 }

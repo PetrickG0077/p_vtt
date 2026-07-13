@@ -7,6 +7,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -23,6 +24,7 @@ public final class ClientGameEvents {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         VTT.getApplication().initialize();
+        VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
 
         Minecraft minecraft = Minecraft.getInstance();
 

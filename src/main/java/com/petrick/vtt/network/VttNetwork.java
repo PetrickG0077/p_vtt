@@ -6,6 +6,9 @@ import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
+import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
+import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
+import com.petrick.vtt.network.server.VttServerTokenTransformHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -39,5 +42,9 @@ public final class VttNetwork {
                 VttClientPayloadHandler::handleAssetChunk);
         registrar.playToClient(VttAssetSyncCompletePayload.TYPE, VttAssetSyncCompletePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleAssetSyncComplete);
+        registrar.playToServer(VttTokenTransformRequestPayload.TYPE, VttTokenTransformRequestPayload.STREAM_CODEC,
+                VttServerTokenTransformHandler::handle);
+        registrar.playToClient(VttTokenTransformUpdatePayload.TYPE, VttTokenTransformUpdatePayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleTokenTransformUpdate);
     }
 }

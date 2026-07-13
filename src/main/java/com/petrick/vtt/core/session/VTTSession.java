@@ -25,6 +25,9 @@ import net.minecraft.client.Minecraft;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import com.petrick.vtt.core.math.Vec2d;
+import com.petrick.vtt.core.transform.Transform2D;
+import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 
 /**
  * Representa uma sessão ativa do VTT.
@@ -60,6 +63,7 @@ public final class VTTSession {
     private VttRole localRole = VttRole.MASTER;
 
     private String localPlayerId;
+    private long networkSnapshotVersion;
 
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
@@ -141,7 +145,42 @@ public final class VTTSession {
         this.activeTabletop = tabletop;
         this.activeScene = scene;
         loadActiveSceneToCanvasScene();
+        networkSnapshotVersion++;
         VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
+    }
+
+    public long getNetworkSnapshotVersion() {
+        return networkSnapshotVersion;
+    }
+
+    public boolean hasNetworkSnapshot() {
+        return networkSnapshotVersion > 0;
+    }
+
+    public void applyConfirmedTokenTransform(VttTokenTransformUpdatePayload update) {
+        if (update == null) return;
+        var object = canvasScene.findObjectById(update.objectId());
+        if (object == null) return;
+
+        Transform2D transform = new Transform2D(
+                new Vec2d(update.x(), update.y()), update.rotationDegrees(), object.transform().scale()
+        );
+        var replacement = object.withTransform(transform)
+                .withFlippedHorizontally(update.flippedHorizontally())
+                .withActiveState(update.activeStateId());
+        canvasScene.replaceObject(replacement);
+
+        if (activeScene != null) {
+            activeScene.getObjects().stream()
+                    .filter(sceneObject -> sceneObject != null && update.objectId().equals(sceneObject.getId()))
+                    .findFirst().ifPresent(sceneObject -> {
+                        sceneObject.getTransform().setX(update.x());
+                        sceneObject.getTransform().setY(update.y());
+                        sceneObject.getTransform().setRotationDegrees(update.rotationDegrees());
+                        sceneObject.getState().setFlippedHorizontally(update.flippedHorizontally());
+                        sceneObject.getState().setActiveStateId(update.activeStateId());
+                    });
+        }
     }
 
     public TabletopStoragePaths getTabletopStoragePaths() {
