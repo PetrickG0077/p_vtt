@@ -35,14 +35,18 @@ public final class VttServerAssetSyncService {
     private VttServerAssetSyncService() {}
 
     public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene) {
-        List<SyncFile> files = collectFiles(scene);
+        sendActiveSceneAssets(player, scene, false);
+    }
+
+    public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene, boolean includeAllTokens) {
+        List<SyncFile> files = collectFiles(scene, includeAllTokens);
         PacketDistributor.sendToPlayer(player, new VttAssetSyncStartPayload(files.size()));
         for (SyncFile file : files) sendFile(player, file);
         PacketDistributor.sendToPlayer(player, new VttAssetSyncCompletePayload());
         VTT.LOGGER.info("Sent {} VTT scene asset files to {}", files.size(), player.getGameProfile().getName());
     }
 
-    private static List<SyncFile> collectFiles(VttScene scene) {
+    private static List<SyncFile> collectFiles(VttScene scene, boolean includeAllTokens) {
         Path root = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets");
         Path assetsRoot = root.resolve("assets").normalize();
         Path tokensRoot = root.resolve("created/tokens").normalize();
@@ -62,7 +66,8 @@ public final class VttServerAssetSyncService {
         if (Files.isDirectory(tokensRoot)) {
             try (Stream<Path> stream = Files.list(tokensRoot)) {
                 stream.filter(Files::isRegularFile).filter(path -> path.toString().toLowerCase().endsWith(".json"))
-                        .forEach(path -> collectToken(path, definitionIds, tokensRoot, assetsRoot, result, totalBytes));
+                        .forEach(path -> collectToken(path, definitionIds, includeAllTokens,
+                                tokensRoot, assetsRoot, result, totalBytes));
             } catch (IOException exception) {
                 VTT.LOGGER.error("Failed to scan server VTT token definitions", exception);
             }
@@ -70,12 +75,13 @@ public final class VttServerAssetSyncService {
         return new ArrayList<>(result.values());
     }
 
-    private static void collectToken(Path jsonFile, Set<String> ids, Path tokensRoot, Path assetsRoot,
+    private static void collectToken(Path jsonFile, Set<String> ids, boolean includeAllTokens,
+                                     Path tokensRoot, Path assetsRoot,
                                      Map<String, SyncFile> result, long[] totalBytes) {
         try (Reader reader = Files.newBufferedReader(jsonFile)) {
             JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
             String definitionId = string(json, "tokenDefinitionId");
-            if (!ids.contains(definitionId)) return;
+            if (!includeAllTokens && !ids.contains(definitionId)) return;
 
             addFile("tokens", tokensRoot, jsonFile, result, totalBytes);
             JsonElement states = json.get("states");

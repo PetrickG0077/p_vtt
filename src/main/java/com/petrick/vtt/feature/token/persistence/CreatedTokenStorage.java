@@ -120,6 +120,10 @@ public final class CreatedTokenStorage {
      * Cria um draft preenchido para editar um token criado pelo usuário.
      */
     public static TokenCreationDraft createEditDraft(TokenDefinition definition) {
+        return createEditDraftFromFolder(definition, getTokensFolder());
+    }
+
+    public static TokenCreationDraft createEditDraftFromFolder(TokenDefinition definition, Path folder) {
         if (definition == null) {
             return null;
         }
@@ -132,9 +136,10 @@ public final class CreatedTokenStorage {
             return null;
         }
 
-        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+        if (folder == null) return null;
+        Path file = findTokenFile(folder, definition);
 
-        if (!Files.exists(file)) {
+        if (file == null || !Files.exists(file)) {
             VTT.LOGGER.warn("Cannot edit token because JSON file does not exist: {}", file);
             return null;
         }
@@ -169,6 +174,45 @@ public final class CreatedTokenStorage {
             );
             return null;
         }
+    }
+
+    private static Path findTokenFile(Path folder, TokenDefinition definition) {
+        Path expected = folder.resolve(createFileName(definition.displayName()));
+        if (Files.isRegularFile(expected)) return expected;
+        if (!Files.isDirectory(folder)) return null;
+        try (Stream<Path> files = Files.list(folder)) {
+            for (Path candidate : files.filter(Files::isRegularFile).filter(CreatedTokenStorage::isJsonFile).toList()) {
+                try (Reader reader = Files.newBufferedReader(candidate)) {
+                    CreatedTokenSaveData data = GSON.fromJson(reader, CreatedTokenSaveData.class);
+                    if (data != null && definition.id().equals(data.tokenDefinitionId)) return candidate;
+                } catch (RuntimeException ignored) {
+                }
+            }
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not search VTT token definition folder: {}", folder, exception);
+        }
+        return null;
+    }
+
+    public static String serializeCreatedToken(TokenCreationDraft draft, TokenDefinition definition) {
+        return GSON.toJson(createSaveData(draft, definition));
+    }
+
+    public static String serializeEditedToken(TokenCreationDraft draft) {
+        return GSON.toJson(createSaveDataForEditedDraft(draft));
+    }
+
+    public static TokenDefinition updateCreatedTokenInMemory(
+            TokenCreationDraft draft, TokenDefinitionRegistry registry, AssetRegistry assetRegistry
+    ) {
+        if (draft == null || !draft.isEditing() || registry == null || assetRegistry == null
+                || !draft.hasAnyStateImage() || !draft.allStatesHaveImages()) return null;
+        TokenDefinition updated = createTokenDefinitionFromSaveData(
+                createSaveDataForEditedDraft(draft), assetRegistry
+        );
+        registry.removeById(updated.id());
+        registry.register(updated);
+        return updated;
     }
 
     /**

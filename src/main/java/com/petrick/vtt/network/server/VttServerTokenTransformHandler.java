@@ -17,7 +17,8 @@ public final class VttServerTokenTransformHandler {
         if (update == null) {
             VTT.LOGGER.warn("Rejected VTT token transform from {} for object {}",
                     player.getGameProfile().getName(), request.objectId());
-            var confirmed = VttServerTabletopState.get().currentTokenTransform(request.objectId());
+            var confirmed = VttServerTabletopState.get().currentTokenTransform(
+                    request.objectId(), player.getUUID().toString());
             if (confirmed != null) PacketDistributor.sendToPlayer(player, confirmed);
             return;
         }

@@ -7,6 +7,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 
 /**
@@ -31,5 +32,13 @@ public final class ClientGameEvents {
         while (ClientKeyMappings.OPEN_VTT_SCREEN.consumeClick()) {
             minecraft.setScreen(new VTTScreen());
         }
+    }
+
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        var session = VTT.getApplication().getActiveSession();
+        if (!session.isNetworkAuthorityActive()) return;
+        VttClientTokenTransformSync.reset();
+        session.restoreLocalSessionAfterDisconnect();
     }
 }

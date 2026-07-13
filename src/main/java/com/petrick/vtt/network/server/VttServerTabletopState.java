@@ -46,6 +46,14 @@ public final class VttServerTabletopState {
         return activeScene;
     }
 
+    public synchronized void updateTokenDefinitionOwnership(String definitionId, String ownerId) {
+        if (definitionId == null || definitionId.isBlank()) return;
+        activeScene.getObjects().stream()
+                .filter(object -> object != null && definitionId.equals(object.getSourceTokenDefinitionId()))
+                .forEach(object -> object.setOwnerId(ownerId));
+        storage.saveScene(tabletop.getId(), activeScene);
+    }
+
     public synchronized VttTokenTransformUpdatePayload applyTokenTransform(
             VttTokenTransformRequestPayload request, String playerId, boolean master
     ) {
@@ -64,10 +72,10 @@ public final class VttServerTabletopState {
 
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
-                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId());
+                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, true);
     }
 
-    public synchronized VttTokenTransformUpdatePayload currentTokenTransform(String objectId) {
+    public synchronized VttTokenTransformUpdatePayload currentTokenTransform(String objectId, String playerId) {
         if (objectId == null || objectId.isBlank()) return null;
         VttSceneObject object = activeScene.getObjects().stream()
                 .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
@@ -75,7 +83,7 @@ public final class VttServerTabletopState {
         if (object == null) return null;
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
-                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId());
+                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
     }
 
     private boolean valid(VttTokenTransformRequestPayload request) {

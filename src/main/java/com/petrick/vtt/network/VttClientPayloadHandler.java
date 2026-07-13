@@ -25,12 +25,11 @@ public final class VttClientPayloadHandler {
 
     public static void handleIdentity(VttIdentityPayload payload, IPayloadContext context) {
         var session = VTT.getApplication().getActiveSession();
-        session.setLocalPlayerId(payload.playerId());
 
         try {
-            session.setLocalRole(VttRole.valueOf(payload.role()));
+            session.applyNetworkIdentity(payload.playerId(), VttRole.valueOf(payload.role()));
         } catch (IllegalArgumentException exception) {
-            session.setLocalRole(VttRole.PLAYER);
+            session.applyNetworkIdentity(payload.playerId(), VttRole.PLAYER);
             VTT.LOGGER.warn("Received unknown VTT role from server: {}", payload.role());
         }
 

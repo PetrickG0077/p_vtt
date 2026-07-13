@@ -16,6 +16,7 @@ public final class AnimatedTextureService {
     private final AnimatedTextureRegistry registry;
 
     private final AnimatedTextureLoader loader;
+    private boolean useServerCache;
 
     public AnimatedTextureService() {
         this.registry = new AnimatedTextureRegistry();
@@ -47,6 +48,11 @@ public final class AnimatedTextureService {
         registry.clear();
     }
 
+    public void setUseServerCache(boolean useServerCache) {
+        this.useServerCache = useServerCache;
+        clear();
+    }
+
     private AnimatedTexture getOrLoadAnimatedTexture(
             LibraryTextureAssetRef libraryTexture
     ) {
@@ -71,7 +77,7 @@ public final class AnimatedTextureService {
                 .resolve("vtt_assets")
                 .resolve("assets")
                 .resolve(relativePath);
-        Path file = java.nio.file.Files.isRegularFile(syncedFile) ? syncedFile : localFile;
+        Path file = useServerCache && java.nio.file.Files.isRegularFile(syncedFile) ? syncedFile : localFile;
 
         AnimatedTexture loadedTexture = loader.loadGif(
                 animatedTextureId,

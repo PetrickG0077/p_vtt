@@ -44,6 +44,7 @@ import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -639,10 +640,15 @@ public final class VTTScreen extends Screen {
                 assetRegistry
         );
 
-        CreatedTokenStorage.saveCreatedToken(
-                tokenCreationDraft,
-                createdDefinition
-        );
+        if (session.isNetworkAuthorityActive()) {
+            if (!VttClientTokenDefinitionSync.sendUpsert(
+                    CreatedTokenStorage.serializeCreatedToken(tokenCreationDraft, createdDefinition))) {
+                tokenCreationDraft.setErrorMessage("Could not send token to server");
+                return;
+            }
+        } else {
+            CreatedTokenStorage.saveCreatedToken(tokenCreationDraft, createdDefinition);
+        }
 
         tokenCatalogSelection.select(createdDefinition.id());
 
@@ -654,11 +660,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        TokenDefinition updatedDefinition = CreatedTokenStorage.updateCreatedToken(
-                tokenCreationDraft,
-                tokenDefinitionRegistry,
-                assetRegistry
-        );
+        TokenDefinition updatedDefinition = session.isNetworkAuthorityActive()
+                ? CreatedTokenStorage.updateCreatedTokenInMemory(
+                        tokenCreationDraft, tokenDefinitionRegistry, assetRegistry)
+                : CreatedTokenStorage.updateCreatedToken(
+                        tokenCreationDraft, tokenDefinitionRegistry, assetRegistry);
 
         if (updatedDefinition == null) {
             tokenCreationDraft.setErrorMessage("Could not save token");
@@ -666,6 +672,17 @@ public final class VTTScreen extends Screen {
         }
 
         scene.syncObjectsFromTokenDefinition(updatedDefinition);
+
+        if (session.isNetworkAuthorityActive()) {
+            if (!VttClientTokenDefinitionSync.sendUpsert(
+                    CreatedTokenStorage.serializeEditedToken(tokenCreationDraft))) {
+                tokenCreationDraft.setErrorMessage("Could not send token to server");
+                return;
+            }
+            tokenCatalogSelection.select(updatedDefinition.id());
+            closeTokenCreationDialog();
+            return;
+        }
 
         if (session.getActiveScene() != null) {
             session.saveCanvasSceneToActiveScene();
@@ -705,15 +722,27 @@ public final class VTTScreen extends Screen {
             }
 
             case VIEW_IN_EXPLORER -> {
-                CreatedTokenStorage.viewCreatedTokenInExplorer(tokenDefinition);
+                if (session.isNetworkAuthorityActive()) {
+                    VTT.LOGGER.info("Server token files are managed by the dedicated server");
+                } else {
+                    CreatedTokenStorage.viewCreatedTokenInExplorer(tokenDefinition);
+                }
             }
 
             case DUPLICATE -> {
-                duplicateTokenDefinition(tokenDefinition);
+                if (session.isNetworkAuthorityActive()) {
+                    VTT.LOGGER.warn("Duplicating server tokens is not network-authoritative yet");
+                } else {
+                    duplicateTokenDefinition(tokenDefinition);
+                }
             }
 
             case DELETE -> {
-                deleteTokenDefinition(tokenDefinition);
+                if (session.isNetworkAuthorityActive()) {
+                    VTT.LOGGER.warn("Deleting server tokens is not network-authoritative yet");
+                } else {
+                    deleteTokenDefinition(tokenDefinition);
+                }
             }
 
             case NONE -> {
@@ -726,7 +755,10 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        TokenCreationDraft editDraft = CreatedTokenStorage.createEditDraft(tokenDefinition);
+        TokenCreationDraft editDraft = session.isNetworkAuthorityActive()
+                ? CreatedTokenStorage.createEditDraftFromFolder(
+                        tokenDefinition, session.getSyncedServerTokensFolder())
+                : CreatedTokenStorage.createEditDraft(tokenDefinition);
 
         if (editDraft == null) {
             return;
@@ -1501,6 +1533,10 @@ public final class VTTScreen extends Screen {
     }
 
     private void toggleLocalRole() {
+        if (session.isNetworkAuthorityActive()) {
+            VTT.LOGGER.info("Ignored local role toggle because the multiplayer server controls VTT roles");
+            return;
+        }
         VttRole nextRole = session.isLocalMaster() ? VttRole.PLAYER : VttRole.MASTER;
         session.setLocalRole(nextRole);
         if (nextRole == VttRole.PLAYER) {

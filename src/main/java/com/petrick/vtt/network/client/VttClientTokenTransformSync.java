@@ -42,10 +42,21 @@ public final class VttClientTokenTransformSync {
 
     public static void acceptConfirmed(VTTSession session, VttTokenTransformUpdatePayload update) {
         if (session == null || update == null) return;
+        boolean ownAcceptedUpdate = update.accepted()
+                && update.originPlayerId().equals(session.getLocalPlayerId());
+        if (ownAcceptedUpdate) {
+            return;
+        }
         LAST_SENT.put(update.objectId(), new TokenState(update.x(), update.y(), update.rotationDegrees(),
                 update.flippedHorizontally(), update.activeStateId()));
         LAST_SENT_AT.put(update.objectId(), System.currentTimeMillis());
         session.applyConfirmedTokenTransform(update);
+    }
+
+    public static void reset() {
+        snapshotVersion = -1L;
+        LAST_SENT.clear();
+        LAST_SENT_AT.clear();
     }
 
     private static void capture(VTTSession session) {

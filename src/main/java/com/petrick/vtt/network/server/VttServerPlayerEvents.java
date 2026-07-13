@@ -8,19 +8,21 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @EventBusSubscriber(modid = VTT.MOD_ID)
 public final class VttServerPlayerEvents {
-
-    private static UUID masterPlayerId;
+    private static final Map<UUID, VttRole> LAST_ROLES = new HashMap<>();
 
     private VttServerPlayerEvents() {
     }
 
     public static boolean isMaster(ServerPlayer player) {
-        return player != null && masterPlayerId != null && masterPlayerId.equals(player.getUUID());
+        return player != null && player.hasPermissions(2);
     }
 
     @SubscribeEvent
@@ -29,18 +31,36 @@ public final class VttServerPlayerEvents {
             return;
         }
 
-        if (masterPlayerId == null) {
-            masterPlayerId = player.getUUID();
-            VTT.LOGGER.info("Assigned VTT master role to {} ({})", player.getGameProfile().getName(), masterPlayerId);
-        }
-
-        VttRole role = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
-        PacketDistributor.sendToPlayer(
-                player,
-                new VttIdentityPayload(player.getUUID().toString(), role.name())
-        );
+        sendRole(player);
         VttServerTabletopState state = VttServerTabletopState.get();
-        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene());
+        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene(), isMaster(player));
         PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+    }
+
+    @SubscribeEvent
+    public static void onPlayerTick(PlayerTickEvent.Post event) {
+        if (!(event.getEntity() instanceof ServerPlayer player) || player.tickCount % 20 != 0) return;
+        VttRole current = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
+        if (LAST_ROLES.get(player.getUUID()) == current) return;
+
+        sendRole(player);
+        VttServerTabletopState state = VttServerTabletopState.get();
+        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene(), current == VttRole.MASTER);
+        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        LAST_ROLES.remove(event.getEntity().getUUID());
+    }
+
+    private static VttRole sendRole(ServerPlayer player) {
+        VttRole role = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
+        LAST_ROLES.put(player.getUUID(), role);
+        VTT.LOGGER.info("Assigned VTT {} role to {} ({}) based on server permissions",
+                role, player.getGameProfile().getName(), player.getUUID());
+        PacketDistributor.sendToPlayer(player,
+                new VttIdentityPayload(player.getUUID().toString(), role.name()));
+        return role;
     }
 }

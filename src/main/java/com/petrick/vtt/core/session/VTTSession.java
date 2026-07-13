@@ -24,7 +24,6 @@ import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import net.minecraft.client.Minecraft;
 
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
@@ -64,6 +63,7 @@ public final class VTTSession {
 
     private String localPlayerId;
     private long networkSnapshotVersion;
+    private boolean networkAuthorityActive;
 
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
@@ -136,6 +136,21 @@ public final class VTTSession {
         this.localPlayerId = localPlayerId.trim();
     }
 
+    public void applyNetworkIdentity(String playerId, VttRole role) {
+        setLocalPlayerId(playerId);
+        setLocalRole(role);
+        networkAuthorityActive = true;
+    }
+
+    public boolean isNetworkAuthorityActive() {
+        return networkAuthorityActive;
+    }
+
+    public Path getSyncedServerTokensFolder() {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("config/vtt_assets/cache/server/tokens");
+    }
+
     public void applyNetworkSnapshot(VttTabletop tabletop, VttScene scene) {
         if (tabletop == null || scene == null) {
             VTT.LOGGER.warn("Ignored invalid VTT network snapshot");
@@ -200,6 +215,10 @@ public final class VTTSession {
     }
 
     public boolean switchToScene(String sceneId) {
+        if (networkAuthorityActive) {
+            VTT.LOGGER.warn("Scene switching is not network-authoritative yet");
+            return false;
+        }
         if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
         if (!activeTabletop.getSceneIds().contains(sceneId)) {
             VTT.LOGGER.warn("Cannot switch to scene not registered in tabletop: {}", sceneId);
@@ -223,6 +242,10 @@ public final class VTTSession {
     }
 
     public VttScene createScene(String displayName) {
+        if (networkAuthorityActive) {
+            VTT.LOGGER.warn("Scene creation is not network-authoritative yet");
+            return null;
+        }
         if (activeTabletop == null || displayName == null || displayName.isBlank()) return null;
         String baseId = displayName.trim().toLowerCase().replace('\\', '/')
                 .replaceAll("[^a-z0-9/_-]", "_").replaceAll("_+", "_")
@@ -245,6 +268,7 @@ public final class VTTSession {
     }
 
     public void saveActiveTabletopAndScene() {
+        if (networkAuthorityActive) return;
         tabletopStorage.saveTabletop(activeTabletop);
         tabletopStorage.saveScene(activeTabletop.getId(), activeScene);
     }
@@ -262,6 +286,7 @@ public final class VTTSession {
     }
 
     public void saveCanvasSceneToActiveScene() {
+        if (networkAuthorityActive) return;
         if (activeTabletop == null || activeScene == null) {
             return;
         }
@@ -295,6 +320,10 @@ public final class VTTSession {
     }
 
     public void refreshAssetLibrary() {
+        if (networkAuthorityActive) {
+            reloadSyncedServerAssets();
+            return;
+        }
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
         loadAssetThumbnails();
     }
@@ -305,20 +334,43 @@ public final class VTTSession {
         AssetLibraryScanResult synced = new AssetLibraryScanner(
                 new AssetLibraryPath(cacheRoot.resolve("assets"))
         ).scan();
-        AssetLibraryScanResult local = assetLibraryService.scanLibrary();
+        this.assetLibraryScanResult = synced;
 
-        var entriesById = new LinkedHashMap<String, com.petrick.vtt.feature.asset.library.AssetLibraryEntry>();
-        synced.entries().forEach(entry -> entriesById.put(entry.id(), entry));
-        local.entries().forEach(entry -> entriesById.putIfAbsent(entry.id(), entry));
-        this.assetLibraryScanResult = new AssetLibraryScanResult(entriesById.values().stream().toList());
-
+        assetRegistry.clear();
+        DebugAssets.registerAll(assetRegistry);
+        tokenDefinitionRegistry.clear();
+        DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
         assetThumbnailRegistry.clear();
-        animatedTextureService.clear();
+        animatedTextureService.setUseServerCache(true);
         loadAssetThumbnails();
         CreatedTokenStorage.loadCreatedTokensFromFolder(
                 cacheRoot.resolve("tokens"), tokenDefinitionRegistry, assetRegistry
         );
         VTT.LOGGER.info("Loaded {} synchronized VTT assets from server", synced.totalCount());
+    }
+
+    public void restoreLocalSessionAfterDisconnect() {
+        if (!networkAuthorityActive) return;
+        networkAuthorityActive = false;
+        networkSnapshotVersion = 0L;
+        localPlayerId = null;
+        localRole = VttRole.MASTER;
+
+        assetRegistry.clear();
+        DebugAssets.registerAll(assetRegistry);
+        tokenDefinitionRegistry.clear();
+        DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
+        CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
+
+        assetLibraryScanResult = assetLibraryService.scanLibrary();
+        assetThumbnailRegistry.clear();
+        animatedTextureService.setUseServerCache(false);
+        loadAssetThumbnails();
+
+        activeTabletop = tabletopStorage.loadOrCreateDefaultTabletop();
+        activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
+        loadActiveSceneToCanvasScene();
+        VTT.LOGGER.info("Restored local VTT session after leaving multiplayer server");
     }
 
     public TokenDefinitionRegistry getTokenDefinitionRegistry() {
