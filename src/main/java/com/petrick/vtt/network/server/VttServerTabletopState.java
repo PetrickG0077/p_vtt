@@ -37,4 +37,8 @@ public final class VttServerTabletopState {
     public VttSceneSnapshotPayload createSnapshotPayload() {
         return new VttSceneSnapshotPayload(GSON.toJson(tabletop), GSON.toJson(activeScene));
     }
+
+    public VttScene activeScene() {
+        return activeScene;
+    }
 }

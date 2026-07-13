@@ -82,6 +82,14 @@ public final class CreatedTokenStorage {
             TokenDefinitionRegistry tokenDefinitionRegistry,
             AssetRegistry assetRegistry
     ) {
+        loadCreatedTokensFromFolder(getTokensFolder(), tokenDefinitionRegistry, assetRegistry);
+    }
+
+    public static void loadCreatedTokensFromFolder(
+            Path folder,
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            AssetRegistry assetRegistry
+    ) {
         if (tokenDefinitionRegistry == null) {
             return;
         }
@@ -90,9 +98,7 @@ public final class CreatedTokenStorage {
             return;
         }
 
-        Path folder = getTokensFolder();
-
-        if (!Files.exists(folder)) {
+        if (folder == null || !Files.exists(folder)) {
             return;
         }
 
