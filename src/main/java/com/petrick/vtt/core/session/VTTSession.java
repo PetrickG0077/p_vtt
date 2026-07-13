@@ -120,6 +120,25 @@ public final class VTTSession {
         return localPlayerId;
     }
 
+    public void setLocalPlayerId(String localPlayerId) {
+        if (localPlayerId == null || localPlayerId.isBlank()) {
+            return;
+        }
+        this.localPlayerId = localPlayerId.trim();
+    }
+
+    public void applyNetworkSnapshot(VttTabletop tabletop, VttScene scene) {
+        if (tabletop == null || scene == null) {
+            VTT.LOGGER.warn("Ignored invalid VTT network snapshot");
+            return;
+        }
+
+        this.activeTabletop = tabletop;
+        this.activeScene = scene;
+        loadActiveSceneToCanvasScene();
+        VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
+    }
+
     public TabletopStoragePaths getTabletopStoragePaths() {
         return tabletopStoragePaths;
     }

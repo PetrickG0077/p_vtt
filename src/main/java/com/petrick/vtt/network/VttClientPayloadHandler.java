@@ -1,0 +1,43 @@
+package com.petrick.vtt.network;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.petrick.vtt.VTT;
+import com.petrick.vtt.core.session.VttRole;
+import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.network.payload.VttIdentityPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+public final class VttClientPayloadHandler {
+
+    private static final Gson GSON = new GsonBuilder().create();
+
+    private VttClientPayloadHandler() {
+    }
+
+    public static void handleIdentity(VttIdentityPayload payload, IPayloadContext context) {
+        var session = VTT.getApplication().getActiveSession();
+        session.setLocalPlayerId(payload.playerId());
+
+        try {
+            session.setLocalRole(VttRole.valueOf(payload.role()));
+        } catch (IllegalArgumentException exception) {
+            session.setLocalRole(VttRole.PLAYER);
+            VTT.LOGGER.warn("Received unknown VTT role from server: {}", payload.role());
+        }
+
+        VTT.LOGGER.info("Received VTT identity: player={}, role={}", payload.playerId(), session.getLocalRole());
+    }
+
+    public static void handleSceneSnapshot(VttSceneSnapshotPayload payload, IPayloadContext context) {
+        try {
+            VttTabletop tabletop = GSON.fromJson(payload.tabletopJson(), VttTabletop.class);
+            VttScene scene = GSON.fromJson(payload.sceneJson(), VttScene.class);
+            VTT.getApplication().getActiveSession().applyNetworkSnapshot(tabletop, scene);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error("Failed to apply VTT scene snapshot from server", exception);
+        }
+    }
+}
