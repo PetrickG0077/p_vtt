@@ -22,6 +22,8 @@ public final class ClientGameEvents {
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
+        VTT.getApplication().initialize();
+
         Minecraft minecraft = Minecraft.getInstance();
 
         while (ClientKeyMappings.OPEN_VTT_SCREEN.consumeClick()) {

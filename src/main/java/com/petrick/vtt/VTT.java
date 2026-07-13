@@ -22,7 +22,6 @@ public final class VTT {
         LOGGER.info("========================================");
 
         application = new VTTApplication();
-        application.initialize();
     }
 
     public static VTTApplication getApplication() {

@@ -18,7 +18,11 @@ public final class VTTApplication {
     public VTTApplication() {
     }
 
-    public void initialize() {
+    public synchronized void initialize() {
+        if (activeSession != null) {
+            return;
+        }
+
         VTT.LOGGER.info("Initializing VTT application...");
 
         this.activeSession = new VTTSession();
@@ -34,7 +38,7 @@ public final class VTTApplication {
 
     public VTTSession getActiveSession() {
         if (activeSession == null) {
-            activeSession = new VTTSession();
+            initialize();
         }
 
         return activeSession;
