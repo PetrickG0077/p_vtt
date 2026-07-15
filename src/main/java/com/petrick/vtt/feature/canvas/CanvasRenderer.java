@@ -76,7 +76,8 @@ public final class CanvasRenderer {
             boolean masterView,
             boolean editorSelectionVisible,
             boolean resizeHandlesVisible,
-            boolean visionDebugVisible
+            boolean visionDebugVisible,
+            String visionOwnerId
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
@@ -86,7 +87,10 @@ public final class CanvasRenderer {
         if (masterView && visionDebugVisible) {
             sceneVisionDebugRenderer.render(context, tabletopScene, scene, selectionManager);
         }
-        if (!masterView) sceneVisionMaskRenderer.render(context, tabletopScene, scene, selectionManager);
+        if (!masterView) {
+            sceneVisionMaskRenderer.render(
+                    context, tabletopScene, scene, selectionManager, visionOwnerId);
+        }
         sceneFogRenderer.render(context, tabletopScene, masterView);
     }
 

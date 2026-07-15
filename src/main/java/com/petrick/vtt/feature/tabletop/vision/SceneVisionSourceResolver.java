@@ -20,7 +20,25 @@ public final class SceneVisionSourceResolver {
     public List<CanvasObject> resolveAll(
             VttScene tabletopScene, CanvasScene canvasScene, SelectionManager selectionManager
     ) {
+        return resolveAll(tabletopScene, canvasScene, selectionManager, null);
+    }
+
+    public List<CanvasObject> resolveAll(
+            VttScene tabletopScene, CanvasScene canvasScene,
+            SelectionManager selectionManager, String ownerId
+    ) {
         if (canvasScene == null) return List.of();
+        if (ownerId != null && !ownerId.isBlank()) {
+            List<CanvasObject> ownedSources = new ArrayList<>();
+            if (tabletopScene != null) {
+                for (var sceneObject : tabletopScene.getObjects()) {
+                    if (sceneObject == null || !ownerId.equals(sceneObject.getOwnerId())) continue;
+                    CanvasObject owned = canvasScene.findObjectById(sceneObject.getId());
+                    if (isValid(owned)) ownedSources.add(owned);
+                }
+            }
+            return List.copyOf(ownedSources);
+        }
         List<CanvasObject> persistentSources = new ArrayList<>();
         if (tabletopScene != null) {
             for (String sourceId : tabletopScene.getVisionSourceObjectIds()) {

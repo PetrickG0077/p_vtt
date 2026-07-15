@@ -27,11 +27,18 @@ public final class SceneVisionMaskRenderer {
 
     public void render(
             VRenderContext context, VttScene tabletopScene,
-            CanvasScene canvasScene, SelectionManager selectionManager
+            CanvasScene canvasScene, SelectionManager selectionManager,
+            String visionOwnerId
     ) {
         if (tabletopScene == null) return;
-        List<CanvasObject> sources = sourceResolver.resolveAll(tabletopScene, canvasScene, selectionManager);
-        if (sources.isEmpty()) return;
+        List<CanvasObject> sources = sourceResolver.resolveAll(
+                tabletopScene, canvasScene, selectionManager, visionOwnerId);
+        if (sources.isEmpty()) {
+            if (visionOwnerId != null && !visionOwnerId.isBlank()) {
+                context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+            }
+            return;
+        }
         var segments = geometry.build(tabletopScene);
         List<List<Vec2d>> screenPolygons = new ArrayList<>();
         for (CanvasObject source : sources) {
