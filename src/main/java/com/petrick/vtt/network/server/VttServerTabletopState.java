@@ -2,6 +2,7 @@ package com.petrick.vtt.network.server;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
@@ -11,10 +12,19 @@ import net.neoforged.fml.loading.FMLPaths;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
+import com.google.gson.reflect.TypeToken;
+import com.petrick.vtt.feature.tabletop.VttDoor;
+import com.petrick.vtt.feature.tabletop.VttFogOfWar;
+import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
+import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
+
+import java.lang.reflect.Type;
+import java.util.List;
 
 public final class VttServerTabletopState {
 
     private static final Gson GSON = new GsonBuilder().create();
+    private static final Type DOOR_LIST_TYPE = new TypeToken<List<VttDoor>>() {}.getType();
     private static VttServerTabletopState instance;
 
     private final VttTabletop tabletop;
@@ -84,6 +94,32 @@ public final class VttServerTabletopState {
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
+    }
+
+    public synchronized VttEnvironmentStateUpdatePayload applyEnvironmentState(
+            VttEnvironmentStateRequestPayload request) {
+        if (request == null || request.doorsJson() == null || request.fogJson() == null
+                || request.doorsJson().length() > 1_000_000 || request.fogJson().length() > 1_000_000) return null;
+        try {
+            List<VttDoor> doors = GSON.fromJson(request.doorsJson(), DOOR_LIST_TYPE);
+            VttFogOfWar fog = GSON.fromJson(request.fogJson(), VttFogOfWar.class);
+            if (doors == null || fog == null || doors.size() > 10_000
+                    || fog.getHiddenAreas().size() + fog.getRevealedAreas().size() > 10_000) return null;
+            activeScene.clearDoors();
+            doors.stream().filter(door -> door != null && door.getId() != null && !door.getId().isBlank())
+                    .forEach(activeScene::addDoor);
+            activeScene.setFogOfWar(fog);
+            storage.saveScene(tabletop.getId(), activeScene);
+            return currentEnvironmentState();
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("Could not decode VTT door/fog update", exception);
+            return null;
+        }
+    }
+
+    public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
+        return new VttEnvironmentStateUpdatePayload(
+                GSON.toJson(activeScene.getDoors()), GSON.toJson(activeScene.getFogOfWar()));
     }
 
     private boolean valid(VttTokenTransformRequestPayload request) {
