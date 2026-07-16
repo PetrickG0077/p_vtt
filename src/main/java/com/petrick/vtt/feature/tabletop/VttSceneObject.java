@@ -39,8 +39,11 @@ public final class VttSceneObject {
     /** Legacy outer vision radius in world units. Zero uses the default radius. */
     private double visionRange;
 
-    /** Fully illuminated radius. The area up to the outer radius is softly dimmed. */
+    /** Fully illuminated radius. The area up to the outer radius uses uniform dimming. */
     private Double visionInnerRadius;
+
+    /** Null keeps old scene JSON compatible and means enabled. */
+    private Boolean visionEnabled;
 
     /** Stable player identifier that owns this placed token. Null means unowned. */
     private String ownerId;
@@ -141,6 +144,14 @@ public final class VttSceneObject {
 
     public void setVisionInnerRadius(double visionInnerRadius) {
         this.visionInnerRadius = Math.max(0.0, visionInnerRadius);
+    }
+
+    public boolean isVisionEnabled() {
+        return visionEnabled == null || visionEnabled;
+    }
+
+    public void setVisionEnabled(boolean visionEnabled) {
+        this.visionEnabled = visionEnabled;
     }
 
     public String getOwnerId() {

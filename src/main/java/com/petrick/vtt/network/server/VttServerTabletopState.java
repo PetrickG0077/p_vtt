@@ -129,6 +129,7 @@ public final class VttServerTabletopState {
                             double outer = Math.max(64.0, Math.min(100_000.0, vision.outerRadius()));
                             object.setVisionOuterRadius(outer);
                             object.setVisionInnerRadius(Math.min(outer, Math.max(0.0, vision.innerRadius())));
+                            object.setVisionEnabled(vision.enabled());
                         });
             }
             storage.saveScene(tabletop.getId(), activeScene);
@@ -147,10 +148,11 @@ public final class VttServerTabletopState {
                         .filter(object -> object != null && object.getId() != null)
                         .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                                 object.getVisionOuterRadius() > 0.0
-                                        ? object.getVisionOuterRadius() : 512.0)).toList()));
+                                        ? object.getVisionOuterRadius() : 512.0,
+                                object.isVisionEnabled())).toList()));
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius) {}
+    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled) {}
 
     private boolean valid(VttTokenTransformRequestPayload request) {
         return request.objectId() != null && !request.objectId().isBlank()

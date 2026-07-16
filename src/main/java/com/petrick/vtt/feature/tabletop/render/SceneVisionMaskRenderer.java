@@ -18,9 +18,6 @@ import java.util.List;
 public final class SceneVisionMaskRenderer {
     private static final int MASK_COLOR = 0xFF08080C;
     private static final int COLUMN_WIDTH = 1;
-    private static final int FEATHER_PIXELS = 4;
-    private static final int FEATHER_MAX_ALPHA = 208;
-    private static final int FALLOFF_CELL_SIZE = 6;
     private static final double DEFAULT_INNER_RADIUS = 256.0;
     private static final double DEFAULT_OUTER_RADIUS = 512.0;
 
@@ -37,7 +34,7 @@ public final class SceneVisionMaskRenderer {
         List<CanvasObject> sources = sourceResolver.resolveAll(
                 tabletopScene, canvasScene, selectionManager, visionOwnerId);
         if (sources.isEmpty()) {
-            if (visionOwnerId != null && !visionOwnerId.isBlank()) {
+            if (shouldRenderNoVisionMask(tabletopScene, selectionManager, visionOwnerId)) {
                 context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
             }
             return;
@@ -46,21 +43,38 @@ public final class SceneVisionMaskRenderer {
         List<VisionRegion> regions = new ArrayList<>();
         for (CanvasObject source : sources) {
             VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
-            List<Vec2d> worldPolygon = raycaster.buildVisibilityPolygon(
+            List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
                     source.transform().position(), radii.outerRadius(), segments);
-            if (worldPolygon.size() >= 3) {
+            if (outerWorldPolygon.size() >= 3) {
                 double zoom = context.renderState().getCamera().getZoom();
                 regions.add(new VisionRegion(
-                        worldPolygon.stream().map(context.renderState()::worldToScreen).toList(),
+                        outerWorldPolygon.stream().map(context.renderState()::worldToScreen).toList(),
                         context.renderState().worldToScreen(source.transform().position()),
-                        radii.innerRadius() * zoom,
-                        radii.outerRadius() * zoom));
+                        radii.innerRadius() * zoom, radii.outerRadius() * zoom));
             }
         }
         if (!regions.isEmpty()) {
-            fillOutsidePolygons(context, regions.stream().map(VisionRegion::polygon).toList());
-            renderRadialFalloff(context, regions);
+            List<List<Vec2d>> outerPolygons = regions.stream().map(VisionRegion::outerPolygon).toList();
+            fillOutsidePolygons(context, outerPolygons);
+            renderRadialGradient(context, regions, outerPolygons);
         }
+    }
+
+    private boolean shouldRenderNoVisionMask(
+            VttScene scene, SelectionManager selectionManager, String ownerId
+    ) {
+        if (scene == null) return ownerId != null && !ownerId.isBlank();
+        if (ownerId != null && !ownerId.isBlank()) {
+            boolean ownsDisabledToken = scene.getObjects().stream()
+                    .anyMatch(object -> object != null && ownerId.equals(object.getOwnerId())
+                            && !object.isVisionEnabled());
+            return !ownsDisabledToken;
+        }
+        if (selectionManager == null || selectionManager.getSelectedObjectIds().size() != 1) return false;
+        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+        return scene.getObjects().stream()
+                .filter(object -> object != null && selectedId.equals(object.getId()))
+                .findFirst().map(object -> object.isVisionEnabled()).orElse(false);
     }
 
     private VisionRadii resolveVisionRadii(VttScene scene, String objectId) {
@@ -76,43 +90,58 @@ public final class SceneVisionMaskRenderer {
                 .orElse(new VisionRadii(DEFAULT_INNER_RADIUS, DEFAULT_OUTER_RADIUS));
     }
 
-    private void renderRadialFalloff(VRenderContext context, List<VisionRegion> regions) {
-        for (int x = 0; x < context.screenWidth(); x += FALLOFF_CELL_SIZE) {
-            int right = Math.min(context.screenWidth(), x + FALLOFF_CELL_SIZE);
-            for (int y = 0; y < context.screenHeight(); y += FALLOFF_CELL_SIZE) {
-                int bottom = Math.min(context.screenHeight(), y + FALLOFF_CELL_SIZE);
-                double sampleX = (x + right) * 0.5;
-                double sampleY = (y + bottom) * 0.5;
-                double darkness = 1.0;
-                boolean visible = false;
+    private void renderRadialGradient(
+            VRenderContext context, List<VisionRegion> regions, List<List<Vec2d>> outerPolygons
+    ) {
+        for (int left = 0; left < context.screenWidth(); left += COLUMN_WIDTH) {
+            int right = Math.min(context.screenWidth(), left + COLUMN_WIDTH);
+            double sampleX = left + (right - left) / 2.0;
+            List<VisibleInterval> outer = visibleIntervalsAtX(outerPolygons, sampleX, context.screenHeight());
+            for (VisibleInterval outerInterval : outer) {
+                List<Double> stops = new ArrayList<>();
+                stops.add(outerInterval.start());
                 for (VisionRegion region : regions) {
-                    if (!contains(region.polygon(), sampleX, sampleY)) continue;
-                    visible = true;
-                    double distance = Math.hypot(sampleX - region.origin().x(), sampleY - region.origin().y());
-                    double span = Math.max(1.0, region.outerRadiusPixels() - region.innerRadiusPixels());
-                    double amount = Math.max(0.0,
-                            Math.min(1.0, (distance - region.innerRadiusPixels()) / span));
-                    darkness = Math.min(darkness, amount);
+                    if (region.origin().y() > outerInterval.start()
+                            && region.origin().y() < outerInterval.end()) stops.add(region.origin().y());
                 }
-                if (visible && darkness > 0.0) {
-                    int alpha = (int) Math.round(FEATHER_MAX_ALPHA * darkness);
-                    context.graphics().fill(x, y, right, bottom, featherColor(alpha));
+                stops.add(outerInterval.end());
+                stops.sort(Comparator.naturalOrder());
+                for (int index = 0; index + 1 < stops.size(); index++) {
+                    renderGradientSection(context, left, right, sampleX,
+                            stops.get(index), stops.get(index + 1), regions);
                 }
             }
         }
     }
 
-    private boolean contains(List<Vec2d> polygon, double x, double y) {
-        boolean inside = false;
-        for (int first = 0, second = polygon.size() - 1; first < polygon.size(); second = first++) {
-            Vec2d a = polygon.get(first);
-            Vec2d b = polygon.get(second);
-            if ((a.y() > y) != (b.y() > y)
-                    && x < (b.x() - a.x()) * (y - a.y()) / (b.y() - a.y()) + a.x()) {
-                inside = !inside;
-            }
+    private void renderGradientSection(
+            VRenderContext context, int left, int right, double x,
+            double start, double end, List<VisionRegion> regions
+    ) {
+        int top = Math.max(0, (int) Math.floor(start));
+        int bottom = Math.min(context.screenHeight(), (int) Math.ceil(end));
+        if (bottom <= top) return;
+        int topAlpha = gradientAlpha(x, start, regions);
+        int bottomAlpha = gradientAlpha(x, end, regions);
+        if (topAlpha == 0 && bottomAlpha == 0) return;
+        context.graphics().fillGradient(left, top, right, bottom,
+                maskColor(topAlpha), maskColor(bottomAlpha));
+    }
+
+    private int gradientAlpha(double x, double y, List<VisionRegion> regions) {
+        double darkness = 1.0;
+        for (VisionRegion region : regions) {
+            double distance = Math.hypot(x - region.origin().x(), y - region.origin().y());
+            if (distance > region.outerRadiusPixels()) continue;
+            double span = Math.max(1.0, region.outerRadiusPixels() - region.innerRadiusPixels());
+            darkness = Math.min(darkness,
+                    Math.max(0.0, Math.min(1.0, (distance - region.innerRadiusPixels()) / span)));
         }
-        return inside;
+        return (int) Math.round(darkness * 255.0);
+    }
+
+    private int maskColor(int alpha) {
+        return (Math.max(0, Math.min(255, alpha)) << 24) | 0x0008080C;
     }
 
     private void fillOutsidePolygons(VRenderContext context, List<List<Vec2d>> polygons) {
@@ -127,7 +156,6 @@ public final class SceneVisionMaskRenderer {
                 double insideEnd = interval.end();
                 int opaqueEnd = Math.max(cursor, (int) Math.floor(insideStart));
                 if (opaqueEnd > cursor) context.graphics().fill(left, cursor, right, opaqueEnd, MASK_COLOR);
-                renderFeather(context, left, right, insideStart, insideEnd);
                 cursor = Math.max(cursor, (int) Math.ceil(insideEnd));
             }
             if (cursor < context.screenHeight()) {
@@ -161,30 +189,6 @@ public final class SceneVisionMaskRenderer {
         return merged;
     }
 
-    private void renderFeather(
-            VRenderContext context, int left, int right, double insideStart, double insideEnd
-    ) {
-        int topStart = Math.max(0, (int) Math.floor(insideStart));
-        int topEnd = Math.min(context.screenHeight(),
-                Math.min((int) Math.ceil(insideEnd), (int) Math.ceil(insideStart + FEATHER_PIXELS)));
-        if (topEnd > topStart) {
-            context.graphics().fillGradient(left, topStart, right, topEnd,
-                    featherColor(FEATHER_MAX_ALPHA), featherColor(0));
-        }
-
-        int bottomStart = Math.max(0, (int) Math.floor(insideEnd - FEATHER_PIXELS));
-        int bottomEnd = Math.min(context.screenHeight(), (int) Math.ceil(insideEnd));
-        bottomStart = Math.max(bottomStart, (int) Math.floor(insideStart));
-        if (bottomEnd > bottomStart) {
-            context.graphics().fillGradient(left, bottomStart, right, bottomEnd,
-                    featherColor(0), featherColor(FEATHER_MAX_ALPHA));
-        }
-    }
-
-    private int featherColor(int alpha) {
-        return (Math.max(0, Math.min(255, alpha)) << 24) | 0x0008080C;
-    }
-
     private List<Double> intersectionsAtX(List<Vec2d> polygon, double x) {
         List<Double> intersections = new ArrayList<>();
         for (int index = 0; index < polygon.size(); index++) {
@@ -206,5 +210,6 @@ public final class SceneVisionMaskRenderer {
     private record VisibleInterval(double start, double end) {}
     private record VisionRadii(double innerRadius, double outerRadius) {}
     private record VisionRegion(
-            List<Vec2d> polygon, Vec2d origin, double innerRadiusPixels, double outerRadiusPixels) {}
+            List<Vec2d> outerPolygon, Vec2d origin,
+            double innerRadiusPixels, double outerRadiusPixels) {}
 }

@@ -52,6 +52,7 @@ public final class HelpOverlay {
                 "[: Outer vision +64   ]: Outer vision -64",
                 ",: Inner vision +16   .: Inner vision -16",
                 " /: Reset vision radii",
+                ";: Toggle selected token vision",
                 "Middle Mouse: Pan",
                 "Wheel: Zoom",
                 "",

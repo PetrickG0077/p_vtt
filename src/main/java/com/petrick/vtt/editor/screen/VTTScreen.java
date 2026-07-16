@@ -1412,36 +1412,6 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_LEFT_BRACKET) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionOuterRadius(TOKEN_VISION_OUTER_STEP);
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_RIGHT_BRACKET) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionOuterRadius(-TOKEN_VISION_OUTER_STEP);
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_COMMA) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionInnerRadius(TOKEN_VISION_INNER_STEP);
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_PERIOD) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionInnerRadius(-TOKEN_VISION_INNER_STEP);
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_SLASH) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            resetTokenVisionRadii();
-            return true;
-        }
-
         String requestedStateId = getStateIdFromNumberKey(keyCode);
 
         if (requestedStateId != null) {
@@ -1562,6 +1532,21 @@ public final class VTTScreen extends Screen {
                 });
     }
 
+    private void toggleSelectedTokenVision() {
+        String objectId = resolveVisionRangeTargetId();
+        if (objectId == null || session.getActiveScene() == null) return;
+        session.saveCanvasSceneToActiveScene();
+        session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst()
+                .ifPresent(object -> {
+                    object.setVisionEnabled(!object.isVisionEnabled());
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Token {} vision {}", objectId,
+                            object.isVisionEnabled() ? "enabled" : "disabled");
+                });
+    }
+
     private String resolveVisionRangeTargetId() {
         if (selectionManager.getSelectedObjectIds().size() == 1) {
             String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
@@ -1661,7 +1646,24 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (handleVisionShortcutCharacter(codePoint)) {
+            return true;
+        }
+
         return super.charTyped(codePoint, modifiers);
+    }
+
+    private boolean handleVisionShortcutCharacter(char character) {
+        if (!session.getLocalRole().canEditTabletop()) return false;
+        return switch (character) {
+            case '[' -> { adjustTokenVisionOuterRadius(TOKEN_VISION_OUTER_STEP); yield true; }
+            case ']' -> { adjustTokenVisionOuterRadius(-TOKEN_VISION_OUTER_STEP); yield true; }
+            case ',' -> { adjustTokenVisionInnerRadius(TOKEN_VISION_INNER_STEP); yield true; }
+            case '.' -> { adjustTokenVisionInnerRadius(-TOKEN_VISION_INNER_STEP); yield true; }
+            case '/' -> { resetTokenVisionRadii(); yield true; }
+            case ';' -> { toggleSelectedTokenVision(); yield true; }
+            default -> false;
+        };
     }
 
     private String getStateIdFromNumberKey(int keyCode) {

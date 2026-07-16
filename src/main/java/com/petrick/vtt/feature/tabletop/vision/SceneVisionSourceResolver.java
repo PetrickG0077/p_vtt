@@ -32,7 +32,8 @@ public final class SceneVisionSourceResolver {
             List<CanvasObject> ownedSources = new ArrayList<>();
             if (tabletopScene != null) {
                 for (var sceneObject : tabletopScene.getObjects()) {
-                    if (sceneObject == null || !ownerId.equals(sceneObject.getOwnerId())) continue;
+                    if (sceneObject == null || !sceneObject.isVisionEnabled()
+                            || !ownerId.equals(sceneObject.getOwnerId())) continue;
                     CanvasObject owned = canvasScene.findObjectById(sceneObject.getId());
                     if (isValid(owned)) ownedSources.add(owned);
                 }
@@ -43,17 +44,25 @@ public final class SceneVisionSourceResolver {
         if (tabletopScene != null) {
             for (String sourceId : tabletopScene.getVisionSourceObjectIds()) {
                 CanvasObject persistent = canvasScene.findObjectById(sourceId);
-                if (isValid(persistent)) persistentSources.add(persistent);
+                if (isValid(persistent) && isVisionEnabled(tabletopScene, sourceId)) persistentSources.add(persistent);
             }
         }
         if (!persistentSources.isEmpty()) return List.copyOf(persistentSources);
         if (selectionManager == null || selectionManager.getSelectedObjectIds().size() != 1) return List.of();
         CanvasObject selected = canvasScene.findObjectById(
                 selectionManager.getSelectedObjectIds().iterator().next());
-        return isValid(selected) ? List.of(selected) : List.of();
+        return isValid(selected) && isVisionEnabled(tabletopScene, selected.id())
+                ? List.of(selected) : List.of();
     }
 
     private boolean isValid(CanvasObject object) {
         return object != null && object.visible() && object.hasSourceTokenDefinition();
+    }
+
+    private boolean isVisionEnabled(VttScene scene, String objectId) {
+        if (scene == null || objectId == null) return false;
+        return scene.getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().map(object -> object.isVisionEnabled()).orElse(false);
     }
 }

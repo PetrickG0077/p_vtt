@@ -135,7 +135,9 @@ public final class  SelectionInspectorOverlay {
                     .filter(candidate -> candidate != null && object.id().equals(candidate.getId()))
                     .findFirst().orElse(null);
             if (selectedSceneObject != null) {
-                drawLine(context, font, "Vision: " + formatDouble(selectedSceneObject.getVisionInnerRadius()) + " / "
+                drawLine(context, font, "Vision: "
+                                + (selectedSceneObject.isVisionEnabled() ? "ON " : "OFF ")
+                                + formatDouble(selectedSceneObject.getVisionInnerRadius()) + " / "
                                 + formatDouble(selectedSceneObject.getVisionOuterRadius() > 0.0
                                 ? selectedSceneObject.getVisionOuterRadius() : 512.0),
                         x, y, TEXT_COLOR);

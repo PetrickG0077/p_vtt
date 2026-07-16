@@ -72,6 +72,7 @@ public final class VttClientEnvironmentStateSync {
                             .findFirst().ifPresent(object -> {
                                 object.setVisionInnerRadius(vision.innerRadius());
                                 object.setVisionOuterRadius(vision.outerRadius());
+                                object.setVisionEnabled(vision.enabled());
                             });
                 }
             }
@@ -96,8 +97,9 @@ public final class VttClientEnvironmentStateSync {
         return GSON.toJson(session.getActiveScene().getObjects().stream()
                 .filter(object -> object != null && object.getId() != null)
                 .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
-                        object.getVisionOuterRadius() > 0.0 ? object.getVisionOuterRadius() : 512.0)).toList());
+                        object.getVisionOuterRadius() > 0.0 ? object.getVisionOuterRadius() : 512.0,
+                        object.isVisionEnabled())).toList());
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius) {}
+    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled) {}
 }
