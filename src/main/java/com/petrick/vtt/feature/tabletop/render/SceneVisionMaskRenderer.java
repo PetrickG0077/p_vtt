@@ -18,6 +18,7 @@ import java.util.List;
 public final class SceneVisionMaskRenderer {
     private static final int MASK_COLOR = 0xFF08080C;
     private static final int COLUMN_WIDTH = 1;
+    private static final int ALPHA_QUANTIZATION = 4;
     private static final double DEFAULT_INNER_RADIUS = 256.0;
     private static final double DEFAULT_OUTER_RADIUS = 512.0;
 
@@ -98,34 +99,44 @@ public final class SceneVisionMaskRenderer {
             double sampleX = left + (right - left) / 2.0;
             List<VisibleInterval> outer = visibleIntervalsAtX(outerPolygons, sampleX, context.screenHeight());
             for (VisibleInterval outerInterval : outer) {
-                List<Double> stops = new ArrayList<>();
-                stops.add(outerInterval.start());
-                for (VisionRegion region : regions) {
-                    if (region.origin().y() > outerInterval.start()
-                            && region.origin().y() < outerInterval.end()) stops.add(region.origin().y());
-                }
-                stops.add(outerInterval.end());
-                stops.sort(Comparator.naturalOrder());
-                for (int index = 0; index + 1 < stops.size(); index++) {
-                    renderGradientSection(context, left, right, sampleX,
-                            stops.get(index), stops.get(index + 1), regions);
-                }
+                renderGradientInterval(context, left, right, sampleX, outerInterval, regions);
             }
         }
     }
 
-    private void renderGradientSection(
+    private void renderGradientInterval(
             VRenderContext context, int left, int right, double x,
-            double start, double end, List<VisionRegion> regions
+            VisibleInterval interval, List<VisionRegion> regions
     ) {
-        int top = Math.max(0, (int) Math.floor(start));
-        int bottom = Math.min(context.screenHeight(), (int) Math.ceil(end));
+        int top = Math.max(0, (int) Math.floor(interval.start()));
+        int bottom = Math.min(context.screenHeight(), (int) Math.ceil(interval.end()));
         if (bottom <= top) return;
-        int topAlpha = gradientAlpha(x, start, regions);
-        int bottomAlpha = gradientAlpha(x, end, regions);
-        if (topAlpha == 0 && bottomAlpha == 0) return;
-        context.graphics().fillGradient(left, top, right, bottom,
-                maskColor(topAlpha), maskColor(bottomAlpha));
+
+        int runStart = top;
+        int runAlpha = quantizeAlpha(gradientAlpha(x, top + 0.5, regions));
+        for (int y = top + 1; y < bottom; y++) {
+            int alpha = quantizeAlpha(gradientAlpha(x, y + 0.5, regions));
+            if (alpha == runAlpha) continue;
+            fillAlphaRun(context, left, right, runStart, y, runAlpha);
+            runStart = y;
+            runAlpha = alpha;
+        }
+        fillAlphaRun(context, left, right, runStart, bottom, runAlpha);
+    }
+
+    private int quantizeAlpha(int alpha) {
+        if (alpha <= 0) return 0;
+        if (alpha >= 252) return 255;
+        return Math.min(255, ((alpha + ALPHA_QUANTIZATION / 2) / ALPHA_QUANTIZATION)
+                * ALPHA_QUANTIZATION);
+    }
+
+    private void fillAlphaRun(
+            VRenderContext context, int left, int right, int top, int bottom, int alpha
+    ) {
+        if (alpha > 0 && bottom > top) {
+            context.graphics().fill(left, top, right, bottom, maskColor(alpha));
+        }
     }
 
     private int gradientAlpha(double x, double y, List<VisionRegion> regions) {
