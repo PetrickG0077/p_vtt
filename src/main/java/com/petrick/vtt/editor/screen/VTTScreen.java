@@ -62,8 +62,10 @@ import java.util.Optional;
  */
 public final class VTTScreen extends Screen {
 
-    private static final double DEFAULT_TOKEN_VISION_RANGE = 512.0;
-    private static final double TOKEN_VISION_RANGE_STEP = 64.0;
+    private static final double DEFAULT_TOKEN_VISION_OUTER_RADIUS = 512.0;
+    private static final double DEFAULT_TOKEN_VISION_INNER_RADIUS = 256.0;
+    private static final double TOKEN_VISION_OUTER_STEP = 64.0;
+    private static final double TOKEN_VISION_INNER_STEP = 16.0;
 
     private final VTTSession session;
 
@@ -1412,19 +1414,31 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_LEFT_BRACKET) {
             if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionRange(-TOKEN_VISION_RANGE_STEP);
+            adjustTokenVisionOuterRadius(TOKEN_VISION_OUTER_STEP);
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_RIGHT_BRACKET) {
             if (!session.getLocalRole().canEditTabletop()) return true;
-            adjustTokenVisionRange(TOKEN_VISION_RANGE_STEP);
+            adjustTokenVisionOuterRadius(-TOKEN_VISION_OUTER_STEP);
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_BACKSLASH) {
+        if (keyCode == GLFW.GLFW_KEY_COMMA) {
             if (!session.getLocalRole().canEditTabletop()) return true;
-            resetTokenVisionRange();
+            adjustTokenVisionInnerRadius(TOKEN_VISION_INNER_STEP);
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_PERIOD) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            adjustTokenVisionInnerRadius(-TOKEN_VISION_INNER_STEP);
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_SLASH) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            resetTokenVisionRadii();
             return true;
         }
 
@@ -1492,7 +1506,7 @@ public final class VTTScreen extends Screen {
         return true;
     }
 
-    private void adjustTokenVisionRange(double delta) {
+    private void adjustTokenVisionOuterRadius(double delta) {
         String objectId = resolveVisionRangeTargetId();
         if (objectId == null || session.getActiveScene() == null) return;
         session.saveCanvasSceneToActiveScene();
@@ -1500,17 +1514,17 @@ public final class VTTScreen extends Screen {
                 .filter(object -> object != null && objectId.equals(object.getId()))
                 .findFirst()
                 .ifPresent(object -> {
-                    double current = object.getVisionRange();
-                    double next = current <= 0.0
-                            ? DEFAULT_TOKEN_VISION_RANGE
-                            : Math.max(TOKEN_VISION_RANGE_STEP, current + delta);
-                    object.setVisionRange(next);
+                    double current = object.getVisionOuterRadius() > 0.0
+                            ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
+                    double next = Math.max(TOKEN_VISION_OUTER_STEP, current + delta);
+                    object.setVisionOuterRadius(next);
+                    object.setVisionInnerRadius(Math.min(resolveInnerRadius(object), next));
                     session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} vision range changed to {}", objectId, next);
+                    VTT.LOGGER.info("Token {} outer vision radius changed to {}", objectId, next);
                 });
     }
 
-    private void resetTokenVisionRange() {
+    private void adjustTokenVisionInnerRadius(double delta) {
         String objectId = resolveVisionRangeTargetId();
         if (objectId == null || session.getActiveScene() == null) return;
         session.saveCanvasSceneToActiveScene();
@@ -1518,9 +1532,33 @@ public final class VTTScreen extends Screen {
                 .filter(object -> object != null && objectId.equals(object.getId()))
                 .findFirst()
                 .ifPresent(object -> {
-                    object.setVisionRange(0.0);
+                    double outer = object.getVisionOuterRadius() > 0.0
+                            ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
+                    double next = Math.max(0.0, Math.min(outer, resolveInnerRadius(object) + delta));
+                    object.setVisionOuterRadius(outer);
+                    object.setVisionInnerRadius(next);
                     session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} vision range reset to unlimited", objectId);
+                    VTT.LOGGER.info("Token {} inner vision radius changed to {}", objectId, next);
+                });
+    }
+
+    private double resolveInnerRadius(com.petrick.vtt.feature.tabletop.VttSceneObject object) {
+        return object.getVisionInnerRadius();
+    }
+
+    private void resetTokenVisionRadii() {
+        String objectId = resolveVisionRangeTargetId();
+        if (objectId == null || session.getActiveScene() == null) return;
+        session.saveCanvasSceneToActiveScene();
+        session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst()
+                .ifPresent(object -> {
+                    object.setVisionInnerRadius(DEFAULT_TOKEN_VISION_INNER_RADIUS);
+                    object.setVisionOuterRadius(DEFAULT_TOKEN_VISION_OUTER_RADIUS);
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Token {} vision radii reset: inner={}, outer={}", objectId,
+                            DEFAULT_TOKEN_VISION_INNER_RADIUS, DEFAULT_TOKEN_VISION_OUTER_RADIUS);
                 });
     }
 

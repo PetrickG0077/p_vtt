@@ -130,6 +130,19 @@ public final class  SelectionInspectorOverlay {
         drawLine(context, font, "Owner: " + ownerLabel(ownerId, localPlayerId), x, y, TEXT_COLOR);
         y += LINE_HEIGHT;
 
+        if (tabletopScene != null && object.hasSourceTokenDefinition()) {
+            var selectedSceneObject = tabletopScene.getObjects().stream()
+                    .filter(candidate -> candidate != null && object.id().equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            if (selectedSceneObject != null) {
+                drawLine(context, font, "Vision: " + formatDouble(selectedSceneObject.getVisionInnerRadius()) + " / "
+                                + formatDouble(selectedSceneObject.getVisionOuterRadius() > 0.0
+                                ? selectedSceneObject.getVisionOuterRadius() : 512.0),
+                        x, y, TEXT_COLOR);
+            }
+            y += LINE_HEIGHT;
+        }
+
         drawLine(
                 context,
                 font,
@@ -488,7 +501,7 @@ public final class  SelectionInspectorOverlay {
                 extraStateLines++;
             }
 
-            return 21 + extraStateLines;
+            return 22 + extraStateLines;
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;

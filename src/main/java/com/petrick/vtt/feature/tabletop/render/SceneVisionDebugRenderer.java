@@ -17,6 +17,7 @@ import java.util.List;
 
 /** Temporary master-only visualization used to validate scene vision raycasts. */
 public final class SceneVisionDebugRenderer {
+    private static final double DEFAULT_OUTER_RADIUS = 512.0;
     private static final int POLYGON_COLOR = 0xFF44FFFF;
     private static final int RAY_COLOR = 0x5544FFFF;
     private final SceneVisionGeometry geometry = new SceneVisionGeometry();
@@ -44,11 +45,10 @@ public final class SceneVisionDebugRenderer {
         Vec2d origin = source.transform().position();
         double maxDistance = tabletopScene.getObjects().stream()
                 .filter(object -> object != null && source.id().equals(object.getId()))
-                .mapToDouble(object -> object.getVisionRange())
+                .mapToDouble(object -> object.getVisionOuterRadius())
                 .filter(range -> range > 0.0)
                 .findFirst()
-                .orElseGet(() -> Math.hypot(context.screenWidth(), context.screenHeight())
-                        / Math.max(0.0001, context.renderState().getCamera().getZoom()) * 1.5);
+                .orElse(DEFAULT_OUTER_RADIUS);
         List<Vec2d> polygon = raycaster.buildVisibilityPolygon(origin, maxDistance, segments);
         if (polygon.size() < 2) return;
         for (int index = 0; index < polygon.size(); index++) {

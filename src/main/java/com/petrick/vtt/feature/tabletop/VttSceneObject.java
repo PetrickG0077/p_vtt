@@ -36,8 +36,11 @@ public final class VttSceneObject {
      */
     private int layerIndex;
 
-    /** Vision radius in world units. Zero means unlimited. */
+    /** Legacy outer vision radius in world units. Zero uses the default radius. */
     private double visionRange;
+
+    /** Fully illuminated radius. The area up to the outer radius is softly dimmed. */
+    private Double visionInnerRadius;
 
     /** Stable player identifier that owns this placed token. Null means unowned. */
     private String ownerId;
@@ -122,6 +125,22 @@ public final class VttSceneObject {
 
     public void setVisionRange(double visionRange) {
         this.visionRange = Math.max(0.0, visionRange);
+    }
+
+    public double getVisionOuterRadius() {
+        return visionRange;
+    }
+
+    public void setVisionOuterRadius(double visionOuterRadius) {
+        setVisionRange(visionOuterRadius);
+    }
+
+    public double getVisionInnerRadius() {
+        return visionInnerRadius == null ? 256.0 : visionInnerRadius;
+    }
+
+    public void setVisionInnerRadius(double visionInnerRadius) {
+        this.visionInnerRadius = Math.max(0.0, visionInnerRadius);
     }
 
     public String getOwnerId() {

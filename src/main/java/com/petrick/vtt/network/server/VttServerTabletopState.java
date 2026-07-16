@@ -15,6 +15,7 @@ import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.google.gson.reflect.TypeToken;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
+import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 
@@ -25,6 +26,8 @@ public final class VttServerTabletopState {
 
     private static final Gson GSON = new GsonBuilder().create();
     private static final Type DOOR_LIST_TYPE = new TypeToken<List<VttDoor>>() {}.getType();
+    private static final Type WALL_LIST_TYPE = new TypeToken<List<VttWall>>() {}.getType();
+    private static final Type VISION_LIST_TYPE = new TypeToken<List<VisionState>>() {}.getType();
     private static VttServerTabletopState instance;
 
     private final VttTabletop tabletop;
@@ -98,29 +101,56 @@ public final class VttServerTabletopState {
 
     public synchronized VttEnvironmentStateUpdatePayload applyEnvironmentState(
             VttEnvironmentStateRequestPayload request) {
-        if (request == null || request.doorsJson() == null || request.fogJson() == null
-                || request.doorsJson().length() > 1_000_000 || request.fogJson().length() > 1_000_000) return null;
+        if (request == null || request.wallsJson() == null || request.doorsJson() == null
+                || request.fogJson() == null || request.visionJson() == null
+                || request.wallsJson().length() > 1_000_000 || request.doorsJson().length() > 1_000_000
+                || request.fogJson().length() > 1_000_000 || request.visionJson().length() > 1_000_000) return null;
         try {
+            List<VttWall> walls = GSON.fromJson(request.wallsJson(), WALL_LIST_TYPE);
             List<VttDoor> doors = GSON.fromJson(request.doorsJson(), DOOR_LIST_TYPE);
             VttFogOfWar fog = GSON.fromJson(request.fogJson(), VttFogOfWar.class);
-            if (doors == null || fog == null || doors.size() > 10_000
+            List<VisionState> visionStates = GSON.fromJson(request.visionJson(), VISION_LIST_TYPE);
+            if (walls == null || doors == null || fog == null || visionStates == null
+                    || walls.size() > 10_000 || doors.size() > 10_000 || visionStates.size() > 10_000
                     || fog.getHiddenAreas().size() + fog.getRevealedAreas().size() > 10_000) return null;
+            activeScene.clearWalls();
+            walls.stream().filter(wall -> wall != null && wall.getId() != null && !wall.getId().isBlank())
+                    .forEach(activeScene::addWall);
             activeScene.clearDoors();
             doors.stream().filter(door -> door != null && door.getId() != null && !door.getId().isBlank())
                     .forEach(activeScene::addDoor);
             activeScene.setFogOfWar(fog);
+            for (VisionState vision : visionStates) {
+                if (vision == null || vision.objectId() == null || !Double.isFinite(vision.innerRadius())
+                        || !Double.isFinite(vision.outerRadius())) continue;
+                activeScene.getObjects().stream()
+                        .filter(object -> object != null && vision.objectId().equals(object.getId()))
+                        .findFirst().ifPresent(object -> {
+                            double outer = Math.max(64.0, Math.min(100_000.0, vision.outerRadius()));
+                            object.setVisionOuterRadius(outer);
+                            object.setVisionInnerRadius(Math.min(outer, Math.max(0.0, vision.innerRadius())));
+                        });
+            }
             storage.saveScene(tabletop.getId(), activeScene);
             return currentEnvironmentState();
         } catch (RuntimeException exception) {
-            VTT.LOGGER.warn("Could not decode VTT door/fog update", exception);
+            VTT.LOGGER.warn("Could not decode VTT environment update", exception);
             return null;
         }
     }
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
         return new VttEnvironmentStateUpdatePayload(
-                GSON.toJson(activeScene.getDoors()), GSON.toJson(activeScene.getFogOfWar()));
+                GSON.toJson(activeScene.getWalls()), GSON.toJson(activeScene.getDoors()),
+                GSON.toJson(activeScene.getFogOfWar()),
+                GSON.toJson(activeScene.getObjects().stream()
+                        .filter(object -> object != null && object.getId() != null)
+                        .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
+                                object.getVisionOuterRadius() > 0.0
+                                        ? object.getVisionOuterRadius() : 512.0)).toList()));
     }
+
+    private record VisionState(String objectId, double innerRadius, double outerRadius) {}
 
     private boolean valid(VttTokenTransformRequestPayload request) {
         return request.objectId() != null && !request.objectId().isBlank()

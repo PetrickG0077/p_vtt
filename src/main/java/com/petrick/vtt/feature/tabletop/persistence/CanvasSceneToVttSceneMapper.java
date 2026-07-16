@@ -37,10 +37,12 @@ public final class CanvasSceneToVttSceneMapper {
         }
 
         Map<String, Double> existingVisionRanges = new HashMap<>();
+        Map<String, Double> existingVisionInnerRadii = new HashMap<>();
         Map<String, String> existingOwnerIds = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
             if (existingObject != null && existingObject.getId() != null) {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
+                existingVisionInnerRadii.put(existingObject.getId(), existingObject.getVisionInnerRadius());
                 if (existingObject.getOwnerId() != null) {
                     existingOwnerIds.put(existingObject.getId(), existingObject.getOwnerId());
                 }
@@ -56,6 +58,7 @@ public final class CanvasSceneToVttSceneMapper {
                     canvasObject,
                     layerIndex,
                     existingVisionRanges.getOrDefault(canvasObject.id(), 0.0),
+                    existingVisionInnerRadii.getOrDefault(canvasObject.id(), 256.0),
                     existingOwnerIds.get(canvasObject.id())
             );
 
@@ -69,6 +72,7 @@ public final class CanvasSceneToVttSceneMapper {
             CanvasObject canvasObject,
             int layerIndex,
             double visionRange,
+            double visionInnerRadius,
             String ownerId
     ) {
         VttSceneObject sceneObject = new VttSceneObject();
@@ -78,6 +82,7 @@ public final class CanvasSceneToVttSceneMapper {
         sceneObject.setSourceTokenDefinitionId(canvasObject.sourceTokenDefinitionId());
         sceneObject.setLayerIndex(layerIndex);
         sceneObject.setVisionRange(visionRange);
+        sceneObject.setVisionInnerRadius(visionInnerRadius);
         sceneObject.setOwnerId(ownerId);
 
         sceneObject.setTransform(new VttSceneTransform(
