@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.platform.render.VRenderContext;
+import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Supplier;
@@ -253,12 +254,14 @@ public final class SelectTool implements Tool {
             Vec2d currentWorldPosition = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
             Vec2d worldDelta = currentWorldPosition.subtract(lastDragWorldPosition);
 
-            Vec2d allowedDelta = movementCollision.clipMovement(
-                    tabletopSceneSupplier.get(),
-                    context.scene(),
-                    context.selectionManager().getSelectedObjectIds(),
-                    worldDelta
-            );
+            boolean bypassCollision = roleSupplier.get() == VttRole.MASTER && isAltDown(modifiers);
+            if (bypassCollision) {
+                VttClientTokenTransformSync.markCollisionBypass(
+                        context.selectionManager().getSelectedObjectIds());
+            }
+            Vec2d allowedDelta = bypassCollision ? worldDelta : movementCollision.clipMovement(
+                    tabletopSceneSupplier.get(), context.scene(),
+                    context.selectionManager().getSelectedObjectIds(), worldDelta);
 
             context.scene().moveObjects(
                     context.selectionManager().getSelectedObjectIds(),
@@ -611,6 +614,10 @@ public final class SelectTool implements Tool {
 
     private static boolean isControlDown(int modifiers) {
         return (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+    }
+
+    private static boolean isAltDown(int modifiers) {
+        return (modifiers & GLFW.GLFW_MOD_ALT) != 0;
     }
 
     private boolean canControl(CanvasObject object) {

@@ -54,6 +54,7 @@ public final class HelpOverlay {
                 " /: Reset vision radii",
                 ";: Toggle selected token vision",
                 "Middle Mouse: Pan",
+                "Alt + drag token: Ignore collision (Master)",
                 "Wheel: Zoom",
                 "",
                 "Selection:",

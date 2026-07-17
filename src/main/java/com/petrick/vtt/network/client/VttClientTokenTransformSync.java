@@ -5,6 +5,7 @@ import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraft.client.gui.screens.Screen;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -12,6 +13,7 @@ import java.util.Map;
 public final class VttClientTokenTransformSync {
     private static final Map<String, TokenState> LAST_SENT = new HashMap<>();
     private static final Map<String, Long> LAST_SENT_AT = new HashMap<>();
+    private static final Map<String, Long> COLLISION_BYPASS_UNTIL = new HashMap<>();
     private static final long SEND_INTERVAL_MS = 100L;
     private static long snapshotVersion = -1L;
 
@@ -33,11 +35,26 @@ public final class VttClientTokenTransformSync {
             if (now - LAST_SENT_AT.getOrDefault(object.id(), 0L) < SEND_INTERVAL_MS) continue;
             LAST_SENT.put(object.id(), current);
             LAST_SENT_AT.put(object.id(), now);
+            boolean bypassCollision = session.isLocalMaster()
+                    && (Screen.hasAltDown() || consumeCollisionBypass(object.id(), now));
             PacketDistributor.sendToServer(new VttTokenTransformRequestPayload(
                     object.id(), current.x(), current.y(), current.rotationDegrees(),
-                    current.flippedHorizontally(), current.activeStateId()
+                    current.flippedHorizontally(), current.activeStateId(), bypassCollision
             ));
         }
+    }
+
+    public static void markCollisionBypass(Iterable<String> objectIds) {
+        if (objectIds == null) return;
+        long until = System.currentTimeMillis() + 1_000L;
+        for (String objectId : objectIds) {
+            if (objectId != null && !objectId.isBlank()) COLLISION_BYPASS_UNTIL.put(objectId, until);
+        }
+    }
+
+    private static boolean consumeCollisionBypass(String objectId, long now) {
+        Long until = COLLISION_BYPASS_UNTIL.remove(objectId);
+        return until != null && until >= now;
     }
 
     public static void acceptConfirmed(VTTSession session, VttTokenTransformUpdatePayload update) {
@@ -57,6 +74,7 @@ public final class VttClientTokenTransformSync {
         snapshotVersion = -1L;
         LAST_SENT.clear();
         LAST_SENT_AT.clear();
+        COLLISION_BYPASS_UNTIL.clear();
     }
 
     private static void capture(VTTSession session) {

@@ -30,18 +30,39 @@ public final class SceneMovementCollision {
         List<Obstacle> obstacles = buildObstacles(tabletopScene);
         if (movingObjects.isEmpty() || obstacles.isEmpty()) return requestedDelta;
 
-        Vec2d direct = clipAlong(movingObjects, obstacles, Vec2d.ZERO, requestedDelta);
+        List<RectShape> movingShapes = movingObjects.stream()
+                .map(object -> tokenShape(object, Vec2d.ZERO)).toList();
+        return clipShapes(movingShapes, obstacles, requestedDelta);
+    }
+
+    /** Server-side variant operating only on persistent scene data. */
+    public Vec2d clipSceneObjectMovement(
+            VttScene tabletopScene, VttSceneObject movingObject, Vec2d requestedDelta
+    ) {
+        if (tabletopScene == null || movingObject == null || requestedDelta == null
+                || requestedDelta.lengthSquared() <= 0.0) {
+            return requestedDelta == null ? Vec2d.ZERO : requestedDelta;
+        }
+        List<Obstacle> obstacles = buildObstacles(tabletopScene);
+        if (obstacles.isEmpty()) return requestedDelta;
+        return clipShapes(List.of(sceneTokenShape(movingObject)), obstacles, requestedDelta);
+    }
+
+    private Vec2d clipShapes(
+            List<RectShape> movingShapes, List<Obstacle> obstacles, Vec2d requestedDelta
+    ) {
+        Vec2d direct = clipAlong(movingShapes, obstacles, Vec2d.ZERO, requestedDelta);
         if (nearlyEqual(direct, requestedDelta)) return requestedDelta;
 
-        Vec2d xMovement = clipAlong(movingObjects, obstacles, Vec2d.ZERO,
+        Vec2d xMovement = clipAlong(movingShapes, obstacles, Vec2d.ZERO,
                 new Vec2d(requestedDelta.x(), 0.0));
-        Vec2d yMovement = clipAlong(movingObjects, obstacles, xMovement,
+        Vec2d yMovement = clipAlong(movingShapes, obstacles, xMovement,
                 new Vec2d(0.0, requestedDelta.y()));
         return xMovement.add(yMovement);
     }
 
     private Vec2d clipAlong(
-            List<CanvasObject> objects, List<Obstacle> obstacles,
+            List<RectShape> shapes, List<Obstacle> obstacles,
             Vec2d baseOffset, Vec2d delta
     ) {
         double length = delta.length();
@@ -50,12 +71,12 @@ public final class SceneMovementCollision {
         double lastSafe = 0.0;
         for (int sample = 1; sample <= samples; sample++) {
             double progress = (double) sample / samples;
-            if (collides(objects, obstacles, baseOffset.add(delta.multiply(progress)))) {
+            if (collides(shapes, obstacles, baseOffset.add(delta.multiply(progress)))) {
                 double low = lastSafe;
                 double high = progress;
                 for (int iteration = 0; iteration < BINARY_SEARCH_STEPS; iteration++) {
                     double middle = (low + high) / 2.0;
-                    if (collides(objects, obstacles, baseOffset.add(delta.multiply(middle)))) high = middle;
+                    if (collides(shapes, obstacles, baseOffset.add(delta.multiply(middle)))) high = middle;
                     else low = middle;
                 }
                 return delta.multiply(low);
@@ -65,9 +86,9 @@ public final class SceneMovementCollision {
         return delta;
     }
 
-    private boolean collides(List<CanvasObject> objects, List<Obstacle> obstacles, Vec2d offset) {
-        for (CanvasObject object : objects) {
-            RectShape token = tokenShape(object, offset);
+    private boolean collides(List<RectShape> shapes, List<Obstacle> obstacles, Vec2d offset) {
+        for (RectShape shape : shapes) {
+            RectShape token = moved(shape, offset);
             for (Obstacle obstacle : obstacles) {
                 if (overlaps(token, obstacle.shape())) return true;
             }
@@ -96,6 +117,17 @@ public final class SceneMovementCollision {
         return shape(object.transform().position().add(offset), object.transform().rotationDegrees(),
                 Math.abs(object.size().x() * object.transform().scale().x()),
                 Math.abs(object.size().y() * object.transform().scale().y()));
+    }
+
+    private RectShape sceneTokenShape(VttSceneObject object) {
+        return shape(position(object.getTransform()), object.getTransform().getRotationDegrees(),
+                Math.abs(object.getSize().getWidth() * object.getTransform().getScaleX()),
+                Math.abs(object.getSize().getHeight() * object.getTransform().getScaleY()));
+    }
+
+    private RectShape moved(RectShape shape, Vec2d offset) {
+        return new RectShape(shape.center().add(offset), shape.axisX(), shape.axisY(),
+                shape.halfWidth(), shape.halfHeight());
     }
 
     private List<Obstacle> buildObstacles(VttScene scene) {

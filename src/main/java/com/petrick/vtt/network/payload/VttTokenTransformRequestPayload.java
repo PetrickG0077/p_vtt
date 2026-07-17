@@ -8,7 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 
 public record VttTokenTransformRequestPayload(
         String objectId, double x, double y, double rotationDegrees,
-        boolean flippedHorizontally, String activeStateId
+        boolean flippedHorizontally, String activeStateId, boolean bypassCollision
 ) implements CustomPacketPayload {
     public static final Type<VttTokenTransformRequestPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "token_transform_request")
@@ -20,7 +20,7 @@ public record VttTokenTransformRequestPayload(
             @Override
             public VttTokenTransformRequestPayload decode(RegistryFriendlyByteBuf buffer) {
                 return new VttTokenTransformRequestPayload(buffer.readUtf(128), buffer.readDouble(), buffer.readDouble(),
-                        buffer.readDouble(), buffer.readBoolean(), buffer.readUtf(128));
+                        buffer.readDouble(), buffer.readBoolean(), buffer.readUtf(128), buffer.readBoolean());
             }
 
             @Override
@@ -31,6 +31,7 @@ public record VttTokenTransformRequestPayload(
                 buffer.writeDouble(payload.rotationDegrees());
                 buffer.writeBoolean(payload.flippedHorizontally());
                 buffer.writeUtf(payload.activeStateId(), 128);
+                buffer.writeBoolean(payload.bypassCollision());
             }
         };
     }

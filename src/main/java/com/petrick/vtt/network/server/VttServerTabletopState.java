@@ -16,6 +16,8 @@ import com.google.gson.reflect.TypeToken;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
+import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
+import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 
@@ -33,6 +35,7 @@ public final class VttServerTabletopState {
     private final VttTabletop tabletop;
     private final VttScene activeScene;
     private final TabletopStorage storage;
+    private final SceneMovementCollision movementCollision = new SceneMovementCollision();
 
     private VttServerTabletopState() {
         TabletopStoragePaths paths = new TabletopStoragePaths(FMLPaths.GAMEDIR.get());
@@ -76,8 +79,20 @@ public final class VttServerTabletopState {
                 .findFirst().orElse(null);
         if (object == null || (!master && !playerId.equals(object.getOwnerId()))) return null;
 
-        object.getTransform().setX(request.x());
-        object.getTransform().setY(request.y());
+        Vec2d currentPosition = new Vec2d(object.getTransform().getX(), object.getTransform().getY());
+        Vec2d requestedDelta = new Vec2d(request.x(), request.y()).subtract(currentPosition);
+        boolean bypassCollision = master && request.bypassCollision();
+        Vec2d allowedDelta;
+        if (!bypassCollision && requestedDelta.lengthSquared() > 4096.0 * 4096.0) {
+            allowedDelta = Vec2d.ZERO;
+        } else {
+            allowedDelta = bypassCollision ? requestedDelta
+                    : movementCollision.clipSceneObjectMovement(activeScene, object, requestedDelta);
+        }
+        boolean movementAccepted = allowedDelta.subtract(requestedDelta).lengthSquared() <= 0.0000001;
+        Vec2d acceptedPosition = currentPosition.add(allowedDelta);
+        object.getTransform().setX(acceptedPosition.x());
+        object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(normalizeRotation(request.rotationDegrees()));
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
@@ -85,7 +100,8 @@ public final class VttServerTabletopState {
 
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
-                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, true);
+                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(),
+                playerId, movementAccepted);
     }
 
     public synchronized VttTokenTransformUpdatePayload currentTokenTransform(String objectId, String playerId) {
