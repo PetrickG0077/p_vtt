@@ -30,6 +30,9 @@ public final class VttSceneObject {
 
     private VttSceneState state = new VttSceneState();
 
+    /** Null in legacy scenes means that the whole visual token is collidable. */
+    private VttSceneCollisionBox collisionBox;
+
     /**
      * Índice explícito da camada.
      * Mesmo que a ordem da lista mude, isso ajuda no save futuro.
@@ -120,6 +123,14 @@ public final class VttSceneObject {
 
     public void setLayerIndex(int layerIndex) {
         this.layerIndex = Math.max(0, layerIndex);
+    }
+
+    public VttSceneCollisionBox getCollisionBox() {
+        return collisionBox;
+    }
+
+    public void setCollisionBox(VttSceneCollisionBox collisionBox) {
+        this.collisionBox = collisionBox;
     }
 
     public double getVisionRange() {

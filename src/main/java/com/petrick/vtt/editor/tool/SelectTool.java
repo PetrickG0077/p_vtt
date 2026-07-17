@@ -5,9 +5,13 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Supplier;
@@ -43,11 +47,22 @@ public final class SelectTool implements Tool {
 
     private static final int SELECTION_BORDER_COLOR = 0xCC3399FF;
 
+    private static final int COLLISION_FILL_COLOR = 0x5533FF66;
+    private static final int COLLISION_BORDER_COLOR = 0xFF33FF66;
+    private static final int COLLISION_HANDLE_FILL_COLOR = 0xFFFFFFFF;
+    private static final int COLLISION_HANDLE_SIZE = 7;
+
     private final Supplier<VttScene> tabletopSceneSupplier;
 
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
     private final Supplier<VttRole> roleSupplier;
     private final Supplier<String> playerIdSupplier;
+    private final Runnable saveAction;
+
+    private String collisionEditingObjectId;
+    private boolean collisionResizing;
+    private SelectionHandle collisionResizingHandle;
+    private Vec2d collisionResizeAnchorWorld;
 
     private boolean selecting;
 
@@ -84,11 +99,13 @@ public final class SelectTool implements Tool {
     public SelectTool(
             Supplier<VttScene> tabletopSceneSupplier,
             Supplier<VttRole> roleSupplier,
-            Supplier<String> playerIdSupplier
+            Supplier<String> playerIdSupplier,
+            Runnable saveAction
     ) {
         this.tabletopSceneSupplier = tabletopSceneSupplier;
         this.roleSupplier = roleSupplier;
         this.playerIdSupplier = playerIdSupplier;
+        this.saveAction = saveAction;
     }
 
     @Override
@@ -98,7 +115,11 @@ public final class SelectTool implements Tool {
 
     @Override
     public EditorCursor getCursor(ToolContext context, double mouseX, double mouseY) {
-        SelectionHandle handle = findHandleAt(context, mouseX, mouseY);
+        HandleHit collisionHit = isEditingCollisionBox()
+                ? findCollisionHandleHitAt(context, mouseX, mouseY) : null;
+        SelectionHandle handle = collisionHit == null
+                ? (isEditingCollisionBox() ? null : findHandleAt(context, mouseX, mouseY))
+                : collisionHit.handle();
 
         if (handle != null) {
             return handle.getCursor();
@@ -121,6 +142,12 @@ public final class SelectTool implements Tool {
 
         Vec2d screenPosition = new Vec2d(mouseX, mouseY);
         Vec2d worldPosition = context.renderState().screenToWorld(screenPosition);
+
+        if (isEditingCollisionBox()) {
+            HandleHit collisionHit = findCollisionHandleHitAt(context, mouseX, mouseY);
+            if (collisionHit != null) beginCollisionResize(context, collisionHit.handle());
+            return true;
+        }
 
         HandleHit handleHit = findHandleHitAt(context, mouseX, mouseY);
 
@@ -182,6 +209,11 @@ public final class SelectTool implements Tool {
             return false;
         }
 
+        if (collisionResizing) {
+            endCollisionResize();
+            return true;
+        }
+
         if (rotating) {
             endRotation();
             return true;
@@ -235,6 +267,11 @@ public final class SelectTool implements Tool {
             return false;
         }
 
+        if (collisionResizing) {
+            resizeCollisionBox(context, mouseX, mouseY);
+            return true;
+        }
+
         if (rotating) {
             rotateObject(context, mouseX, mouseY);
             return true;
@@ -277,6 +314,7 @@ public final class SelectTool implements Tool {
 
     @Override
     public void render(VRenderContext renderContext, ToolContext toolContext) {
+        renderCollisionBox(renderContext, toolContext);
         if (!selecting || selectionStart == null || selectionEnd == null) {
             return;
         }
@@ -616,6 +654,175 @@ public final class SelectTool implements Tool {
         return (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
     }
 
+    public boolean toggleCollisionBoxEditor(ToolContext context) {
+        if (roleSupplier.get() != VttRole.MASTER) return false;
+        if (collisionEditingObjectId != null) {
+            collisionEditingObjectId = null;
+            endCollisionResize();
+            saveAction.run();
+            return true;
+        }
+        if (context.selectionManager().getSelectedObjectIds().size() != 1) return false;
+        String objectId = context.selectionManager().getSelectedObjectIds().iterator().next();
+        CanvasObject canvasObject = context.scene().findObjectById(objectId);
+        VttSceneObject sceneObject = findSceneObject(objectId);
+        if (canvasObject == null || sceneObject == null || !canvasObject.hasSourceTokenDefinition()) return false;
+        if (sceneObject.getCollisionBox() == null) {
+            sceneObject.setCollisionBox(new VttSceneCollisionBox(
+                    0.0, 0.0, canvasObject.size().x(), canvasObject.size().y()));
+            saveAction.run();
+        }
+        collisionEditingObjectId = objectId;
+        return true;
+    }
+
+    public boolean isEditingCollisionBox() {
+        return collisionEditingObjectId != null;
+    }
+
+    public boolean closeCollisionBoxEditor() {
+        if (!isEditingCollisionBox()) return false;
+        collisionEditingObjectId = null;
+        endCollisionResize();
+        saveAction.run();
+        return true;
+    }
+
+    private void beginCollisionResize(ToolContext context, SelectionHandle handle) {
+        CollisionGeometry geometry = collisionGeometry(context);
+        if (geometry == null || handle == SelectionHandle.ROTATION) return;
+        collisionResizing = true;
+        collisionResizingHandle = handle;
+        collisionResizeAnchorWorld = switch (handle) {
+            case TOP_LEFT -> geometry.bottomRight();
+            case TOP_RIGHT -> geometry.bottomLeft();
+            case BOTTOM_LEFT -> geometry.topRight();
+            case BOTTOM_RIGHT -> geometry.topLeft();
+            case ROTATION -> geometry.center();
+        };
+    }
+
+    private void endCollisionResize() {
+        if (collisionResizing) saveAction.run();
+        collisionResizing = false;
+        collisionResizingHandle = null;
+        collisionResizeAnchorWorld = null;
+    }
+
+    private void resizeCollisionBox(ToolContext context, double mouseX, double mouseY) {
+        CanvasObject canvasObject = context.scene().findObjectById(collisionEditingObjectId);
+        VttSceneObject sceneObject = findSceneObject(collisionEditingObjectId);
+        if (canvasObject == null || sceneObject == null || collisionResizeAnchorWorld == null
+                || collisionResizingHandle == null) return;
+
+        double rotation = canvasObject.transform().rotationDegrees();
+        Vec2d mouseWorld = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
+        Vec2d localDelta = rotate(mouseWorld.subtract(collisionResizeAnchorWorld), -rotation);
+        double worldWidth = Math.max(4.0, Math.abs(localDelta.x()));
+        double worldHeight = Math.max(4.0, Math.abs(localDelta.y()));
+        int signX = getHandleSignX(collisionResizingHandle);
+        int signY = getHandleSignY(collisionResizingHandle);
+        Vec2d center = collisionResizeAnchorWorld.add(rotate(
+                new Vec2d(signX * worldWidth / 2.0, signY * worldHeight / 2.0), rotation));
+
+        double scaleX = canvasObject.transform().scale().x();
+        double scaleY = canvasObject.transform().scale().y();
+        if (Math.abs(scaleX) < 0.000001 || Math.abs(scaleY) < 0.000001) return;
+        Vec2d localCenter = rotate(center.subtract(canvasObject.transform().position()), -rotation);
+        VttSceneCollisionBox box = sceneObject.getCollisionBox();
+        box.setOffsetX(localCenter.x() / scaleX);
+        box.setOffsetY(localCenter.y() / scaleY);
+        box.setWidth(worldWidth / Math.abs(scaleX));
+        box.setHeight(worldHeight / Math.abs(scaleY));
+    }
+
+    private void renderCollisionBox(VRenderContext context, ToolContext toolContext) {
+        if (!isEditingCollisionBox()) return;
+        CollisionGeometry geometry = collisionGeometry(toolContext);
+        if (geometry == null) {
+            collisionEditingObjectId = null;
+            endCollisionResize();
+            return;
+        }
+        Vec2d screenCenter = context.renderState().worldToScreen(geometry.center());
+        double zoom = context.renderState().getCamera().getZoom();
+        int left = (int) Math.round(-geometry.width() * zoom / 2.0);
+        int right = (int) Math.round(geometry.width() * zoom / 2.0);
+        int top = (int) Math.round(-geometry.height() * zoom / 2.0);
+        int bottom = (int) Math.round(geometry.height() * zoom / 2.0);
+        PoseStack pose = context.graphics().pose();
+        pose.pushPose();
+        pose.translate(screenCenter.x(), screenCenter.y(), 0.0);
+        pose.mulPose(Axis.ZP.rotationDegrees((float) geometry.rotationDegrees()));
+        context.graphics().fill(left, top, right, bottom, COLLISION_FILL_COLOR);
+        context.graphics().hLine(left, right, top, COLLISION_BORDER_COLOR);
+        context.graphics().hLine(left, right, bottom, COLLISION_BORDER_COLOR);
+        context.graphics().vLine(left, top, bottom, COLLISION_BORDER_COLOR);
+        context.graphics().vLine(right, top, bottom, COLLISION_BORDER_COLOR);
+        pose.popPose();
+        renderCollisionHandle(context, geometry.topLeft());
+        renderCollisionHandle(context, geometry.topRight());
+        renderCollisionHandle(context, geometry.bottomLeft());
+        renderCollisionHandle(context, geometry.bottomRight());
+    }
+
+    private void renderCollisionHandle(VRenderContext context, Vec2d worldPosition) {
+        Vec2d screen = context.renderState().worldToScreen(worldPosition);
+        int x = (int) Math.round(screen.x());
+        int y = (int) Math.round(screen.y());
+        int half = COLLISION_HANDLE_SIZE / 2;
+        context.graphics().fill(x - half, y - half, x + half, y + half,
+                COLLISION_HANDLE_FILL_COLOR);
+        context.graphics().hLine(x - half, x + half, y - half, COLLISION_BORDER_COLOR);
+        context.graphics().hLine(x - half, x + half, y + half, COLLISION_BORDER_COLOR);
+        context.graphics().vLine(x - half, y - half, y + half, COLLISION_BORDER_COLOR);
+        context.graphics().vLine(x + half, y - half, y + half, COLLISION_BORDER_COLOR);
+    }
+
+    private HandleHit findCollisionHandleHitAt(ToolContext context, double mouseX, double mouseY) {
+        CollisionGeometry geometry = collisionGeometry(context);
+        if (geometry == null) return null;
+        Vec2d mouse = new Vec2d(mouseX, mouseY);
+        SelectionHandle[] handles = {SelectionHandle.TOP_LEFT, SelectionHandle.TOP_RIGHT,
+                SelectionHandle.BOTTOM_LEFT, SelectionHandle.BOTTOM_RIGHT};
+        Vec2d[] corners = {geometry.topLeft(), geometry.topRight(),
+                geometry.bottomLeft(), geometry.bottomRight()};
+        for (int index = 0; index < handles.length; index++) {
+            if (isPointInsideHandle(mouse, context.renderState().worldToScreen(corners[index]))) {
+                return new HandleHit(collisionEditingObjectId, handles[index]);
+            }
+        }
+        return null;
+    }
+
+    private CollisionGeometry collisionGeometry(ToolContext context) {
+        CanvasObject canvasObject = context.scene().findObjectById(collisionEditingObjectId);
+        VttSceneObject sceneObject = findSceneObject(collisionEditingObjectId);
+        if (canvasObject == null || sceneObject == null || sceneObject.getCollisionBox() == null) return null;
+        VttSceneCollisionBox box = sceneObject.getCollisionBox();
+        double rotation = canvasObject.transform().rotationDegrees();
+        double scaleX = canvasObject.transform().scale().x();
+        double scaleY = canvasObject.transform().scale().y();
+        Vec2d localOffset = new Vec2d(box.getOffsetX() * scaleX, box.getOffsetY() * scaleY);
+        Vec2d center = canvasObject.transform().position().add(rotate(localOffset, rotation));
+        double width = Math.abs(box.getWidth() * scaleX);
+        double height = Math.abs(box.getHeight() * scaleY);
+        Vec2d topLeft = center.add(rotate(new Vec2d(-width / 2.0, -height / 2.0), rotation));
+        Vec2d topRight = center.add(rotate(new Vec2d(width / 2.0, -height / 2.0), rotation));
+        Vec2d bottomLeft = center.add(rotate(new Vec2d(-width / 2.0, height / 2.0), rotation));
+        Vec2d bottomRight = center.add(rotate(new Vec2d(width / 2.0, height / 2.0), rotation));
+        return new CollisionGeometry(center, width, height, rotation,
+                topLeft, topRight, bottomLeft, bottomRight);
+    }
+
+    private VttSceneObject findSceneObject(String objectId) {
+        VttScene scene = tabletopSceneSupplier.get();
+        if (scene == null || objectId == null) return null;
+        return scene.getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().orElse(null);
+    }
+
     private static boolean isAltDown(int modifiers) {
         return (modifiers & GLFW.GLFW_MOD_ALT) != 0;
     }
@@ -644,4 +851,9 @@ public final class SelectTool implements Tool {
             SelectionHandle handle
     ) {
     }
+
+    private record CollisionGeometry(
+            Vec2d center, double width, double height, double rotationDegrees,
+            Vec2d topLeft, Vec2d topRight, Vec2d bottomLeft, Vec2d bottomRight
+    ) {}
 }

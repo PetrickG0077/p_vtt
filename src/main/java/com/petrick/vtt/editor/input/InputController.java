@@ -230,6 +230,18 @@ public final class InputController {
         toolController.selectSelectTool();
     }
 
+    public boolean toggleCollisionBoxEditor(RenderState renderState) {
+        return toolController.toggleCollisionBoxEditor(createToolContext(renderState));
+    }
+
+    public boolean isEditingCollisionBox() {
+        return toolController.isEditingCollisionBox();
+    }
+
+    public boolean closeCollisionBoxEditor() {
+        return toolController.closeCollisionBoxEditor();
+    }
+
     public void selectWallTool() { toolController.selectWallTool(); }
 
     public void selectDoorTool() { toolController.selectDoorTool(); }

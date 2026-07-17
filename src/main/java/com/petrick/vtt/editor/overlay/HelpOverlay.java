@@ -67,6 +67,7 @@ public final class HelpOverlay {
                 "Handles: Resize",
                 "Shift+Resize: Prop.",
                 "Rotation handle: Rotate",
+                "C: Edit selected token collision box",
                 "Q/E: Rotate",
                 "+/-: Scale",
                 "R: Reset",

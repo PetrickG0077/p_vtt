@@ -17,6 +17,7 @@ import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
@@ -189,7 +190,8 @@ public final class VttServerTabletopState {
                 && object.getTransform().getScaleY() >= 0.01 && object.getTransform().getScaleY() <= 1_000.0
                 && Double.isFinite(object.getSize().getWidth()) && Double.isFinite(object.getSize().getHeight())
                 && object.getSize().getWidth() > 0.0 && object.getSize().getWidth() <= 1_000_000.0
-                && object.getSize().getHeight() > 0.0 && object.getSize().getHeight() <= 1_000_000.0;
+                && object.getSize().getHeight() > 0.0 && object.getSize().getHeight() <= 1_000_000.0
+                && validCollisionBox(object.getCollisionBox(), true);
     }
 
     private String normalizeObjectId(String objectId) {
@@ -248,6 +250,9 @@ public final class VttServerTabletopState {
                             object.setVisionOuterRadius(outer);
                             object.setVisionInnerRadius(Math.min(outer, Math.max(0.0, vision.innerRadius())));
                             object.setVisionEnabled(vision.enabled());
+                            if (validCollisionBox(vision.collisionBox(), false)) {
+                                object.setCollisionBox(vision.collisionBox());
+                            }
                         });
             }
             storage.saveScene(tabletop.getId(), activeScene);
@@ -267,10 +272,21 @@ public final class VttServerTabletopState {
                         .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                                 object.getVisionOuterRadius() > 0.0
                                         ? object.getVisionOuterRadius() : 512.0,
-                                object.isVisionEnabled())).toList()));
+                                object.isVisionEnabled(), object.getCollisionBox())).toList()));
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled) {}
+    private boolean validCollisionBox(VttSceneCollisionBox box, boolean allowNull) {
+        if (box == null) return allowNull;
+        return Double.isFinite(box.getOffsetX()) && Double.isFinite(box.getOffsetY())
+                && Double.isFinite(box.getWidth()) && Double.isFinite(box.getHeight())
+                && Math.abs(box.getOffsetX()) <= 1_000_000.0
+                && Math.abs(box.getOffsetY()) <= 1_000_000.0
+                && box.getWidth() >= 1.0 && box.getWidth() <= 1_000_000.0
+                && box.getHeight() >= 1.0 && box.getHeight() <= 1_000_000.0;
+    }
+
+    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
+                               VttSceneCollisionBox collisionBox) {}
 
     private boolean valid(VttTokenTransformRequestPayload request) {
         return request.objectId() != null && !request.objectId().isBlank()

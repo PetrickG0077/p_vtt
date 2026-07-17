@@ -28,8 +28,8 @@ public final class ClientGameEvents {
     public static void onClientTick(ClientTickEvent.Post event) {
         VTT.getApplication().initialize();
         VttClientTokenLifecycleSync.tick(VTT.getApplication().getActiveSession());
-        VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
         VttClientEnvironmentStateSync.tick(VTT.getApplication().getActiveSession());
+        VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
 
         Minecraft minecraft = Minecraft.getInstance();
 

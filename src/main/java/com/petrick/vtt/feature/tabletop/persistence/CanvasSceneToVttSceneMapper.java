@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -40,6 +41,7 @@ public final class CanvasSceneToVttSceneMapper {
         Map<String, Double> existingVisionInnerRadii = new HashMap<>();
         Map<String, Boolean> existingVisionEnabled = new HashMap<>();
         Map<String, String> existingOwnerIds = new HashMap<>();
+        Map<String, VttSceneCollisionBox> existingCollisionBoxes = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
             if (existingObject != null && existingObject.getId() != null) {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
@@ -47,6 +49,9 @@ public final class CanvasSceneToVttSceneMapper {
                 existingVisionEnabled.put(existingObject.getId(), existingObject.isVisionEnabled());
                 if (existingObject.getOwnerId() != null) {
                     existingOwnerIds.put(existingObject.getId(), existingObject.getOwnerId());
+                }
+                if (existingObject.getCollisionBox() != null) {
+                    existingCollisionBoxes.put(existingObject.getId(), existingObject.getCollisionBox());
                 }
             }
         }
@@ -64,6 +69,17 @@ public final class CanvasSceneToVttSceneMapper {
                     existingVisionEnabled.getOrDefault(canvasObject.id(), true),
                     existingOwnerIds.get(canvasObject.id())
             );
+            VttSceneCollisionBox collisionBox = existingCollisionBoxes.get(canvasObject.id());
+            if (collisionBox == null) {
+                collisionBox = existingCollisionBoxes.entrySet().stream()
+                        .filter(entry -> canvasObject.id().startsWith(entry.getKey() + "_copy"))
+                        .max(Map.Entry.comparingByKey(java.util.Comparator.comparingInt(String::length)))
+                        .map(Map.Entry::getValue).orElse(null);
+            }
+            if (collisionBox != null) {
+                sceneObject.setCollisionBox(new VttSceneCollisionBox(collisionBox.getOffsetX(),
+                        collisionBox.getOffsetY(), collisionBox.getWidth(), collisionBox.getHeight()));
+            }
 
             targetScene.addObject(sceneObject);
 

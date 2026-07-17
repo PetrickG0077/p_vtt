@@ -31,7 +31,7 @@ public final class SceneMovementCollision {
         if (movingObjects.isEmpty() || obstacles.isEmpty()) return requestedDelta;
 
         List<RectShape> movingShapes = movingObjects.stream()
-                .map(object -> tokenShape(object, Vec2d.ZERO)).toList();
+                .map(object -> tokenShape(tabletopScene, object, Vec2d.ZERO)).toList();
         return clipShapes(movingShapes, obstacles, requestedDelta);
     }
 
@@ -113,16 +113,42 @@ public final class SceneMovementCollision {
                 + Math.abs(rectangle.axisY().dot(axis)) * rectangle.halfHeight();
     }
 
-    private RectShape tokenShape(CanvasObject object, Vec2d offset) {
-        return shape(object.transform().position().add(offset), object.transform().rotationDegrees(),
-                Math.abs(object.size().x() * object.transform().scale().x()),
-                Math.abs(object.size().y() * object.transform().scale().y()));
+    private RectShape tokenShape(VttScene scene, CanvasObject object, Vec2d offset) {
+        VttSceneObject sceneObject = findSceneObject(scene, object.id());
+        VttSceneCollisionBox collisionBox = sceneObject == null ? null : sceneObject.getCollisionBox();
+        double baseWidth = collisionBox == null ? object.size().x() : collisionBox.getWidth();
+        double baseHeight = collisionBox == null ? object.size().y() : collisionBox.getHeight();
+        double localOffsetX = collisionBox == null ? 0.0 : collisionBox.getOffsetX();
+        double localOffsetY = collisionBox == null ? 0.0 : collisionBox.getOffsetY();
+        double scaleX = object.transform().scale().x();
+        double scaleY = object.transform().scale().y();
+        Vec2d center = object.transform().position().add(offset).add(rotate(
+                new Vec2d(localOffsetX * scaleX, localOffsetY * scaleY),
+                object.transform().rotationDegrees()));
+        return shape(center, object.transform().rotationDegrees(),
+                Math.abs(baseWidth * scaleX), Math.abs(baseHeight * scaleY));
+    }
+
+    private VttSceneObject findSceneObject(VttScene scene, String objectId) {
+        if (scene == null || objectId == null) return null;
+        return scene.getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().orElse(null);
     }
 
     private RectShape sceneTokenShape(VttSceneObject object) {
-        return shape(position(object.getTransform()), object.getTransform().getRotationDegrees(),
-                Math.abs(object.getSize().getWidth() * object.getTransform().getScaleX()),
-                Math.abs(object.getSize().getHeight() * object.getTransform().getScaleY()));
+        VttSceneCollisionBox collisionBox = object.getCollisionBox();
+        double baseWidth = collisionBox == null ? object.getSize().getWidth() : collisionBox.getWidth();
+        double baseHeight = collisionBox == null ? object.getSize().getHeight() : collisionBox.getHeight();
+        double localOffsetX = collisionBox == null ? 0.0 : collisionBox.getOffsetX();
+        double localOffsetY = collisionBox == null ? 0.0 : collisionBox.getOffsetY();
+        VttSceneTransform transform = object.getTransform();
+        Vec2d scaledOffset = new Vec2d(localOffsetX * transform.getScaleX(),
+                localOffsetY * transform.getScaleY());
+        Vec2d center = position(transform).add(rotate(scaledOffset, transform.getRotationDegrees()));
+        return shape(center, transform.getRotationDegrees(),
+                Math.abs(baseWidth * transform.getScaleX()),
+                Math.abs(baseHeight * transform.getScaleY()));
     }
 
     private RectShape moved(RectShape shape, Vec2d offset) {
@@ -214,6 +240,14 @@ public final class SceneMovementCollision {
     private Vec2d axis(double degrees) {
         double radians = Math.toRadians(degrees);
         return new Vec2d(Math.cos(radians), Math.sin(radians));
+    }
+
+    private Vec2d rotate(Vec2d point, double degrees) {
+        double radians = Math.toRadians(degrees);
+        double cosine = Math.cos(radians);
+        double sine = Math.sin(radians);
+        return new Vec2d(point.x() * cosine - point.y() * sine,
+                point.x() * sine + point.y() * cosine);
     }
 
     private Vec2d position(VttSceneTransform transform) {

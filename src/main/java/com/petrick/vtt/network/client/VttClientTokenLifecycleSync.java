@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
@@ -137,8 +138,25 @@ public final class VttClientTokenLifecycleSync {
         result.setState(new VttSceneState(object.activeStateId(), object.visible(),
                 object.flippedHorizontally()));
         result.setLayerIndex(layerIndex);
-        session.getTokenDefinitionRegistry().findById(object.sourceTokenDefinitionId())
-                .ifPresent(definition -> result.setOwnerId(definition.defaultOwnerId()));
+        VttSceneObject duplicateSource = session.getActiveScene().getObjects().stream()
+                .filter(source -> source != null && source.getId() != null
+                        && object.id().startsWith(source.getId() + "_copy"))
+                .max(java.util.Comparator.comparingInt(source -> source.getId().length()))
+                .orElse(null);
+        if (duplicateSource != null) {
+            result.setOwnerId(duplicateSource.getOwnerId());
+            result.setVisionInnerRadius(duplicateSource.getVisionInnerRadius());
+            result.setVisionOuterRadius(duplicateSource.getVisionOuterRadius());
+            result.setVisionEnabled(duplicateSource.isVisionEnabled());
+            VttSceneCollisionBox sourceBox = duplicateSource.getCollisionBox();
+            if (sourceBox != null) {
+                result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),
+                        sourceBox.getOffsetY(), sourceBox.getWidth(), sourceBox.getHeight()));
+            }
+        } else {
+            session.getTokenDefinitionRegistry().findById(object.sourceTokenDefinitionId())
+                    .ifPresent(definition -> result.setOwnerId(definition.defaultOwnerId()));
+        }
         return result;
     }
 }

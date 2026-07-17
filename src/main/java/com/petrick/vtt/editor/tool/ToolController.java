@@ -27,7 +27,7 @@ public final class ToolController {
     ) {
         this.roleSupplier = roleSupplier;
         this.handTool = new HandTool();
-        this.selectTool = new SelectTool(sceneSupplier, roleSupplier, playerIdSupplier);
+        this.selectTool = new SelectTool(sceneSupplier, roleSupplier, playerIdSupplier, saveAction);
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);
@@ -52,6 +52,7 @@ public final class ToolController {
     }
 
     public void selectHandTool() {
+        selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
@@ -65,19 +66,35 @@ public final class ToolController {
         setActiveTool(selectTool);
     }
 
+    public boolean toggleCollisionBoxEditor(ToolContext context) {
+        if (activeTool != selectTool) selectSelectTool();
+        return selectTool.toggleCollisionBoxEditor(context);
+    }
+
+    public boolean isEditingCollisionBox() {
+        return activeTool == selectTool && selectTool.isEditingCollisionBox();
+    }
+
+    public boolean closeCollisionBoxEditor() {
+        return selectTool.closeCollisionBoxEditor();
+    }
+
     public void selectWallTool() {
+        selectTool.closeCollisionBoxEditor();
         doorTool.deactivate();
         fogTool.deactivate();
         setActiveTool(wallTool);
     }
 
     public void selectDoorTool() {
+        selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         fogTool.deactivate();
         setActiveTool(doorTool);
     }
 
     public void selectFogTool() {
+        selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.activateLocalizedMode();

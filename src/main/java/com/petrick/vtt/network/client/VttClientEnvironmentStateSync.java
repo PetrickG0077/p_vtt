@@ -8,6 +8,7 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -73,6 +74,9 @@ public final class VttClientEnvironmentStateSync {
                                 object.setVisionInnerRadius(vision.innerRadius());
                                 object.setVisionOuterRadius(vision.outerRadius());
                                 object.setVisionEnabled(vision.enabled());
+                                if (validCollisionBox(vision.collisionBox())) {
+                                    object.setCollisionBox(vision.collisionBox());
+                                }
                             });
                 }
             }
@@ -98,8 +102,15 @@ public final class VttClientEnvironmentStateSync {
                 .filter(object -> object != null && object.getId() != null)
                 .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                         object.getVisionOuterRadius() > 0.0 ? object.getVisionOuterRadius() : 512.0,
-                        object.isVisionEnabled())).toList());
+                        object.isVisionEnabled(), object.getCollisionBox())).toList());
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled) {}
+    private static boolean validCollisionBox(VttSceneCollisionBox box) {
+        return box != null && Double.isFinite(box.getOffsetX()) && Double.isFinite(box.getOffsetY())
+                && Double.isFinite(box.getWidth()) && Double.isFinite(box.getHeight())
+                && box.getWidth() >= 1.0 && box.getHeight() >= 1.0;
+    }
+
+    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
+                               VttSceneCollisionBox collisionBox) {}
 }

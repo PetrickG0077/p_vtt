@@ -206,7 +206,7 @@ public final class VTTScreen extends Screen {
 
         renderOpaqueBackground(context);
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
-                isMasterView(), true, session.isLocalMaster(), panelVisibility.isDebugVisible(),
+                isMasterView(), !inputController.isEditingCollisionBox(), session.isLocalMaster(), panelVisibility.isDebugVisible(),
                 session.isLocalMaster() ? null : session.getLocalPlayerId());
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
@@ -1119,7 +1119,8 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_ESCAPE
-                && (inputController.cancelWallDrawing()
+                && (inputController.closeCollisionBoxEditor()
+                || inputController.cancelWallDrawing()
                 || inputController.cancelDoorEditing()
                 || inputController.cancelFogDrawing())) {
             return true;
@@ -1250,6 +1251,12 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_S) {
             inputController.selectSelectTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_C) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            inputController.toggleCollisionBoxEditor(renderState);
             return true;
         }
 
