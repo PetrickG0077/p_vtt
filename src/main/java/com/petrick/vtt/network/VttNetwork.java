@@ -22,7 +22,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "7";
+    private static final String PROTOCOL_VERSION = "8";
 
     private VttNetwork() {
     }

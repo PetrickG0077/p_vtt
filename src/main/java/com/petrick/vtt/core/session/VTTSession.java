@@ -178,12 +178,14 @@ public final class VTTSession {
         if (object == null) return;
 
         Transform2D transform = new Transform2D(
-                new Vec2d(update.x(), update.y()), update.rotationDegrees(), object.transform().scale()
+                new Vec2d(update.x(), update.y()), update.rotationDegrees(),
+                new Vec2d(update.scaleX(), update.scaleY())
         );
         var replacement = object.withTransform(transform)
                 .withFlippedHorizontally(update.flippedHorizontally())
                 .withActiveState(update.activeStateId());
         canvasScene.replaceObject(replacement);
+        canvasScene.moveObjectToLayer(update.objectId(), update.layerIndex());
 
         if (activeScene != null) {
             activeScene.getObjects().stream()
@@ -192,9 +194,16 @@ public final class VTTSession {
                         sceneObject.getTransform().setX(update.x());
                         sceneObject.getTransform().setY(update.y());
                         sceneObject.getTransform().setRotationDegrees(update.rotationDegrees());
+                        sceneObject.getTransform().setScaleX(update.scaleX());
+                        sceneObject.getTransform().setScaleY(update.scaleY());
                         sceneObject.getState().setFlippedHorizontally(update.flippedHorizontally());
                         sceneObject.getState().setActiveStateId(update.activeStateId());
                     });
+            for (var sceneObject : activeScene.getObjects()) {
+                if (sceneObject == null) continue;
+                int layerIndex = canvasScene.getObjectLayerIndex(sceneObject.getId());
+                if (layerIndex >= 0) sceneObject.setLayerIndex(layerIndex);
+            }
         }
     }
 

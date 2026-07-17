@@ -384,6 +384,17 @@ public final class CanvasScene {
         return -1;
     }
 
+    public void moveObjectToLayer(String objectId, int layerIndex) {
+        if (objectId == null || objectId.isBlank() || objects.isEmpty()) return;
+        CanvasObject object = findObjectById(objectId);
+        if (object == null) return;
+        int targetIndex = Math.max(0, Math.min(layerIndex, objects.size() - 1));
+        int currentIndex = getObjectLayerIndex(objectId);
+        if (currentIndex == targetIndex) return;
+        objects.remove(currentIndex);
+        objects.add(targetIndex, object);
+    }
+
     public void syncObjectsFromTokenDefinition(TokenDefinition definition) {
         if (definition == null) {
             return;

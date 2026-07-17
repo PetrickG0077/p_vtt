@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 
 public record VttTokenTransformUpdatePayload(
         String objectId, double x, double y, double rotationDegrees,
+        double scaleX, double scaleY, int layerIndex,
         boolean flippedHorizontally, String activeStateId,
         String originPlayerId, boolean accepted
 ) implements CustomPacketPayload {
@@ -19,7 +20,8 @@ public record VttTokenTransformUpdatePayload(
                 @Override
                 public VttTokenTransformUpdatePayload decode(RegistryFriendlyByteBuf buffer) {
                     return new VttTokenTransformUpdatePayload(buffer.readUtf(128), buffer.readDouble(), buffer.readDouble(),
-                            buffer.readDouble(), buffer.readBoolean(), buffer.readUtf(128), buffer.readUtf(64), buffer.readBoolean());
+                            buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(),
+                            buffer.readBoolean(), buffer.readUtf(128), buffer.readUtf(64), buffer.readBoolean());
                 }
 
                 @Override
@@ -28,6 +30,9 @@ public record VttTokenTransformUpdatePayload(
                     buffer.writeDouble(payload.x());
                     buffer.writeDouble(payload.y());
                     buffer.writeDouble(payload.rotationDegrees());
+                    buffer.writeDouble(payload.scaleX());
+                    buffer.writeDouble(payload.scaleY());
+                    buffer.writeVarInt(payload.layerIndex());
                     buffer.writeBoolean(payload.flippedHorizontally());
                     buffer.writeUtf(payload.activeStateId(), 128);
                     buffer.writeUtf(payload.originPlayerId(), 64);

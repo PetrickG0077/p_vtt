@@ -90,18 +90,28 @@ public final class VttServerTabletopState {
                     : movementCollision.clipSceneObjectMovement(activeScene, object, requestedDelta);
         }
         boolean movementAccepted = allowedDelta.subtract(requestedDelta).lengthSquared() <= 0.0000001;
+        boolean masterFieldsAccepted = master
+                || (nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
+                && nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
+                && request.layerIndex() == currentLayerIndex(object));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(normalizeRotation(request.rotationDegrees()));
+        if (master) {
+            object.getTransform().setScaleX(request.scaleX());
+            object.getTransform().setScaleY(request.scaleY());
+            moveObjectToLayer(object, request.layerIndex());
+        }
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
         storage.saveScene(tabletop.getId(), activeScene);
 
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
+                object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(),
-                playerId, movementAccepted);
+                playerId, movementAccepted && masterFieldsAccepted);
     }
 
     public synchronized VttTokenTransformUpdatePayload currentTokenTransform(String objectId, String playerId) {
@@ -112,6 +122,7 @@ public final class VttServerTabletopState {
         if (object == null) return null;
         return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
+                object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
     }
 
@@ -175,7 +186,34 @@ public final class VttServerTabletopState {
                 && request.activeStateId() != null && !request.activeStateId().isBlank()
                 && Double.isFinite(request.x()) && Double.isFinite(request.y())
                 && Double.isFinite(request.rotationDegrees())
+                && Double.isFinite(request.scaleX()) && Double.isFinite(request.scaleY())
+                && request.scaleX() >= 0.01 && request.scaleX() <= 1_000.0
+                && request.scaleY() >= 0.01 && request.scaleY() <= 1_000.0
+                && request.layerIndex() >= 0 && request.layerIndex() <= 100_000
                 && Math.abs(request.x()) <= 10_000_000.0 && Math.abs(request.y()) <= 10_000_000.0;
+    }
+
+    private int currentLayerIndex(VttSceneObject object) {
+        int index = activeScene.getObjects().indexOf(object);
+        return index >= 0 ? index : object.getLayerIndex();
+    }
+
+    private void moveObjectToLayer(VttSceneObject object, int requestedLayerIndex) {
+        int currentIndex = activeScene.getObjects().indexOf(object);
+        if (currentIndex < 0 || activeScene.getObjects().isEmpty()) return;
+        int targetIndex = Math.max(0, Math.min(requestedLayerIndex, activeScene.getObjects().size() - 1));
+        if (currentIndex != targetIndex) {
+            activeScene.getObjects().remove(currentIndex);
+            activeScene.getObjects().add(targetIndex, object);
+        }
+        for (int index = 0; index < activeScene.getObjects().size(); index++) {
+            VttSceneObject sceneObject = activeScene.getObjects().get(index);
+            if (sceneObject != null) sceneObject.setLayerIndex(index);
+        }
+    }
+
+    private boolean nearlyEqual(double first, double second) {
+        return Math.abs(first - second) <= 0.0000001;
     }
 
     private double normalizeRotation(double degrees) {

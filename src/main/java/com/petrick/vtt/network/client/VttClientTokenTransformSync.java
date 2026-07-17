@@ -29,7 +29,8 @@ public final class VttClientTokenTransformSync {
 
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
             if (!object.hasSourceTokenDefinition()) continue;
-            TokenState current = TokenState.from(object);
+            TokenState current = TokenState.from(object,
+                    session.getCanvasScene().getObjectLayerIndex(object.id()));
             if (current.equals(LAST_SENT.get(object.id()))) continue;
             long now = System.currentTimeMillis();
             if (now - LAST_SENT_AT.getOrDefault(object.id(), 0L) < SEND_INTERVAL_MS) continue;
@@ -39,6 +40,7 @@ public final class VttClientTokenTransformSync {
                     && (Screen.hasAltDown() || consumeCollisionBypass(object.id(), now));
             PacketDistributor.sendToServer(new VttTokenTransformRequestPayload(
                     object.id(), current.x(), current.y(), current.rotationDegrees(),
+                    current.scaleX(), current.scaleY(), current.layerIndex(),
                     current.flippedHorizontally(), current.activeStateId(), bypassCollision
             ));
         }
@@ -65,6 +67,7 @@ public final class VttClientTokenTransformSync {
             return;
         }
         LAST_SENT.put(update.objectId(), new TokenState(update.x(), update.y(), update.rotationDegrees(),
+                update.scaleX(), update.scaleY(), update.layerIndex(),
                 update.flippedHorizontally(), update.activeStateId()));
         LAST_SENT_AT.put(update.objectId(), System.currentTimeMillis());
         session.applyConfirmedTokenTransform(update);
@@ -81,15 +84,19 @@ public final class VttClientTokenTransformSync {
         LAST_SENT.clear();
         LAST_SENT_AT.clear();
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
-            if (object.hasSourceTokenDefinition()) LAST_SENT.put(object.id(), TokenState.from(object));
+            if (object.hasSourceTokenDefinition()) LAST_SENT.put(object.id(), TokenState.from(
+                    object, session.getCanvasScene().getObjectLayerIndex(object.id())));
         }
     }
 
     private record TokenState(double x, double y, double rotationDegrees,
+                              double scaleX, double scaleY, int layerIndex,
                               boolean flippedHorizontally, String activeStateId) {
-        private static TokenState from(CanvasObject object) {
+        private static TokenState from(CanvasObject object, int layerIndex) {
             return new TokenState(object.transform().position().x(), object.transform().position().y(),
-                    object.transform().rotationDegrees(), object.flippedHorizontally(), object.activeStateId());
+                    object.transform().rotationDegrees(), object.transform().scale().x(),
+                    object.transform().scale().y(), layerIndex,
+                    object.flippedHorizontally(), object.activeStateId());
         }
     }
 }
