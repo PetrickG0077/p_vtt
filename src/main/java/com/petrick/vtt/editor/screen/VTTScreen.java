@@ -190,6 +190,7 @@ public final class VTTScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
+        selectionManager.removeMissingObjects(scene);
 
         VRenderContext context = new VRenderContext(
                 graphics,

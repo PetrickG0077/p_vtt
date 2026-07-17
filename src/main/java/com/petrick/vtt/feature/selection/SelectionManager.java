@@ -50,6 +50,14 @@ public final class SelectionManager {
         return Collections.unmodifiableSet(selectedObjectIds);
     }
 
+    public void removeMissingObjects(CanvasScene scene) {
+        if (scene == null) {
+            clearSelection();
+            return;
+        }
+        selectedObjectIds.removeIf(objectId -> scene.findObjectById(objectId) == null);
+    }
+
     public void selectSingleAtPoint(CanvasScene scene, Vec2d worldPosition) {
         clearSelection();
 

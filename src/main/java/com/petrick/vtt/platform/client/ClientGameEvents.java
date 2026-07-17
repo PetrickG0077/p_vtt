@@ -10,6 +10,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.client.VttClientEnvironmentStateSync;
+import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -26,6 +27,7 @@ public final class ClientGameEvents {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         VTT.getApplication().initialize();
+        VttClientTokenLifecycleSync.tick(VTT.getApplication().getActiveSession());
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
         VttClientEnvironmentStateSync.tick(VTT.getApplication().getActiveSession());
 
@@ -41,6 +43,7 @@ public final class ClientGameEvents {
         var session = VTT.getApplication().getActiveSession();
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();
+        VttClientTokenLifecycleSync.reset();
         VttClientEnvironmentStateSync.reset();
         session.restoreLocalSessionAfterDisconnect();
     }

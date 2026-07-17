@@ -60,7 +60,7 @@ public final class VttSceneToCanvasSceneMapper {
         targetCanvasScene.replaceAllObjects(canvasObjects);
     }
 
-    private static CanvasObject convertObject(
+    public static CanvasObject convertObject(
             VttSceneObject sceneObject,
             TokenDefinitionRegistry tokenDefinitionRegistry
     ) {

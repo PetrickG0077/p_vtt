@@ -137,6 +137,11 @@ public final class VttScene {
         objects.add(object);
     }
 
+    public boolean removeObject(String objectId) {
+        if (objectId == null || objectId.isBlank()) return false;
+        return objects.removeIf(object -> object != null && objectId.equals(object.getId()));
+    }
+
     public void clearObjects() {
         objects.clear();
     }

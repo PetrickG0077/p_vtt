@@ -20,6 +20,8 @@ import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
+import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
+import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 
 import java.lang.reflect.Type;
 import java.util.List;
@@ -124,6 +126,95 @@ public final class VttServerTabletopState {
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
+    }
+
+    public synchronized VttTokenLifecycleUpdatePayload applyTokenLifecycle(
+            VttTokenLifecycleRequestPayload request, String playerId, boolean master
+    ) {
+        if (!master || request == null || playerId == null || request.operation() == null
+                || request.objectId() == null || request.objectId().isBlank()) return null;
+        if ("CREATE".equals(request.operation())) return createSceneToken(request, playerId);
+        if ("DELETE".equals(request.operation())) return deleteSceneToken(request.objectId(), playerId);
+        return null;
+    }
+
+    private VttTokenLifecycleUpdatePayload createSceneToken(
+            VttTokenLifecycleRequestPayload request, String playerId
+    ) {
+        if (request.objectJson() == null || request.objectJson().length() > 1_000_000) return null;
+        try {
+            VttSceneObject object = GSON.fromJson(request.objectJson(), VttSceneObject.class);
+            if (!validSceneObject(object)) return null;
+            String requestedId = normalizeObjectId(request.objectId());
+            String authoritativeId = createUniqueObjectId(requestedId);
+            object.setId(authoritativeId);
+            int layerIndex = Math.max(0, Math.min(object.getLayerIndex(), activeScene.getObjects().size()));
+            activeScene.getObjects().add(layerIndex, object);
+            normalizeLayerIndices();
+            storage.saveScene(tabletop.getId(), activeScene);
+            return new VttTokenLifecycleUpdatePayload("CREATE", request.objectId(), authoritativeId,
+                    GSON.toJson(object), playerId);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("Could not decode VTT token creation", exception);
+            return null;
+        }
+    }
+
+    private VttTokenLifecycleUpdatePayload deleteSceneToken(String objectId, String playerId) {
+        VttSceneObject object = activeScene.getObjects().stream()
+                .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (object == null) return null;
+        activeScene.removeObject(objectId);
+        activeScene.removeVisionSourceObjectId(objectId);
+        normalizeLayerIndices();
+        storage.saveScene(tabletop.getId(), activeScene);
+        return new VttTokenLifecycleUpdatePayload("DELETE", objectId, objectId, "", playerId);
+    }
+
+    private boolean validSceneObject(VttSceneObject object) {
+        if (object == null || object.getDisplayName() == null || object.getDisplayName().isBlank()
+                || object.getSourceTokenDefinitionId() == null || object.getSourceTokenDefinitionId().isBlank()
+                || object.getTransform() == null || object.getSize() == null || object.getState() == null
+                || object.getState().getActiveStateId() == null || object.getState().getActiveStateId().isBlank()) {
+            return false;
+        }
+        return Double.isFinite(object.getTransform().getX()) && Double.isFinite(object.getTransform().getY())
+                && Math.abs(object.getTransform().getX()) <= 10_000_000.0
+                && Math.abs(object.getTransform().getY()) <= 10_000_000.0
+                && Double.isFinite(object.getTransform().getRotationDegrees())
+                && Double.isFinite(object.getTransform().getScaleX())
+                && Double.isFinite(object.getTransform().getScaleY())
+                && object.getTransform().getScaleX() >= 0.01 && object.getTransform().getScaleX() <= 1_000.0
+                && object.getTransform().getScaleY() >= 0.01 && object.getTransform().getScaleY() <= 1_000.0
+                && Double.isFinite(object.getSize().getWidth()) && Double.isFinite(object.getSize().getHeight())
+                && object.getSize().getWidth() > 0.0 && object.getSize().getWidth() <= 1_000_000.0
+                && object.getSize().getHeight() > 0.0 && object.getSize().getHeight() <= 1_000_000.0;
+    }
+
+    private String normalizeObjectId(String objectId) {
+        String normalized = objectId.trim().toLowerCase().replaceAll("[^a-z0-9/_-]", "_");
+        return normalized.isBlank() ? "token" : normalized.substring(0, Math.min(96, normalized.length()));
+    }
+
+    private String createUniqueObjectId(String requestedId) {
+        if (activeScene.getObjects().stream().noneMatch(
+                object -> object != null && requestedId.equals(object.getId()))) return requestedId;
+        int suffix = 2;
+        while (suffix < 1_000_000) {
+            String candidate = requestedId + "_" + suffix++;
+            boolean exists = activeScene.getObjects().stream().anyMatch(
+                    object -> object != null && candidate.equals(object.getId()));
+            if (!exists) return candidate;
+        }
+        return requestedId + "_" + System.nanoTime();
+    }
+
+    private void normalizeLayerIndices() {
+        for (int index = 0; index < activeScene.getObjects().size(); index++) {
+            VttSceneObject object = activeScene.getObjects().get(index);
+            if (object != null) object.setLayerIndex(index);
+        }
     }
 
     public synchronized VttEnvironmentStateUpdatePayload applyEnvironmentState(
