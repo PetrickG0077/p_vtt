@@ -7,10 +7,11 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Master request to create a scene or switch the server's active scene. */
+/** Master request to change server-authoritative scene lifecycle or metadata. */
 public record VttSceneCommandPayload(String operation, String value) implements CustomPacketPayload {
     public static final String CREATE = "CREATE";
     public static final String SWITCH = "SWITCH";
+    public static final String SET_BACKGROUND = "SET_BACKGROUND";
 
     public static final Type<VttSceneCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "scene_command"));

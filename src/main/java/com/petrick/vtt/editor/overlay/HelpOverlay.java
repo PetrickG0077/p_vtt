@@ -89,6 +89,7 @@ public final class HelpOverlay {
                 "F5: Assets",
                 "Ctrl+F5: Asset filter",
                 "B: Choose background",
+                "Shift+B: Remove background",
                 "F6: Tokens",
                 "F7: Outliner",
                 "F9: Hide panels",

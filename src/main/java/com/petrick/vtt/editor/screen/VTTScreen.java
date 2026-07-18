@@ -608,7 +608,7 @@ public final class VTTScreen extends Screen {
             boolean doubleClick = clickedItem.id().equals(lastBackgroundImagePickerClickedItemId)
                     && now - lastBackgroundImagePickerClickTime <= 350L;
 
-            if (isSelectableTokenImage(clickedItem) && doubleClick) {
+            if (isSelectableBackgroundImage(clickedItem) && doubleClick) {
                 applySceneBackgroundSelection(clickedItem);
                 closeBackgroundImagePicker();
             } else {
@@ -1208,6 +1208,13 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_B) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+                if (session.setActiveSceneBackground(null)) {
+                    closeBackgroundImagePicker();
+                    VTT.LOGGER.info("[VTT Background] Requested background removal for active scene");
+                }
+                return true;
+            }
             backgroundImagePickerActive = true;
             assetCatalogSelection.clear();
             lastBackgroundImagePickerClickedItemId = null;
@@ -1609,9 +1616,8 @@ public final class VTTScreen extends Screen {
             VTT.LOGGER.warn("[VTT Background] There is no active scene");
             return;
         }
-        session.getActiveScene().setBackgroundAssetId(item.id());
-        session.saveActiveTabletopAndScene();
-        VTT.LOGGER.info("[VTT Background] Background saved for scene {}: {}",
+        if (!session.setActiveSceneBackground(item.id())) return;
+        VTT.LOGGER.info("[VTT Background] Background update requested for scene {}: {}",
                 session.getActiveScene().getId(), item.id());
     }
 
@@ -1918,6 +1924,16 @@ public final class VTTScreen extends Screen {
                     .isPresent();
         }
 
+        return false;
+    }
+
+    private boolean isSelectableBackgroundImage(AssetCatalogItem item) {
+        if (item instanceof AssetCatalogItem.RegisteredAsset registeredAsset) {
+            return registeredAsset.assetRef() instanceof BuiltInTextureAssetRef;
+        }
+        if (item instanceof AssetCatalogItem.LibraryFile libraryFile) {
+            return libraryFile.entry().fileType() == AssetLibraryFileType.IMAGE;
+        }
         return false;
     }
 

@@ -72,7 +72,19 @@ public final class VttServerAssetSyncService {
                 VTT.LOGGER.error("Failed to scan server VTT token definitions", exception);
             }
         }
+        if (includeAllTokens) addAllLibraryFiles(assetsRoot, result, totalBytes);
         return new ArrayList<>(result.values());
+    }
+
+    private static void addAllLibraryFiles(Path assetsRoot, Map<String, SyncFile> result,
+                                           long[] totalBytes) {
+        if (!Files.isDirectory(assetsRoot)) return;
+        try (Stream<Path> stream = Files.walk(assetsRoot)) {
+            stream.filter(Files::isRegularFile).sorted()
+                    .forEach(path -> addFile("assets", assetsRoot, path, result, totalBytes));
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to scan full VTT asset library for master sync", exception);
+        }
     }
 
     private static void collectToken(Path jsonFile, Set<String> ids, boolean includeAllTokens,

@@ -23,6 +23,7 @@ public final class VttServerSceneCommandHandler {
         boolean changed = switch (request.operation()) {
             case VttSceneCommandPayload.CREATE -> state.createAndActivateScene(request.value());
             case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.value());
+            case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
             default -> false;
         };
         if (!changed) {

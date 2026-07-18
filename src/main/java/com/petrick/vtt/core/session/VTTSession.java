@@ -291,6 +291,18 @@ public final class VTTSession {
         return true;
     }
 
+    public boolean setActiveSceneBackground(String assetId) {
+        if (activeScene == null || !isLocalMaster()) return false;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    VttSceneCommandPayload.SET_BACKGROUND, assetId == null ? "" : assetId));
+            return true;
+        }
+        activeScene.setBackgroundAssetId(assetId);
+        saveActiveTabletopAndScene();
+        return true;
+    }
+
     public void saveActiveTabletopAndScene() {
         if (networkAuthorityActive) return;
         tabletopStorage.saveTabletop(activeTabletop);

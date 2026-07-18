@@ -18,6 +18,7 @@ import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
@@ -25,7 +26,10 @@ import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 public final class VttServerTabletopState {
 
@@ -99,6 +103,38 @@ public final class VttServerTabletopState {
         activeScene = created;
         storage.saveTabletop(tabletop);
         return true;
+    }
+
+    public synchronized boolean setActiveSceneBackground(String assetId) {
+        if (activeScene == null || assetId == null || assetId.length() > 512) return false;
+        if (assetId.isBlank()) {
+            activeScene.setBackgroundAssetId(null);
+            storage.saveScene(tabletop.getId(), activeScene);
+            return true;
+        }
+        String validatedId = validateBackgroundAssetId(assetId.trim());
+        if (validatedId == null) return false;
+        activeScene.setBackgroundAssetId(validatedId);
+        storage.saveScene(tabletop.getId(), activeScene);
+        return true;
+    }
+
+    private String validateBackgroundAssetId(String assetId) {
+        if (assetId.startsWith("registered:")) {
+            String builtInId = assetId.substring("registered:".length());
+            return DebugAssets.TEST_TOKEN_ID.equals(builtInId) ? assetId : null;
+        }
+        if (!assetId.startsWith("library:")) return null;
+        String relative = assetId.substring("library:".length()).replace('\\', '/');
+        if (relative.isBlank() || relative.startsWith("/") || relative.contains("../")) return null;
+        Path root = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets/assets")
+                .toAbsolutePath().normalize();
+        Path file = root.resolve(relative).toAbsolutePath().normalize();
+        if (!file.startsWith(root) || !Files.isRegularFile(file)) return null;
+        String lowerName = file.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (!(lowerName.endsWith(".png") || lowerName.endsWith(".jpg")
+                || lowerName.endsWith(".jpeg") || lowerName.endsWith(".webp"))) return null;
+        return "library:" + root.relativize(file).toString().replace('\\', '/');
     }
 
     public synchronized void updateTokenDefinitionOwnership(String definitionId, String ownerId) {
