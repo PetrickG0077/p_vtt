@@ -27,6 +27,8 @@ import java.nio.file.Path;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
+import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Representa uma sessão ativa do VTT.
@@ -225,8 +227,12 @@ public final class VTTSession {
 
     public boolean switchToScene(String sceneId) {
         if (networkAuthorityActive) {
-            VTT.LOGGER.warn("Scene switching is not network-authoritative yet");
-            return false;
+            if (!isLocalMaster() || activeTabletop == null || sceneId == null || sceneId.isBlank()
+                    || !activeTabletop.getSceneIds().contains(sceneId)) return false;
+            if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    VttSceneCommandPayload.SWITCH, sceneId));
+            return true;
         }
         if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
         if (!activeTabletop.getSceneIds().contains(sceneId)) {
@@ -274,6 +280,15 @@ public final class VTTSession {
         loadActiveSceneToCanvasScene();
         VTT.LOGGER.info("Created and activated VTT scene: {}", sceneId);
         return createdScene;
+    }
+
+    public boolean requestCreateScene(String displayName) {
+        if (!networkAuthorityActive) return createScene(displayName) != null;
+        if (!isLocalMaster() || displayName == null || displayName.isBlank()
+                || displayName.length() > 48) return false;
+        PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                VttSceneCommandPayload.CREATE, displayName.trim()));
+        return true;
     }
 
     public void saveActiveTabletopAndScene() {

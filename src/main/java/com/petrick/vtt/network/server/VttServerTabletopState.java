@@ -36,7 +36,7 @@ public final class VttServerTabletopState {
     private static VttServerTabletopState instance;
 
     private final VttTabletop tabletop;
-    private final VttScene activeScene;
+    private VttScene activeScene;
     private final TabletopStorage storage;
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
 
@@ -63,6 +63,42 @@ public final class VttServerTabletopState {
 
     public VttScene activeScene() {
         return activeScene;
+    }
+
+    public synchronized boolean switchToScene(String sceneId) {
+        if (sceneId == null || sceneId.isBlank()) return false;
+        if (sceneId.equals(tabletop.getActiveSceneId())) return true;
+        if (!tabletop.getSceneIds().contains(sceneId)) return false;
+        VttScene target = storage.loadScene(tabletop.getId(), sceneId);
+        if (target == null) return false;
+        storage.saveScene(tabletop.getId(), activeScene);
+        activeScene = target;
+        tabletop.setActiveSceneId(sceneId);
+        storage.saveTabletop(tabletop);
+        return true;
+    }
+
+    public synchronized boolean createAndActivateScene(String displayName) {
+        if (displayName == null || displayName.isBlank() || displayName.length() > 48
+                || tabletop.getSceneIds().size() >= 1_000) return false;
+        String trimmedName = displayName.trim();
+        String baseId = trimmedName.toLowerCase()
+                .replaceAll("[^a-z0-9_-]", "_").replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (baseId.isBlank()) baseId = "new_scene";
+        if (baseId.length() > 64) baseId = baseId.substring(0, 64);
+        String sceneId = baseId;
+        int suffix = 2;
+        while (tabletop.getSceneIds().contains(sceneId)) sceneId = baseId + "_" + suffix++;
+
+        storage.saveScene(tabletop.getId(), activeScene);
+        VttScene created = new VttScene(sceneId, trimmedName);
+        storage.saveScene(tabletop.getId(), created);
+        tabletop.addSceneId(sceneId);
+        tabletop.setActiveSceneId(sceneId);
+        activeScene = created;
+        storage.saveTabletop(tabletop);
+        return true;
     }
 
     public synchronized void updateTokenDefinitionOwnership(String definitionId, String ownerId) {

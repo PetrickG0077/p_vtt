@@ -17,6 +17,8 @@ import com.petrick.vtt.network.server.VttServerEnvironmentStateHandler;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.server.VttServerTokenLifecycleHandler;
+import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.server.VttServerSceneCommandHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -25,7 +27,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "10";
+    private static final String PROTOCOL_VERSION = "11";
 
     private VttNetwork() {
     }
@@ -64,5 +66,7 @@ public final class VttNetwork {
                 VttServerTokenLifecycleHandler::handle);
         registrar.playToClient(VttTokenLifecycleUpdatePayload.TYPE, VttTokenLifecycleUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleTokenLifecycleUpdate);
+        registrar.playToServer(VttSceneCommandPayload.TYPE, VttSceneCommandPayload.STREAM_CODEC,
+                VttServerSceneCommandHandler::handle);
     }
 }

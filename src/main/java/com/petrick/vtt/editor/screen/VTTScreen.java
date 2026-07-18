@@ -141,6 +141,8 @@ public final class VTTScreen extends Screen {
 
     private boolean playerViewPreview;
 
+    private String observedActiveSceneId;
+
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
 
@@ -177,6 +179,8 @@ public final class VTTScreen extends Screen {
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.sceneListOverlay = new SceneListOverlay();
         this.tokenCreationDialog = new TokenCreationDialog();
+        this.observedActiveSceneId = session.getActiveScene() == null
+                ? null : session.getActiveScene().getId();
     }
 
     @Override
@@ -190,6 +194,7 @@ public final class VTTScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
+        handleActiveSceneChange();
         selectionManager.removeMissingObjects(scene);
 
         VRenderContext context = new VRenderContext(
@@ -1862,11 +1867,28 @@ public final class VTTScreen extends Screen {
 
     private void confirmNewScene() {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
-        if (session.createScene(newSceneNameBuffer) != null) {
+        if (session.requestCreateScene(newSceneNameBuffer)) {
             selectionManager.clearSelection();
             inputController.selectHandTool();
             newSceneNameBuffer = null;
         }
+    }
+
+    private void handleActiveSceneChange() {
+        String activeSceneId = session.getActiveScene() == null
+                ? null : session.getActiveScene().getId();
+        if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
+        observedActiveSceneId = activeSceneId;
+        selectionManager.clearSelection();
+        inputController.selectHandTool();
+        tokenCatalogContextMenu.close();
+        renamingObjectId = null;
+        renameBuffer = null;
+        newSceneNameBuffer = null;
+        tokenCreationDraft = null;
+        backgroundImagePickerActive = false;
+        tokenImagePickerActive = false;
+        VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);
     }
 
     private void renderNewSceneDialog(VRenderContext context) {
