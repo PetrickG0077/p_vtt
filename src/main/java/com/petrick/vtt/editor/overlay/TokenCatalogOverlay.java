@@ -84,7 +84,8 @@ public final class TokenCatalogOverlay {
             VRenderContext context,
             Font font,
             TokenDefinitionRegistry tokenDefinitionRegistry,
-            TokenCatalogSelection selection
+            TokenCatalogSelection selection,
+            int scrollOffset
     ) {
         List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
 
@@ -92,7 +93,8 @@ public final class TokenCatalogOverlay {
                 tokenDefinitionRegistry,
                 context.screenHeight(),
                 context.mouseX(),
-                context.mouseY()
+                context.mouseY(),
+                scrollOffset
         );
 
         TokenDefinition detailsDefinition = resolveDetailsDefinition(hoveredDefinition);
@@ -138,10 +140,11 @@ public final class TokenCatalogOverlay {
             return;
         }
 
-        int visibleDefinitions = Math.min(definitions.size(), MAX_VISIBLE_TOKENS);
+        int firstDefinition = clampScrollOffset(definitions.size(), scrollOffset);
+        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, definitions.size() - firstDefinition);
 
         for (int i = 0; i < visibleDefinitions; i++) {
-            TokenDefinition definition = definitions.get(i);
+            TokenDefinition definition = definitions.get(firstDefinition + i);
 
             boolean hovered = hoveredDefinition
                     .map(tokenDefinition -> tokenDefinition.id().equals(definition.id()))
@@ -163,15 +166,26 @@ public final class TokenCatalogOverlay {
         }
 
         if (definitions.size() > MAX_VISIBLE_TOKENS) {
-            int remaining = definitions.size() - MAX_VISIBLE_TOKENS;
-
             drawLine(
                     context,
                     font,
-                    "... +" + remaining + " more",
+                    (firstDefinition + 1) + "-"
+                            + (firstDefinition + visibleDefinitions) + " / " + definitions.size(),
                     textX,
                     textY,
                     MUTED_TEXT_COLOR
+            );
+
+            EditorScrollbar.render(
+                    context,
+                    x + PANEL_WIDTH - PADDING - 4,
+                    getFirstTokenY(y),
+                    4,
+                    MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT,
+                    definitions.size(),
+                    MAX_VISIBLE_TOKENS,
+                    firstDefinition,
+                    PANEL_BORDER
             );
         }
 
@@ -430,13 +444,15 @@ public final class TokenCatalogOverlay {
             TokenDefinitionRegistry tokenDefinitionRegistry,
             int screenHeight,
             double mouseX,
-            double mouseY
+            double mouseY,
+            int scrollOffset
     ) {
         return findTokenDefinitionAt(
                 tokenDefinitionRegistry,
                 screenHeight,
                 mouseX,
-                mouseY
+                mouseY,
+                scrollOffset
         ).orElse(null);
     }
 
@@ -444,7 +460,8 @@ public final class TokenCatalogOverlay {
             TokenDefinitionRegistry tokenDefinitionRegistry,
             int screenHeight,
             double mouseX,
-            double mouseY
+            double mouseY,
+            int scrollOffset
     ) {
         List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
 
@@ -465,20 +482,51 @@ public final class TokenCatalogOverlay {
             return Optional.empty();
         }
 
-        int firstTokenY = panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+        int firstTokenY = getFirstTokenY(panelY);
 
-        int visibleDefinitions = Math.min(definitions.size(), MAX_VISIBLE_TOKENS);
+        int firstDefinition = clampScrollOffset(definitions.size(), scrollOffset);
+        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, definitions.size() - firstDefinition);
 
         for (int i = 0; i < visibleDefinitions; i++) {
             int rowTop = firstTokenY + i * TOKEN_ROW_HEIGHT;
             int rowBottom = rowTop + TOKEN_ROW_HEIGHT;
 
             if (mouseY >= rowTop && mouseY <= rowBottom) {
-                return Optional.of(definitions.get(i));
+                return Optional.of(definitions.get(firstDefinition + i));
             }
         }
 
         return Optional.empty();
+    }
+
+    public boolean isScrollbarAt(TokenDefinitionRegistry registry, int screenHeight,
+                                 double mouseX, double mouseY) {
+        int tokenCount = registry == null ? 0 : registry.size();
+        if (tokenCount <= MAX_VISIBLE_TOKENS) return false;
+        int panelY = getPanelY(screenHeight, calculatePanelHeight(tokenCount));
+        return EditorScrollbar.contains(mouseX, mouseY,
+                PANEL_X + PANEL_WIDTH - PADDING - 7, getFirstTokenY(panelY),
+                10, MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT);
+    }
+
+    public int scrollOffsetFromMouse(TokenDefinitionRegistry registry, int screenHeight,
+                                     double mouseY) {
+        int tokenCount = registry == null ? 0 : registry.size();
+        int panelY = getPanelY(screenHeight, calculatePanelHeight(tokenCount));
+        return EditorScrollbar.offsetForMouse(mouseY, getFirstTokenY(panelY),
+                MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT, tokenCount, MAX_VISIBLE_TOKENS);
+    }
+
+    public int clampScrollOffset(TokenDefinitionRegistry registry, int offset) {
+        return clampScrollOffset(registry == null ? 0 : registry.size(), offset);
+    }
+
+    private int clampScrollOffset(int tokenCount, int offset) {
+        return EditorScrollbar.clampOffset(offset, tokenCount, MAX_VISIBLE_TOKENS);
+    }
+
+    private int getFirstTokenY(int panelY) {
+        return panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
     }
 
     private void renderTokenDetailsPopup(

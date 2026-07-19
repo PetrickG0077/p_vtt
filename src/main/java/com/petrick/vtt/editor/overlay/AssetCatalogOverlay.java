@@ -221,6 +221,20 @@ public final class AssetCatalogOverlay {
                 y + PANEL_HEIGHT - PADDING - LINE_HEIGHT
         );
 
+        if (rows.size() > maxVisibleRows) {
+            EditorScrollbar.render(
+                    context,
+                    getScrollbarX(),
+                    getFirstRowY(y),
+                    4,
+                    maxVisibleRows * ROW_HEIGHT,
+                    rows.size(),
+                    maxVisibleRows,
+                    firstVisibleIndex,
+                    PANEL_BORDER
+            );
+        }
+
         if (detailsItem != null) {
             int popupX;
             int popupY;
@@ -669,6 +683,48 @@ public final class AssetCatalogOverlay {
         int maxScrollOffset = Math.max(0, rowCount - maxVisibleRows);
 
         return Math.max(0, Math.min(scrollOffset, maxScrollOffset));
+    }
+
+    public boolean isScrollbarAt(
+            AssetRegistry assetRegistry,
+            AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
+            String searchQuery,
+            int screenHeight,
+            double mouseX,
+            double mouseY
+    ) {
+        int rowCount = getVisibleRows(assetRegistry, libraryScanResult, filter, treeState, searchQuery).size();
+        int visibleRows = calculateMaxVisibleRows();
+        if (rowCount <= visibleRows) return false;
+        return EditorScrollbar.contains(mouseX, mouseY, getScrollbarX() - 3,
+                getFirstRowY(getPanelY(screenHeight, PANEL_HEIGHT)), 10,
+                visibleRows * ROW_HEIGHT);
+    }
+
+    public int scrollOffsetFromMouse(
+            AssetRegistry assetRegistry,
+            AssetLibraryScanResult libraryScanResult,
+            AssetCatalogFilter filter,
+            AssetCatalogTreeState treeState,
+            String searchQuery,
+            int screenHeight,
+            double mouseY
+    ) {
+        int rowCount = getVisibleRows(assetRegistry, libraryScanResult, filter, treeState, searchQuery).size();
+        int visibleRows = calculateMaxVisibleRows();
+        return EditorScrollbar.offsetForMouse(mouseY,
+                getFirstRowY(getPanelY(screenHeight, PANEL_HEIGHT)), visibleRows * ROW_HEIGHT,
+                rowCount, visibleRows);
+    }
+
+    private int getFirstRowY(int panelY) {
+        return panelY + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+    }
+
+    private int getScrollbarX() {
+        return getPanelX() + PANEL_WIDTH - PADDING - 4;
     }
 
     private List<AssetCatalogVisibleRow> getVisibleRows(

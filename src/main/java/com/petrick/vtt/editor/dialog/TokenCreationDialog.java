@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.dialog;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.TokenStateDraft;
 import com.petrick.vtt.editor.token.VttPlayerOption;
+import com.petrick.vtt.editor.overlay.EditorScrollbar;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
@@ -96,6 +97,7 @@ public final class TokenCreationDialog {
     private String stateNameEditBuffer = "";
 
     private int stateListScrollOffset = 0;
+    private boolean draggingStateScrollbar;
     private String playerSearch = "";
     private static final int PLAYER_ROW_HEIGHT = 18;
     private static final int MAX_VISIBLE_PLAYERS = 5;
@@ -203,6 +205,13 @@ public final class TokenCreationDialog {
         }
 
         if (!containsPoint(screenWidth, screenHeight, mouseX, mouseY)) {
+            return Action.NONE;
+        }
+
+        if (isStateScrollbarAt(screenWidth, screenHeight, draft, mouseX, mouseY)) {
+            draggingStateScrollbar = true;
+            updateStateScrollFromMouse(screenWidth, screenHeight, draft, mouseY);
+            activeField = Field.NONE;
             return Action.NONE;
         }
 
@@ -459,6 +468,36 @@ public final class TokenCreationDialog {
         clampStateListScrollOffset(draft);
 
         return true;
+    }
+
+    public boolean mouseDragged(TokenCreationDraft draft, double mouseY,
+                                int screenWidth, int screenHeight) {
+        if (!draggingStateScrollbar || draft == null) return false;
+        updateStateScrollFromMouse(screenWidth, screenHeight, draft, mouseY);
+        return true;
+    }
+
+    public boolean mouseReleased() {
+        boolean wasDragging = draggingStateScrollbar;
+        draggingStateScrollbar = false;
+        return wasDragging;
+    }
+
+    private boolean isStateScrollbarAt(int screenWidth, int screenHeight,
+                                       TokenCreationDraft draft, double mouseX, double mouseY) {
+        if (draft.getStates().size() <= MAX_VISIBLE_STATES) return false;
+        int panelX = getDialogX(screenWidth) + STATE_PANEL_X_OFFSET;
+        int panelY = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+        return EditorScrollbar.contains(mouseX, mouseY,
+                panelX + STATE_PANEL_WIDTH - 15, panelY + 25,
+                9, STATE_ROW_HEIGHT * MAX_VISIBLE_STATES);
+    }
+
+    private void updateStateScrollFromMouse(int screenWidth, int screenHeight,
+                                            TokenCreationDraft draft, double mouseY) {
+        int panelY = getDialogY(screenHeight) + STATE_PANEL_Y_OFFSET;
+        stateListScrollOffset = EditorScrollbar.offsetForMouse(mouseY, panelY + 25,
+                STATE_ROW_HEIGHT * MAX_VISIBLE_STATES, draft.getStates().size(), MAX_VISIBLE_STATES);
     }
 
     private void confirmStateNameEdit(TokenCreationDraft draft) {
@@ -889,8 +928,6 @@ public final class TokenCreationDialog {
             int panelY,
             int stateCount
     ) {
-        int maxOffset = Math.max(0, stateCount - MAX_VISIBLE_STATES);
-
         String text = (stateListScrollOffset + 1)
                 + "-"
                 + Math.min(stateListScrollOffset + MAX_VISIBLE_STATES, stateCount)
@@ -910,32 +947,8 @@ public final class TokenCreationDialog {
         int barY = panelY + 25;
         int barHeight = STATE_ROW_HEIGHT * MAX_VISIBLE_STATES;
 
-        context.graphics().fill(
-                barX,
-                barY,
-                barX + 3,
-                barY + barHeight,
-                0x55333333
-        );
-
-        if (maxOffset <= 0) {
-            return;
-        }
-
-        int thumbHeight = Math.max(6, barHeight / stateCount);
-        int thumbTravel = barHeight - thumbHeight;
-
-        int thumbY = barY + (int) Math.round(
-                thumbTravel * (stateListScrollOffset / (double) maxOffset)
-        );
-
-        context.graphics().fill(
-                barX,
-                thumbY,
-                barX + 3,
-                thumbY + thumbHeight,
-                PANEL_BORDER
-        );
+        EditorScrollbar.render(context, barX, barY, 3, barHeight,
+                stateCount, MAX_VISIBLE_STATES, stateListScrollOffset, PANEL_BORDER);
     }
 
     private void renderStateRow(

@@ -261,7 +261,8 @@ public final class VTTScreen extends Screen {
                     context,
                     this.font,
                     tokenDefinitionRegistry,
-                    tokenCatalogSelection
+                    tokenCatalogSelection,
+                    tokenCatalogController.getScrollOffset()
             );
         }
 
@@ -520,7 +521,8 @@ public final class VTTScreen extends Screen {
                     tokenDefinitionRegistry,
                     this.height,
                     mouseX,
-                    mouseY
+                    mouseY,
+                    tokenCatalogController.getScrollOffset()
             );
 
             if (clickedToken != null) {
@@ -579,6 +581,9 @@ public final class VTTScreen extends Screen {
             }
 
             if (panelVisibility.isSceneOutlinerVisible()) {
+                if (sceneOutlinerOverlay.mouseClickedScrollbar(scene, mouseX, mouseY)) {
+                    return true;
+                }
                 var clickedObjectId = sceneOutlinerOverlay.findObjectIdAt(
                         scene,
                         mouseX,
@@ -630,6 +635,14 @@ public final class VTTScreen extends Screen {
 
     private boolean handleBackgroundImagePickerMouseClicked(double mouseX, double mouseY, int button) {
         if (!backgroundImagePickerActive) return false;
+
+        if (assetCatalogOverlay.isScrollbarAt(assetRegistry, session.getAssetLibraryScanResult(),
+                assetCatalogController.getFilter(), assetCatalogController.getTreeState(),
+                assetCatalogController.getSearchQuery(), this.height, mouseX, mouseY)) {
+            assetCatalogController.mouseClicked(assetCatalogOverlay, assetRegistry,
+                    session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY);
+            return true;
+        }
 
         Optional<AssetCatalogVisibleRow> clickedRow = assetCatalogOverlay.findRowAt(
                 assetRegistry, session.getAssetLibraryScanResult(), assetCatalogController.getFilter(),
@@ -864,6 +877,14 @@ public final class VTTScreen extends Screen {
         }
 
         if (tokenImagePickerActive) {
+            if (assetCatalogOverlay.isScrollbarAt(assetRegistry, session.getAssetLibraryScanResult(),
+                    assetCatalogController.getFilter(), assetCatalogController.getTreeState(),
+                    assetCatalogController.getSearchQuery(), this.height, mouseX, mouseY)) {
+                assetCatalogController.mouseClicked(assetCatalogOverlay, assetRegistry,
+                        session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY);
+                return true;
+            }
+
             Optional<AssetCatalogVisibleRow> clickedRow = assetCatalogOverlay.findRowAt(
                     assetRegistry,
                     session.getAssetLibraryScanResult(),
@@ -950,6 +971,10 @@ public final class VTTScreen extends Screen {
             return renderState == null || inputController.mouseReleased(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
+        if (assetCatalogController.mouseReleased()) return true;
+        if (tokenCreationDialog.mouseReleased()) return true;
+        if (tokenCatalogController.releaseScrollbar()) return true;
+        if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
         if (backgroundImagePickerActive) {
             return true;
         }
@@ -998,6 +1023,14 @@ public final class VTTScreen extends Screen {
             return renderState == null || inputController.mouseDragged(
                     mouseX, mouseY, button, dragX, dragY, getKeyboardModifiers(), renderState);
         }
+        if (assetCatalogController.mouseDragged(assetCatalogOverlay, assetRegistry,
+                session.getAssetLibraryScanResult(), this.height, mouseY)) return true;
+        if (tokenCreationDialog.mouseDragged(tokenCreationDraft, mouseY, this.width, this.height)) {
+            return true;
+        }
+        if (tokenCatalogController.mouseDragged(tokenCatalogOverlay, tokenDefinitionRegistry,
+                this.height, mouseY)) return true;
+        if (sceneOutlinerOverlay.mouseDraggedScrollbar(scene, mouseY)) return true;
         if (backgroundImagePickerActive) {
             return true;
         }
@@ -1071,6 +1104,17 @@ public final class VTTScreen extends Screen {
                 return true;
             }
 
+            return true;
+        }
+
+        if (tokenCatalogController.mouseScrolled(tokenCatalogOverlay, tokenDefinitionRegistry,
+                panelVisibility.isTokenCatalogVisible(), this.height,
+                mouseX, mouseY, scrollY)) {
+            return true;
+        }
+
+        if (panelVisibility.isSceneOutlinerVisible()
+                && sceneOutlinerOverlay.mouseScrolled(scene, mouseX, mouseY, scrollY)) {
             return true;
         }
 

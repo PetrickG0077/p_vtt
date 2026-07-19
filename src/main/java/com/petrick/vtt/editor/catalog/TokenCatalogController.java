@@ -40,6 +40,10 @@ public final class TokenCatalogController {
 
     private String lastClickDefinitionId;
 
+    private int scrollOffset;
+
+    private boolean draggingScrollbar;
+
     public TokenCatalogController(TokenCatalogSelection selection) {
         if (selection == null) {
             throw new IllegalArgumentException("TokenCatalogSelection cannot be null");
@@ -59,14 +63,24 @@ public final class TokenCatalogController {
         if (!catalogVisible) {
             selection.clear();
             clearDrag();
+            draggingScrollbar = false;
             return TokenCatalogClickResult.none();
+        }
+
+        scrollOffset = overlay.clampScrollOffset(registry, scrollOffset);
+        if (overlay.isScrollbarAt(registry, screenHeight, mouseX, mouseY)) {
+            draggingScrollbar = true;
+            scrollOffset = overlay.scrollOffsetFromMouse(registry, screenHeight, mouseY);
+            clearDrag();
+            return TokenCatalogClickResult.consumeClick();
         }
 
         Optional<TokenDefinition> clickedDefinition = overlay.findTokenDefinitionAt(
                 registry,
                 screenHeight,
                 mouseX,
-                mouseY
+                mouseY,
+                scrollOffset
         );
 
         if (clickedDefinition.isEmpty()) {
@@ -111,6 +125,34 @@ public final class TokenCatalogController {
         }
 
         return definition;
+    }
+
+    public boolean mouseScrolled(TokenCatalogOverlay overlay, TokenDefinitionRegistry registry,
+                                 boolean catalogVisible, int screenHeight,
+                                 double mouseX, double mouseY, double scrollY) {
+        if (!catalogVisible || !overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+            return false;
+        }
+        scrollOffset = overlay.clampScrollOffset(registry,
+                scrollOffset + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0));
+        return true;
+    }
+
+    public boolean mouseDragged(TokenCatalogOverlay overlay, TokenDefinitionRegistry registry,
+                                int screenHeight, double mouseY) {
+        if (!draggingScrollbar) return false;
+        scrollOffset = overlay.scrollOffsetFromMouse(registry, screenHeight, mouseY);
+        return true;
+    }
+
+    public boolean releaseScrollbar() {
+        boolean wasDragging = draggingScrollbar;
+        draggingScrollbar = false;
+        return wasDragging;
+    }
+
+    public int getScrollOffset() {
+        return scrollOffset;
     }
 
     public boolean shouldShowDragPreview(double mouseX, double mouseY) {

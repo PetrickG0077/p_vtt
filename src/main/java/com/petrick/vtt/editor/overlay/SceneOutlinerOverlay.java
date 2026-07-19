@@ -41,6 +41,10 @@ public final class SceneOutlinerOverlay {
 
     private static final int SELECTED_TEXT_COLOR = 0xFF66FF66;
 
+    private int scrollOffset;
+
+    private boolean draggingScrollbar;
+
     public void render(
             VRenderContext context,
             Font font,
@@ -49,7 +53,8 @@ public final class SceneOutlinerOverlay {
     ) {
         List<CanvasObject> objects = getSortedObjects(scene);
 
-        int visibleObjects = Math.min(objects.size(), MAX_VISIBLE_OBJECTS);
+        scrollOffset = EditorScrollbar.clampOffset(scrollOffset, objects.size(), MAX_VISIBLE_OBJECTS);
+        int visibleObjects = Math.min(MAX_VISIBLE_OBJECTS, objects.size() - scrollOffset);
 
         int lines = 3 + visibleObjects;
 
@@ -76,7 +81,7 @@ public final class SceneOutlinerOverlay {
         }
 
         for (int i = 0; i < visibleObjects; i++) {
-            CanvasObject object = objects.get(i);
+            CanvasObject object = objects.get(scrollOffset + i);
 
             boolean selected = selectionManager.isSelected(object.id());
 
@@ -109,8 +114,12 @@ public final class SceneOutlinerOverlay {
         }
 
         if (objects.size() > MAX_VISIBLE_OBJECTS) {
-            int remaining = objects.size() - MAX_VISIBLE_OBJECTS;
-            drawLine(context, font, "... +" + remaining + " more", textX, textY, MUTED_TEXT_COLOR);
+            drawLine(context, font, (scrollOffset + 1) + "-"
+                    + (scrollOffset + visibleObjects) + " / " + objects.size(),
+                    textX, textY, MUTED_TEXT_COLOR);
+            EditorScrollbar.render(context, getScrollbarX(), getFirstObjectY(), 4,
+                    MAX_VISIBLE_OBJECTS * LINE_HEIGHT, objects.size(), MAX_VISIBLE_OBJECTS,
+                    scrollOffset, PANEL_BORDER);
         }
     }
 
@@ -125,7 +134,8 @@ public final class SceneOutlinerOverlay {
             return Optional.empty();
         }
 
-        int visibleObjects = Math.min(objects.size(), MAX_VISIBLE_OBJECTS);
+        scrollOffset = EditorScrollbar.clampOffset(scrollOffset, objects.size(), MAX_VISIBLE_OBJECTS);
+        int visibleObjects = Math.min(MAX_VISIBLE_OBJECTS, objects.size() - scrollOffset);
 
         int lines = 3 + visibleObjects;
 
@@ -143,18 +153,66 @@ public final class SceneOutlinerOverlay {
             return Optional.empty();
         }
 
-        int firstObjectY = PANEL_Y + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+        int firstObjectY = getFirstObjectY();
 
         for (int i = 0; i < visibleObjects; i++) {
             int rowTop = firstObjectY + i * LINE_HEIGHT;
             int rowBottom = rowTop + LINE_HEIGHT;
 
             if (mouseY >= rowTop && mouseY <= rowBottom) {
-                return Optional.of(objects.get(i).id());
+                return Optional.of(objects.get(scrollOffset + i).id());
             }
         }
 
         return Optional.empty();
+    }
+
+    public boolean mouseClickedScrollbar(CanvasScene scene, double mouseX, double mouseY) {
+        int count = getSortedObjects(scene).size();
+        if (count <= MAX_VISIBLE_OBJECTS || !EditorScrollbar.contains(
+                mouseX, mouseY, getScrollbarX() - 3, getFirstObjectY(),
+                10, MAX_VISIBLE_OBJECTS * LINE_HEIGHT)) return false;
+        draggingScrollbar = true;
+        updateScrollFromMouse(count, mouseY);
+        return true;
+    }
+
+    public boolean mouseDraggedScrollbar(CanvasScene scene, double mouseY) {
+        if (!draggingScrollbar) return false;
+        updateScrollFromMouse(getSortedObjects(scene).size(), mouseY);
+        return true;
+    }
+
+    public boolean mouseReleasedScrollbar() {
+        boolean wasDragging = draggingScrollbar;
+        draggingScrollbar = false;
+        return wasDragging;
+    }
+
+    public boolean mouseScrolled(CanvasScene scene, double mouseX, double mouseY, double scrollY) {
+        List<CanvasObject> objects = getSortedObjects(scene);
+        int visibleObjects = Math.min(objects.size(), MAX_VISIBLE_OBJECTS);
+        int lines = 3 + visibleObjects + (objects.size() > MAX_VISIBLE_OBJECTS ? 1 : 0);
+        int panelHeight = PADDING * 2 + lines * LINE_HEIGHT + 8;
+        if (mouseX < PANEL_X || mouseX > PANEL_X + PANEL_WIDTH
+                || mouseY < PANEL_Y || mouseY > PANEL_Y + panelHeight) return false;
+        scrollOffset = EditorScrollbar.clampOffset(
+                scrollOffset + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0),
+                objects.size(), MAX_VISIBLE_OBJECTS);
+        return true;
+    }
+
+    private void updateScrollFromMouse(int objectCount, double mouseY) {
+        scrollOffset = EditorScrollbar.offsetForMouse(mouseY, getFirstObjectY(),
+                MAX_VISIBLE_OBJECTS * LINE_HEIGHT, objectCount, MAX_VISIBLE_OBJECTS);
+    }
+
+    private int getFirstObjectY() {
+        return PANEL_Y + PADDING + LINE_HEIGHT + 4 + LINE_HEIGHT + 4;
+    }
+
+    private int getScrollbarX() {
+        return PANEL_X + PANEL_WIDTH - PADDING - 4;
     }
 
     private List<CanvasObject> getSortedObjects(CanvasScene scene) {

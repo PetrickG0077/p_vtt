@@ -24,6 +24,8 @@ public final class AssetCatalogController {
 
     private String searchQuery = "";
 
+    private boolean draggingScrollbar;
+
     public AssetCatalogController(AssetCatalogSelection selection) {
         if (selection == null) {
             throw new IllegalArgumentException("AssetCatalogSelection cannot be null");
@@ -57,11 +59,21 @@ public final class AssetCatalogController {
         if (!catalogVisible) {
             selection.clear();
             searchActive = false;
+            draggingScrollbar = false;
             return false;
         }
 
         if (overlay.isSearchBoxAt(screenHeight, mouseX, mouseY)) {
             searchActive = true;
+            return true;
+        }
+
+        if (overlay.isScrollbarAt(registry, libraryScanResult, filter, treeState,
+                searchQuery, screenHeight, mouseX, mouseY)) {
+            draggingScrollbar = true;
+            scrollOffset = overlay.scrollOffsetFromMouse(registry, libraryScanResult, filter,
+                    treeState, searchQuery, screenHeight, mouseY);
+            searchActive = false;
             return true;
         }
 
@@ -150,6 +162,25 @@ public final class AssetCatalogController {
         );
 
         return true;
+    }
+
+    public boolean mouseDragged(
+            AssetCatalogOverlay overlay,
+            AssetRegistry registry,
+            AssetLibraryScanResult libraryScanResult,
+            int screenHeight,
+            double mouseY
+    ) {
+        if (!draggingScrollbar) return false;
+        scrollOffset = overlay.scrollOffsetFromMouse(registry, libraryScanResult, filter,
+                treeState, searchQuery, screenHeight, mouseY);
+        return true;
+    }
+
+    public boolean mouseReleased() {
+        boolean wasDragging = draggingScrollbar;
+        draggingScrollbar = false;
+        return wasDragging;
     }
 
     public boolean keyPressed(int keyCode, int modifiers) {
