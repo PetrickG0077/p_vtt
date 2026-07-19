@@ -185,6 +185,31 @@ public final class VttServerTabletopState {
         storage.saveScene(tabletop.getId(), activeScene);
     }
 
+    public synchronized int removeObjectsUsingTokenDefinition(String definitionId) {
+        if (definitionId == null || definitionId.isBlank()) return 0;
+        int removedCount = 0;
+        for (String sceneId : List.copyOf(tabletop.getSceneIds())) {
+            VttScene scene = activeScene != null && sceneId.equals(activeScene.getId())
+                    ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+            if (scene == null) continue;
+
+            List<String> removedIds = scene.getObjects().stream()
+                    .filter(object -> object != null
+                            && definitionId.equals(object.getSourceTokenDefinitionId()))
+                    .map(VttSceneObject::getId)
+                    .toList();
+            if (removedIds.isEmpty()) continue;
+
+            scene.getObjects().removeIf(object -> object != null
+                    && definitionId.equals(object.getSourceTokenDefinitionId()));
+            removedIds.forEach(scene::removeVisionSourceObjectId);
+            normalizeLayerIndices(scene);
+            storage.saveScene(tabletop.getId(), scene);
+            removedCount += removedIds.size();
+        }
+        return removedCount;
+    }
+
     public synchronized VttTokenTransformUpdatePayload applyTokenTransform(
             VttTokenTransformRequestPayload request, String playerId, boolean master
     ) {
@@ -325,8 +350,12 @@ public final class VttServerTabletopState {
     }
 
     private void normalizeLayerIndices() {
-        for (int index = 0; index < activeScene.getObjects().size(); index++) {
-            VttSceneObject object = activeScene.getObjects().get(index);
+        normalizeLayerIndices(activeScene);
+    }
+
+    private void normalizeLayerIndices(VttScene scene) {
+        for (int index = 0; index < scene.getObjects().size(); index++) {
+            VttSceneObject object = scene.getObjects().get(index);
             if (object != null) object.setLayerIndex(index);
         }
     }

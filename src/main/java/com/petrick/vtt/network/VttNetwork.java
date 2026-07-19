@@ -11,6 +11,7 @@ import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.server.VttServerTokenTransformHandler;
 import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
 import com.petrick.vtt.network.server.VttServerTokenDefinitionHandler;
+import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 import com.petrick.vtt.network.server.VttServerEnvironmentStateHandler;
@@ -27,7 +28,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "13";
+    private static final String PROTOCOL_VERSION = "14";
 
     private VttNetwork() {
     }
@@ -58,6 +59,9 @@ public final class VttNetwork {
                 VttClientPayloadHandler::handleTokenTransformUpdate);
         registrar.playToServer(VttTokenDefinitionUpsertPayload.TYPE, VttTokenDefinitionUpsertPayload.STREAM_CODEC,
                 VttServerTokenDefinitionHandler::handle);
+        registrar.playToServer(VttTokenDefinitionCommandPayload.TYPE,
+                VttTokenDefinitionCommandPayload.STREAM_CODEC,
+                VttServerTokenDefinitionHandler::handleCommand);
         registrar.playToServer(VttEnvironmentStateRequestPayload.TYPE, VttEnvironmentStateRequestPayload.STREAM_CODEC,
                 VttServerEnvironmentStateHandler::handle);
         registrar.playToClient(VttEnvironmentStateUpdatePayload.TYPE, VttEnvironmentStateUpdatePayload.STREAM_CODEC,

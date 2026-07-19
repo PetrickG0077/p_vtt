@@ -6,6 +6,7 @@ import com.google.gson.JsonParseException;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenSaveData;
 import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
+import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -17,6 +18,8 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -37,16 +40,128 @@ public final class VttServerTokenDefinitionHandler {
             VttServerTabletopState state = VttServerTabletopState.get();
             state.updateTokenDefinitionOwnership(data.tokenDefinitionId, data.player);
 
-            for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
-                VttServerAssetSyncService.sendActiveSceneAssets(
-                        connected, state.activeScene(), VttServerPlayerEvents.isMaster(connected)
-                );
-                PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload());
-            }
+            broadcastReload(player, state);
             VTT.LOGGER.info("Saved server VTT token definition: {}", data.tokenDefinitionId);
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Rejected invalid VTT token definition update from {}",
                     player.getGameProfile().getName(), exception);
+        }
+    }
+
+    public static void handleCommand(VttTokenDefinitionCommandPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player) || !VttServerPlayerEvents.isMaster(player)) {
+            VTT.LOGGER.warn("Rejected VTT token definition command from non-OP player");
+            return;
+        }
+        if (payload == null || payload.operation() == null || payload.definitionId() == null
+                || payload.definitionId().length() > 256
+                || !payload.definitionId().startsWith("user/tokens/")) {
+            VTT.LOGGER.warn("Rejected invalid VTT token definition command from {}",
+                    player.getGameProfile().getName());
+            return;
+        }
+
+        try {
+            boolean changed = switch (payload.operation()) {
+                case VttTokenDefinitionCommandPayload.DUPLICATE -> duplicate(payload.definitionId());
+                case VttTokenDefinitionCommandPayload.DELETE -> delete(payload.definitionId());
+                default -> false;
+            };
+            if (!changed) {
+                VTT.LOGGER.warn("Rejected VTT token definition command {} for {}",
+                        payload.operation(), payload.definitionId());
+                return;
+            }
+
+            VttServerTabletopState state = VttServerTabletopState.get();
+            if (VttTokenDefinitionCommandPayload.DELETE.equals(payload.operation())) {
+                int removedObjects = state.removeObjectsUsingTokenDefinition(payload.definitionId());
+                VTT.LOGGER.info("Removed {} scene objects using deleted token definition {}",
+                        removedObjects, payload.definitionId());
+            }
+            broadcastReload(player, state);
+        } catch (RuntimeException | IOException exception) {
+            VTT.LOGGER.error("Failed VTT token definition command {} for {}",
+                    payload.operation(), payload.definitionId(), exception);
+        }
+    }
+
+    private static boolean duplicate(String definitionId) throws IOException {
+        Map<String, TokenFile> definitions = loadDefinitions();
+        TokenFile source = definitions.get(definitionId);
+        if (source == null) return false;
+        validate(source.data());
+
+        CreatedTokenSaveData copy = GSON.fromJson(GSON.toJson(source.data()), CreatedTokenSaveData.class);
+        String baseName = source.data().displayName + " Copy";
+        copy.displayName = uniqueDisplayName(definitions, baseName);
+        copy.tokenDefinitionId = uniqueDefinitionId(definitions, "user/tokens/" + sanitize(copy.displayName));
+        save(copy);
+        VTT.LOGGER.info("Duplicated server VTT token definition: {} -> {}",
+                definitionId, copy.tokenDefinitionId);
+        return true;
+    }
+
+    private static boolean delete(String definitionId) throws IOException {
+        TokenFile tokenFile = loadDefinitions().get(definitionId);
+        if (tokenFile == null) return false;
+        boolean deleted = Files.deleteIfExists(tokenFile.path());
+        if (deleted) VTT.LOGGER.info("Deleted server VTT token definition: {}", definitionId);
+        return deleted;
+    }
+
+    private static Map<String, TokenFile> loadDefinitions() throws IOException {
+        Path folder = tokensFolder();
+        Map<String, TokenFile> result = new LinkedHashMap<>();
+        if (!Files.isDirectory(folder)) return result;
+        try (Stream<Path> files = Files.list(folder)) {
+            for (Path file : files.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().toLowerCase().endsWith(".json")).toList()) {
+                try (Reader reader = Files.newBufferedReader(file)) {
+                    CreatedTokenSaveData data = GSON.fromJson(reader, CreatedTokenSaveData.class);
+                    if (data != null && data.tokenDefinitionId != null) {
+                        result.put(data.tokenDefinitionId, new TokenFile(file, data));
+                    }
+                } catch (RuntimeException exception) {
+                    VTT.LOGGER.warn("Skipped invalid server VTT token file: {}", file, exception);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static String uniqueDisplayName(Map<String, TokenFile> definitions, String baseName) {
+        String candidate = baseName;
+        int suffix = 2;
+        while (hasDisplayName(definitions, candidate) || Files.exists(
+                tokensFolder().resolve(sanitize(candidate) + ".json"))) {
+            candidate = baseName + " " + suffix++;
+        }
+        return candidate;
+    }
+
+    private static boolean hasDisplayName(Map<String, TokenFile> definitions, String displayName) {
+        for (TokenFile token : definitions.values()) {
+            if (token.data().displayName != null
+                    && token.data().displayName.equalsIgnoreCase(displayName)) return true;
+        }
+        return false;
+    }
+
+    private static String uniqueDefinitionId(Map<String, TokenFile> definitions, String baseId) {
+        String normalizedBase = baseId.equals("user/tokens/") ? "user/tokens/new_token" : baseId;
+        String candidate = normalizedBase;
+        int suffix = 2;
+        while (definitions.containsKey(candidate)) candidate = normalizedBase + "_" + suffix++;
+        return candidate;
+    }
+
+    private static void broadcastReload(ServerPlayer requester, VttServerTabletopState state) {
+        for (ServerPlayer connected : requester.getServer().getPlayerList().getPlayers()) {
+            VttServerAssetSyncService.sendActiveSceneAssets(
+                    connected, state.activeScene(), VttServerPlayerEvents.isMaster(connected)
+            );
+            PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload());
         }
     }
 
@@ -76,8 +191,7 @@ public final class VttServerTokenDefinitionHandler {
     }
 
     private static void save(CreatedTokenSaveData data) throws IOException {
-        Path folder = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets/created/tokens")
-                .toAbsolutePath().normalize();
+        Path folder = tokensFolder();
         Files.createDirectories(folder);
         deleteOldDefinitionFile(folder, data.tokenDefinitionId);
         Path target = folder.resolve(sanitize(data.displayName) + ".json").normalize();
@@ -85,6 +199,11 @@ public final class VttServerTokenDefinitionHandler {
         try (Writer writer = Files.newBufferedWriter(target)) {
             GSON.toJson(data, writer);
         }
+    }
+
+    private static Path tokensFolder() {
+        return FMLPaths.GAMEDIR.get().resolve("config/vtt_assets/created/tokens")
+                .toAbsolutePath().normalize();
     }
 
     private static void deleteOldDefinitionFile(Path folder, String definitionId) throws IOException {
@@ -118,4 +237,6 @@ public final class VttServerTokenDefinitionHandler {
         String result = value.toLowerCase().trim().replaceAll("[^a-z0-9._-]", "_").replaceAll("_+", "_");
         return result.isBlank() ? "new_token" : result;
     }
+
+    private record TokenFile(Path path, CreatedTokenSaveData data) {}
 }

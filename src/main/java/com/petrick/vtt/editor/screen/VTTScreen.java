@@ -791,7 +791,7 @@ public final class VTTScreen extends Screen {
 
             case DUPLICATE -> {
                 if (session.isNetworkAuthorityActive()) {
-                    VTT.LOGGER.warn("Duplicating server tokens is not network-authoritative yet");
+                    VttClientTokenDefinitionSync.sendDuplicate(tokenDefinition.id());
                 } else {
                     duplicateTokenDefinition(tokenDefinition);
                 }
@@ -799,7 +799,9 @@ public final class VTTScreen extends Screen {
 
             case DELETE -> {
                 if (session.isNetworkAuthorityActive()) {
-                    VTT.LOGGER.warn("Deleting server tokens is not network-authoritative yet");
+                    if (VttClientTokenDefinitionSync.sendDelete(tokenDefinition.id())) {
+                        tokenCatalogSelection.clear();
+                    }
                 } else {
                     deleteTokenDefinition(tokenDefinition);
                 }
