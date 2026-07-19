@@ -18,6 +18,7 @@ import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.SceneObjectSpatialIndex;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
@@ -49,6 +50,7 @@ public final class VttServerTabletopState {
     private VttScene activeScene;
     private final TabletopStorage storage;
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
+    private final SceneObjectSpatialIndex objectSpatialIndex = new SceneObjectSpatialIndex();
     private long authorityRevision = 1L;
     private final Map<String, Long> tokenTransformRevisions = new HashMap<>();
     private final Map<String, Long> lastTokenTransformSequences = new HashMap<>();
@@ -63,6 +65,7 @@ public final class VttServerTabletopState {
         this.storage = new TabletopStorage(paths);
         this.tabletop = storage.loadOrCreateDefaultTabletop();
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
+        this.objectSpatialIndex.rebuild(activeScene);
         this.tabletop.setSceneDisplayName(activeScene.getId(), activeScene.getDisplayName());
         storage.saveTabletop(tabletop);
     }
@@ -94,6 +97,34 @@ public final class VttServerTabletopState {
         return activeScene;
     }
 
+    public synchronized List<VttSceneObject> querySceneObjects(
+            double minX, double minY, double maxX, double maxY
+    ) {
+        if (activeScene == null) return List.of();
+        if (!objectSpatialIndex.isBuiltFor(activeScene)
+                || objectSpatialIndex.size() != activeScene.getObjects().size()) {
+            objectSpatialIndex.rebuild(activeScene);
+        }
+        if (objectSpatialIndex.size() != activeScene.getObjects().size()) {
+            return List.copyOf(activeScene.getObjects());
+        }
+        try {
+            return objectSpatialIndex.query(minX, minY, maxX, maxY);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("VTT spatial query failed; using full scene fallback", exception);
+            objectSpatialIndex.rebuild(activeScene);
+            return List.copyOf(activeScene.getObjects());
+        }
+    }
+
+    public synchronized int indexedSceneObjectCount() {
+        if (activeScene != null && (!objectSpatialIndex.isBuiltFor(activeScene)
+                || objectSpatialIndex.size() != activeScene.getObjects().size())) {
+            objectSpatialIndex.rebuild(activeScene);
+        }
+        return objectSpatialIndex.size();
+    }
+
     public synchronized long authorityRevision() {
         return authorityRevision;
     }
@@ -106,6 +137,7 @@ public final class VttServerTabletopState {
         if (target == null) return false;
         storage.saveScene(tabletop.getId(), activeScene);
         activeScene = target;
+        objectSpatialIndex.rebuild(activeScene);
         advanceAuthorityRevision();
         tabletop.setActiveSceneId(sceneId);
         storage.saveTabletop(tabletop);
@@ -132,6 +164,7 @@ public final class VttServerTabletopState {
         tabletop.setSceneDisplayName(sceneId, trimmedName);
         tabletop.setActiveSceneId(sceneId);
         activeScene = created;
+        objectSpatialIndex.rebuild(activeScene);
         advanceAuthorityRevision();
         storage.saveTabletop(tabletop);
         return true;
@@ -167,6 +200,7 @@ public final class VttServerTabletopState {
         tabletop.removeSceneId(sceneId);
         if (deletingActive) {
             activeScene = replacement;
+            objectSpatialIndex.rebuild(activeScene);
             advanceAuthorityRevision();
             tabletop.setActiveSceneId(replacement.getId());
             tabletop.setSceneDisplayName(replacement.getId(), replacement.getDisplayName());
@@ -245,6 +279,7 @@ public final class VttServerTabletopState {
             storage.saveScene(tabletop.getId(), scene);
             removedCount += removedIds.size();
         }
+        objectSpatialIndex.rebuild(activeScene);
         return removedCount;
     }
 
@@ -290,6 +325,7 @@ public final class VttServerTabletopState {
         }
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
+        objectSpatialIndex.addOrUpdate(object);
         storage.saveScene(tabletop.getId(), activeScene);
 
         long entityRevision = nextRevision(tokenTransformRevisions, object.getId());
@@ -341,6 +377,7 @@ public final class VttServerTabletopState {
             object.setId(authoritativeId);
             int layerIndex = Math.max(0, Math.min(object.getLayerIndex(), activeScene.getObjects().size()));
             activeScene.getObjects().add(layerIndex, object);
+            objectSpatialIndex.addOrUpdate(object);
             normalizeLayerIndices();
             storage.saveScene(tabletop.getId(), activeScene);
             return new VttTokenLifecycleUpdatePayload("CREATE", request.objectId(), authoritativeId,
@@ -357,6 +394,7 @@ public final class VttServerTabletopState {
                 .findFirst().orElse(null);
         if (object == null) return null;
         activeScene.removeObject(objectId);
+        objectSpatialIndex.remove(objectId);
         activeScene.removeVisionSourceObjectId(objectId);
         normalizeLayerIndices();
         storage.saveScene(tabletop.getId(), activeScene);

@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +61,7 @@ public final class VttServerVisionSourceSync {
         if (VttServerPlayerEvents.isMaster(player)) return List.copyOf(state.activeScene().getObjects());
         PlayerScope cached = PLAYER_SCOPES.get(player.getUUID());
         VisionState vision = sameScope(cached, state) ? cached.vision() : resolveVision(player, state);
-        return resolveVisibleObjects(player, state.activeScene(), vision);
+        return resolveVisibleObjects(player, state, vision);
     }
 
     public static void broadcast(MinecraftServer server, VttServerTabletopState state) {
@@ -92,7 +93,7 @@ public final class VttServerVisionSourceSync {
                     state.activeScene().getId(), vision.maskWhenEmpty(), vision.regions()));
         }
 
-        List<VttSceneObject> visibleObjects = resolveVisibleObjects(player, state.activeScene(), vision);
+        List<VttSceneObject> visibleObjects = resolveVisibleObjects(player, state, vision);
         LinkedHashSet<String> currentIds = objectIds(visibleObjects);
         Set<String> previousIds = sameScope ? previous.objectIds() : currentIds;
         LinkedHashSet<String> spawnedIds = new LinkedHashSet<>(currentIds);
@@ -141,17 +142,40 @@ public final class VttServerVisionSourceSync {
     }
 
     private static List<VttSceneObject> resolveVisibleObjects(
-            ServerPlayer player, VttScene scene, VisionState vision
+            ServerPlayer player, VttServerTabletopState state, VisionState vision
     ) {
+        VttScene scene = state.activeScene();
         String ownerId = player.getUUID().toString();
-        return scene.getObjects().stream()
+        if (vision.regions().isEmpty() && !vision.maskWhenEmpty()) {
+            return scene.getObjects().stream()
+                    .filter(object -> object != null && object.getId() != null
+                            && object.getState() != null && object.getState().isVisible())
+                    .toList();
+        }
+
+        Map<String, VttSceneObject> candidates = new LinkedHashMap<>();
+        scene.getObjects().stream()
+                .filter(object -> object != null && object.getId() != null
+                        && ownerId.equals(object.getOwnerId()))
+                .forEach(object -> candidates.put(object.getId(), object));
+        for (AuthoritativeVisionRegion region : vision.regions()) {
+            double minX = region.origin().x() - region.outerRadius();
+            double minY = region.origin().y() - region.outerRadius();
+            double maxX = region.origin().x() + region.outerRadius();
+            double maxY = region.origin().y() + region.outerRadius();
+            for (VttSceneObject object : state.querySceneObjects(minX, minY, maxX, maxY)) {
+                if (object != null && object.getId() != null) candidates.put(object.getId(), object);
+            }
+        }
+
+        return candidates.values().stream()
                 .filter(object -> object != null && object.getId() != null
                         && object.getState() != null && object.getState().isVisible())
                 .filter(object -> ownerId.equals(object.getOwnerId())
-                        || vision.regions().isEmpty() && !vision.maskWhenEmpty()
                         || vision.regions().stream().anyMatch(region -> pointInsidePolygon(
                                 new Vec2d(object.getTransform().getX(), object.getTransform().getY()),
                                 region.outerPolygon())))
+                .sorted(java.util.Comparator.comparingInt(VttSceneObject::getLayerIndex))
                 .toList();
     }
 
