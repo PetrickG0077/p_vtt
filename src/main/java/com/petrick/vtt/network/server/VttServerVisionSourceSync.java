@@ -6,7 +6,6 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
-import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
@@ -30,7 +29,6 @@ public final class VttServerVisionSourceSync {
     private static final Map<UUID, Long> REPLICATION_REVISIONS = new HashMap<>();
     private static final Map<UUID, KnownAssets> KNOWN_ASSETS = new HashMap<>();
     private static final Map<UUID, PlayerScope> PLAYER_SCOPES = new HashMap<>();
-    private static final SceneVisionGeometry GEOMETRY = new SceneVisionGeometry();
     private static final SceneVisionRaycaster RAYCASTER = new SceneVisionRaycaster();
 
     private VttServerVisionSourceSync() {}
@@ -122,7 +120,6 @@ public final class VttServerVisionSourceSync {
     private static VisionState resolveVision(ServerPlayer player, VttServerTabletopState state) {
         VttScene scene = state.activeScene();
         String ownerId = player.getUUID().toString();
-        var segments = GEOMETRY.build(scene);
         List<AuthoritativeVisionRegion> regions = scene.getObjects().stream()
                 .filter(object -> object != null && object.getId() != null
                         && object.getState() != null && object.getState().isVisible()
@@ -132,8 +129,9 @@ public final class VttServerVisionSourceSync {
                             ? object.getVisionOuterRadius() : DEFAULT_OUTER_RADIUS;
                     double innerRadius = Math.min(Math.max(0.0, object.getVisionInnerRadius()), outerRadius);
                     Vec2d origin = new Vec2d(object.getTransform().getX(), object.getTransform().getY());
+                    var nearbySegments = state.queryVisionSegments(origin, outerRadius);
                     return new AuthoritativeVisionRegion(object.getId(), origin, innerRadius, outerRadius,
-                            RAYCASTER.buildVisibilityPolygon(origin, outerRadius, segments));
+                            RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments));
                 }).toList();
         boolean ownsDisabledToken = scene.getObjects().stream()
                 .anyMatch(object -> object != null && ownerId.equals(object.getOwnerId())

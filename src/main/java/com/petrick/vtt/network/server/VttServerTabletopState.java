@@ -19,6 +19,8 @@ import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.SceneObjectSpatialIndex;
+import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometrySpatialIndex;
+import com.petrick.vtt.feature.tabletop.vision.VisionSegment;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
@@ -51,6 +53,8 @@ public final class VttServerTabletopState {
     private final TabletopStorage storage;
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
     private final SceneObjectSpatialIndex objectSpatialIndex = new SceneObjectSpatialIndex();
+    private final SceneVisionGeometrySpatialIndex visionGeometryIndex =
+            new SceneVisionGeometrySpatialIndex();
     private long authorityRevision = 1L;
     private final Map<String, Long> tokenTransformRevisions = new HashMap<>();
     private final Map<String, Long> lastTokenTransformSequences = new HashMap<>();
@@ -66,6 +70,7 @@ public final class VttServerTabletopState {
         this.tabletop = storage.loadOrCreateDefaultTabletop();
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
         this.objectSpatialIndex.rebuild(activeScene);
+        this.visionGeometryIndex.rebuild(activeScene);
         this.tabletop.setSceneDisplayName(activeScene.getId(), activeScene.getDisplayName());
         storage.saveTabletop(tabletop);
     }
@@ -125,6 +130,24 @@ public final class VttServerTabletopState {
         return objectSpatialIndex.size();
     }
 
+    public synchronized List<VisionSegment> queryVisionSegments(
+            Vec2d origin, double radius
+    ) {
+        if (activeScene == null || origin == null || !Double.isFinite(radius) || radius <= 0.0) {
+            return List.of();
+        }
+        if (!visionGeometryIndex.isBuiltFor(activeScene)) visionGeometryIndex.rebuild(activeScene);
+        try {
+            return visionGeometryIndex.query(
+                    origin.x() - radius, origin.y() - radius,
+                    origin.x() + radius, origin.y() + radius);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("VTT vision geometry query failed; using full geometry fallback", exception);
+            visionGeometryIndex.rebuild(activeScene);
+            return visionGeometryIndex.allSegments();
+        }
+    }
+
     public synchronized long authorityRevision() {
         return authorityRevision;
     }
@@ -138,6 +161,7 @@ public final class VttServerTabletopState {
         storage.saveScene(tabletop.getId(), activeScene);
         activeScene = target;
         objectSpatialIndex.rebuild(activeScene);
+        visionGeometryIndex.rebuild(activeScene);
         advanceAuthorityRevision();
         tabletop.setActiveSceneId(sceneId);
         storage.saveTabletop(tabletop);
@@ -165,6 +189,7 @@ public final class VttServerTabletopState {
         tabletop.setActiveSceneId(sceneId);
         activeScene = created;
         objectSpatialIndex.rebuild(activeScene);
+        visionGeometryIndex.rebuild(activeScene);
         advanceAuthorityRevision();
         storage.saveTabletop(tabletop);
         return true;
@@ -201,6 +226,7 @@ public final class VttServerTabletopState {
         if (deletingActive) {
             activeScene = replacement;
             objectSpatialIndex.rebuild(activeScene);
+            visionGeometryIndex.rebuild(activeScene);
             advanceAuthorityRevision();
             tabletop.setActiveSceneId(replacement.getId());
             tabletop.setSceneDisplayName(replacement.getId(), replacement.getDisplayName());
@@ -472,6 +498,7 @@ public final class VttServerTabletopState {
             doors.stream().filter(door -> door != null && door.getId() != null && !door.getId().isBlank())
                     .forEach(activeScene::addDoor);
             activeScene.setFogOfWar(fog);
+            visionGeometryIndex.rebuild(activeScene);
             for (VisionState vision : visionStates) {
                 if (vision == null || vision.objectId() == null || !Double.isFinite(vision.innerRadius())
                         || !Double.isFinite(vision.outerRadius())) continue;
@@ -524,6 +551,10 @@ public final class VttServerTabletopState {
                 default -> false;
             };
             if (!changed) return null;
+            if (VttEnvironmentCommandPayload.WALL.equals(command.entityType())
+                    || VttEnvironmentCommandPayload.DOOR.equals(command.entityType())) {
+                visionGeometryIndex.rebuild(activeScene);
+            }
             lastEnvironmentSequences.put(sequenceKey, command.clientSequence());
 
             if (!delete) confirmedJson = authoritativeEnvironmentJson(
