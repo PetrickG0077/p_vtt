@@ -12,9 +12,10 @@ import com.petrick.vtt.network.server.VttServerTokenTransformHandler;
 import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
 import com.petrick.vtt.network.server.VttServerTokenDefinitionHandler;
 import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
-import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 import com.petrick.vtt.network.server.VttServerEnvironmentStateHandler;
+import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
+import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.server.VttServerTokenLifecycleHandler;
@@ -28,7 +29,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "14";
+    private static final String PROTOCOL_VERSION = "15";
 
     private VttNetwork() {
     }
@@ -62,10 +63,13 @@ public final class VttNetwork {
         registrar.playToServer(VttTokenDefinitionCommandPayload.TYPE,
                 VttTokenDefinitionCommandPayload.STREAM_CODEC,
                 VttServerTokenDefinitionHandler::handleCommand);
-        registrar.playToServer(VttEnvironmentStateRequestPayload.TYPE, VttEnvironmentStateRequestPayload.STREAM_CODEC,
-                VttServerEnvironmentStateHandler::handle);
         registrar.playToClient(VttEnvironmentStateUpdatePayload.TYPE, VttEnvironmentStateUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleEnvironmentStateUpdate);
+        registrar.playToServer(VttEnvironmentCommandPayload.TYPE, VttEnvironmentCommandPayload.STREAM_CODEC,
+                VttServerEnvironmentStateHandler::handleCommand);
+        registrar.playToClient(VttEnvironmentCommandUpdatePayload.TYPE,
+                VttEnvironmentCommandUpdatePayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleEnvironmentCommandUpdate);
         registrar.playToServer(VttTokenLifecycleRequestPayload.TYPE, VttTokenLifecycleRequestPayload.STREAM_CODEC,
                 VttServerTokenLifecycleHandler::handle);
         registrar.playToClient(VttTokenLifecycleUpdatePayload.TYPE, VttTokenLifecycleUpdatePayload.STREAM_CODEC,

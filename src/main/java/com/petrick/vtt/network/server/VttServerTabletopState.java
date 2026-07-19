@@ -22,6 +22,9 @@ import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
+import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
+import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
+import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 
@@ -403,6 +406,159 @@ public final class VttServerTabletopState {
             return null;
         }
     }
+
+    public synchronized VttEnvironmentCommandUpdatePayload applyEnvironmentCommand(
+            VttEnvironmentCommandPayload command) {
+        if (!validEnvironmentCommand(command)) return null;
+        boolean delete = VttEnvironmentCommandPayload.DELETE.equals(command.operation());
+        try {
+            String confirmedJson = command.entityJson();
+            boolean changed = switch (command.entityType()) {
+                case VttEnvironmentCommandPayload.WALL -> delete
+                        ? activeScene.removeWall(command.entityId())
+                        : upsertWall(command.entityId(), command.entityJson());
+                case VttEnvironmentCommandPayload.DOOR -> delete
+                        ? activeScene.removeDoor(command.entityId())
+                        : upsertDoor(command.entityId(), command.entityJson());
+                case VttEnvironmentCommandPayload.FOG_HIDDEN -> delete
+                        ? activeScene.getFogOfWar().removeArea(command.entityId())
+                        : upsertFogArea(command.entityId(), command.entityJson(), false);
+                case VttEnvironmentCommandPayload.FOG_REVEALED -> delete
+                        ? activeScene.getFogOfWar().removeArea(command.entityId())
+                        : upsertFogArea(command.entityId(), command.entityJson(), true);
+                case VttEnvironmentCommandPayload.FOG_CONFIG -> !delete
+                        && applyFogConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.VISION -> delete
+                        || applyVisionState(command.entityId(), command.entityJson());
+                default -> false;
+            };
+            if (!changed) return null;
+
+            if (!delete) confirmedJson = authoritativeEnvironmentJson(
+                    command.entityType(), command.entityId());
+            storage.saveScene(tabletop.getId(), activeScene);
+            return new VttEnvironmentCommandUpdatePayload(command.operation(), command.sceneId(),
+                    command.entityType(), command.entityId(), delete ? "" : confirmedJson);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("Could not apply granular VTT environment command", exception);
+            return null;
+        }
+    }
+
+    private boolean validEnvironmentCommand(VttEnvironmentCommandPayload command) {
+        if (command == null || command.operation() == null || command.sceneId() == null
+                || activeScene == null || !command.sceneId().equals(activeScene.getId())
+                || command.entityType() == null
+                || command.entityId() == null || command.entityId().isBlank()
+                || command.entityId().length() > 128 || command.entityJson() == null
+                || command.entityJson().length() > VttEnvironmentCommandPayload.MAX_JSON_LENGTH) return false;
+        return VttEnvironmentCommandPayload.UPSERT.equals(command.operation())
+                || VttEnvironmentCommandPayload.DELETE.equals(command.operation());
+    }
+
+    private boolean upsertWall(String id, String json) {
+        VttWall wall = GSON.fromJson(json, VttWall.class);
+        boolean exists = activeScene.getWalls().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+        if (wall == null || !id.equals(wall.getId()) || !validGeometry(
+                wall.getTransform(), wall.getSize()) || activeScene.getWalls().size() >= 10_000 && !exists) return false;
+        activeScene.getWalls().removeIf(value -> value != null && id.equals(value.getId()));
+        activeScene.addWall(wall);
+        return true;
+    }
+
+    private boolean upsertDoor(String id, String json) {
+        VttDoor door = GSON.fromJson(json, VttDoor.class);
+        boolean exists = activeScene.getDoors().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+        if (door == null || !id.equals(door.getId()) || !validGeometry(
+                door.getTransform(), door.getSize()) || activeScene.getDoors().size() >= 10_000 && !exists) return false;
+        if (door.getWallId() != null && activeScene.getWalls().stream().noneMatch(
+                wall -> wall != null && door.getWallId().equals(wall.getId()))) return false;
+        activeScene.getDoors().removeIf(value -> value != null && id.equals(value.getId()));
+        activeScene.addDoor(door);
+        return true;
+    }
+
+    private boolean upsertFogArea(String id, String json, boolean revealed) {
+        VttFogArea area = GSON.fromJson(json, VttFogArea.class);
+        int areaCount = activeScene.getFogOfWar().getHiddenAreas().size()
+                + activeScene.getFogOfWar().getRevealedAreas().size();
+        boolean exists = activeScene.getFogOfWar().getHiddenAreas().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()))
+                || activeScene.getFogOfWar().getRevealedAreas().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+        if (area == null || !id.equals(area.getId()) || !validGeometry(
+                area.getTransform(), area.getSize()) || areaCount >= 10_000 && !exists) return false;
+        activeScene.getFogOfWar().removeArea(id);
+        if (revealed) activeScene.getFogOfWar().addRevealedArea(area);
+        else activeScene.getFogOfWar().addHiddenArea(area);
+        return true;
+    }
+
+    private boolean applyFogConfig(String json) {
+        FogConfig config = GSON.fromJson(json, FogConfig.class);
+        if (config == null) return false;
+        activeScene.getFogOfWar().setEnabled(config.enabled());
+        activeScene.getFogOfWar().setDefaultHidden(config.defaultHidden());
+        return true;
+    }
+
+    private boolean applyVisionState(String id, String json) {
+        VisionState vision = GSON.fromJson(json, VisionState.class);
+        if (vision == null || !id.equals(vision.objectId()) || !Double.isFinite(vision.innerRadius())
+                || !Double.isFinite(vision.outerRadius()) || vision.innerRadius() < 0.0
+                || vision.outerRadius() < 64.0 || vision.outerRadius() > 100_000.0
+                || vision.innerRadius() > vision.outerRadius()
+                || !validCollisionBox(vision.collisionBox(), true)) return false;
+        VttSceneObject object = activeScene.getObjects().stream()
+                .filter(value -> value != null && id.equals(value.getId())).findFirst().orElse(null);
+        if (object == null) return false;
+        object.setVisionInnerRadius(vision.innerRadius());
+        object.setVisionOuterRadius(vision.outerRadius());
+        object.setVisionEnabled(vision.enabled());
+        object.setCollisionBox(vision.collisionBox());
+        return true;
+    }
+
+    private String authoritativeEnvironmentJson(String type, String id) {
+        return switch (type) {
+            case VttEnvironmentCommandPayload.WALL -> GSON.toJson(activeScene.getWalls().stream()
+                    .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.DOOR -> GSON.toJson(activeScene.getDoors().stream()
+                    .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.FOG_HIDDEN -> GSON.toJson(
+                    activeScene.getFogOfWar().getHiddenAreas().stream()
+                            .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.FOG_REVEALED -> GSON.toJson(
+                    activeScene.getFogOfWar().getRevealedAreas().stream()
+                            .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.FOG_CONFIG -> GSON.toJson(new FogConfig(
+                    activeScene.getFogOfWar().isEnabled(), activeScene.getFogOfWar().isDefaultHidden()));
+            case VttEnvironmentCommandPayload.VISION -> {
+                VttSceneObject object = activeScene.getObjects().stream()
+                        .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow();
+                yield GSON.toJson(new VisionState(id, object.getVisionInnerRadius(),
+                        object.getVisionOuterRadius(), object.isVisionEnabled(), object.getCollisionBox()));
+            }
+            default -> throw new IllegalArgumentException("Unknown environment entity type");
+        };
+    }
+
+    private boolean validGeometry(com.petrick.vtt.feature.tabletop.VttSceneTransform transform,
+                                  com.petrick.vtt.feature.tabletop.VttSceneSize size) {
+        return transform != null && size != null && Double.isFinite(transform.getX())
+                && Double.isFinite(transform.getY()) && Double.isFinite(transform.getScaleX())
+                && Double.isFinite(transform.getScaleY()) && Double.isFinite(transform.getRotationDegrees())
+                && Math.abs(transform.getX()) <= 10_000_000.0 && Math.abs(transform.getY()) <= 10_000_000.0
+                && transform.getScaleX() >= 0.01 && transform.getScaleX() <= 1_000.0
+                && transform.getScaleY() >= 0.01 && transform.getScaleY() <= 1_000.0
+                && Double.isFinite(size.getWidth()) && Double.isFinite(size.getHeight())
+                && size.getWidth() >= 1.0 && size.getWidth() <= 1_000_000.0
+                && size.getHeight() >= 1.0 && size.getHeight() <= 1_000_000.0;
+    }
+
+    private record FogConfig(boolean enabled, boolean defaultHidden) {}
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
         return new VttEnvironmentStateUpdatePayload(

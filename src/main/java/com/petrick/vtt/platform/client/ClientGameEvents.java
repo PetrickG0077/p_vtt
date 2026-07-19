@@ -9,7 +9,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
-import com.petrick.vtt.network.client.VttClientEnvironmentStateSync;
+import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 
 /**
@@ -28,7 +28,7 @@ public final class ClientGameEvents {
     public static void onClientTick(ClientTickEvent.Post event) {
         VTT.getApplication().initialize();
         VttClientTokenLifecycleSync.tick(VTT.getApplication().getActiveSession());
-        VttClientEnvironmentStateSync.tick(VTT.getApplication().getActiveSession());
+        VttClientEnvironmentCommandSync.tick(VTT.getApplication().getActiveSession());
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
 
         Minecraft minecraft = Minecraft.getInstance();
@@ -44,7 +44,7 @@ public final class ClientGameEvents {
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();
         VttClientTokenLifecycleSync.reset();
-        VttClientEnvironmentStateSync.reset();
+        VttClientEnvironmentCommandSync.reset();
         session.restoreLocalSessionAfterDisconnect();
     }
 }
