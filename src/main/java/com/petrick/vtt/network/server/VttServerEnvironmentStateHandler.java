@@ -16,11 +16,13 @@ public final class VttServerEnvironmentStateHandler {
         var update = VttServerPlayerEvents.isMaster(player) ? state.applyEnvironmentState(request) : null;
         if (update == null) {
             VTT.LOGGER.warn("Rejected VTT door/fog update from {}", player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState());
+            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
             return;
         }
-        PacketDistributor.sendToAllPlayers(update);
         VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
+            PacketDistributor.sendToPlayer(connected, state.currentEnvironmentState(connected));
+        }
     }
 
     public static void handleCommand(VttEnvironmentCommandPayload request, IPayloadContext context) {
@@ -31,10 +33,16 @@ public final class VttServerEnvironmentStateHandler {
         if (update == null) {
             VTT.LOGGER.warn("Rejected VTT environment command from {}",
                     player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState());
+            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
             return;
         }
-        PacketDistributor.sendToAllPlayers(update);
         VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
+            if (!VttEnvironmentCommandPayload.VISION.equals(update.entityType())
+                    || VttServerVisionSourceSync.canReceiveObject(
+                    connected, state, update.entityId())) {
+                PacketDistributor.sendToPlayer(connected, update);
+            }
+        }
     }
 }

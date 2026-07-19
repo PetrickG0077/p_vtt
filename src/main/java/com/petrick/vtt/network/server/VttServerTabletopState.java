@@ -27,6 +27,7 @@ import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.lang.reflect.Type;
 import java.nio.file.Files;
@@ -73,9 +74,20 @@ public final class VttServerTabletopState {
         return instance;
     }
 
-    public VttSceneSnapshotPayload createSnapshotPayload() {
+    public synchronized VttSceneSnapshotPayload createSnapshotPayload(ServerPlayer player) {
+        VttScene replicatedScene = replicatedSceneFor(player);
         return new VttSceneSnapshotPayload(
-                GSON.toJson(tabletop), GSON.toJson(activeScene), authorityRevision);
+                GSON.toJson(tabletop), GSON.toJson(replicatedScene), authorityRevision);
+    }
+
+    public synchronized VttScene replicatedSceneFor(ServerPlayer player) {
+        if (player == null || VttServerPlayerEvents.isMaster(player)) return activeScene;
+        VttScene copy = GSON.fromJson(GSON.toJson(activeScene), VttScene.class);
+        var visibleIds = VttServerVisionSourceSync.visibleObjectsFor(player, this).stream()
+                .map(VttSceneObject::getId).collect(java.util.stream.Collectors.toSet());
+        copy.getObjects().removeIf(object -> object == null || !visibleIds.contains(object.getId()));
+        copy.getVisionSourceObjectIds().removeIf(id -> !visibleIds.contains(id));
+        return copy;
     }
 
     public VttScene activeScene() {
@@ -608,11 +620,19 @@ public final class VttServerTabletopState {
     private record FogConfig(boolean enabled, boolean defaultHidden) {}
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
+        return currentEnvironmentState(null);
+    }
+
+    public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState(ServerPlayer player) {
+        var allowedIds = player == null || VttServerPlayerEvents.isMaster(player)
+                ? null : VttServerVisionSourceSync.visibleObjectsFor(player, this).stream()
+                .map(VttSceneObject::getId).collect(java.util.stream.Collectors.toSet());
         return new VttEnvironmentStateUpdatePayload(
                 GSON.toJson(activeScene.getWalls()), GSON.toJson(activeScene.getDoors()),
                 GSON.toJson(activeScene.getFogOfWar()),
                 GSON.toJson(activeScene.getObjects().stream()
                         .filter(object -> object != null && object.getId() != null)
+                        .filter(object -> allowedIds == null || allowedIds.contains(object.getId()))
                         .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                                 object.getVisionOuterRadius() > 0.0
                                         ? object.getVisionOuterRadius() : 512.0,

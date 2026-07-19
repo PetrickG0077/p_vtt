@@ -159,9 +159,10 @@ public final class VttServerTokenDefinitionHandler {
     private static void broadcastReload(ServerPlayer requester, VttServerTabletopState state) {
         for (ServerPlayer connected : requester.getServer().getPlayerList().getPlayers()) {
             VttServerAssetSyncService.sendActiveSceneAssets(
-                    connected, state.activeScene(), VttServerPlayerEvents.isMaster(connected)
+                    connected, state.replicatedSceneFor(connected), VttServerPlayerEvents.isMaster(connected)
             );
-            PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload());
+            VttServerVisionSourceSync.markCurrentAssetsSent(connected, state);
+            PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload(connected));
             VttServerVisionSourceSync.sendToPlayer(connected, state);
         }
     }

@@ -18,6 +18,7 @@ import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
@@ -32,6 +33,8 @@ import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Representa uma sessão ativa do VTT.
@@ -200,7 +203,7 @@ public final class VTTSession {
     public void applyNetworkVisionSources(
             long authorityRevision, long visionRevision, String sceneId,
             boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions,
-            List<String> visibleObjectIds
+            List<String> visibleObjectIds, List<VttSceneObject> replicatedObjects
     ) {
         if (!networkAuthorityActive || activeScene == null
                 || authorityRevision != networkAuthorityRevision
@@ -223,6 +226,7 @@ public final class VTTSession {
                 .distinct()
                 .toList();
         networkMaskWhenVisionEmpty = maskWhenEmpty;
+        reconcileNetworkReplicatedObjects(replicatedObjects);
     }
 
     public List<AuthoritativeVisionRegion> getNetworkVisionRegions() {
@@ -235,6 +239,35 @@ public final class VTTSession {
 
     public boolean shouldMaskWhenNetworkVisionEmpty() {
         return networkMaskWhenVisionEmpty;
+    }
+
+    private void reconcileNetworkReplicatedObjects(List<VttSceneObject> replicatedObjects) {
+        if (activeScene == null || isLocalMaster()) return;
+        List<VttSceneObject> safeObjects = replicatedObjects == null ? List.of()
+                : replicatedObjects.stream()
+                .filter(object -> object != null && object.getId() != null && !object.getId().isBlank())
+                .toList();
+        Set<String> replicatedIds = safeObjects.stream()
+                .map(VttSceneObject::getId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> canvasIdsToRemove = canvasScene.getObjects().stream()
+                .filter(object -> object.hasSourceTokenDefinition() && !replicatedIds.contains(object.id()))
+                .map(object -> object.id())
+                .collect(java.util.stream.Collectors.toSet());
+        canvasScene.removeObjects(canvasIdsToRemove);
+
+        activeScene.getObjects().removeIf(object -> object != null
+                && !replicatedIds.contains(object.getId()));
+        for (VttSceneObject replicated : safeObjects) {
+            activeScene.removeObject(replicated.getId());
+            activeScene.addObject(replicated);
+            if (canvasScene.findObjectById(replicated.getId()) != null) continue;
+            var canvasObject = VttSceneToCanvasSceneMapper.convertObject(
+                    replicated, tokenDefinitionRegistry);
+            if (canvasObject == null) continue;
+            canvasScene.addObject(canvasObject);
+            canvasScene.moveObjectToLayer(canvasObject.id(), replicated.getLayerIndex());
+        }
     }
 
     public void applyConfirmedTokenTransform(VttTokenTransformUpdatePayload update) {

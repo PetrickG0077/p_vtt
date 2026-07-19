@@ -15,8 +15,9 @@ import java.util.List;
 public record VttVisionSourcesPayload(
         long authorityRevision, long visionRevision, String sceneId,
         boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions,
-        List<String> visibleObjectIds
+        List<String> visibleObjectIds, String replicatedObjectsJson
 ) implements CustomPacketPayload {
+    public static final int MAX_OBJECTS_JSON_LENGTH = 8 * 1024 * 1024;
     private static final int MAX_REGION_COUNT = 4_096;
     private static final int MAX_POINTS_PER_REGION = 32_768;
     private static final int MAX_TOTAL_POINTS = 131_072;
@@ -58,7 +59,8 @@ public record VttVisionSourcesPayload(
                     }
                     return new VttVisionSourcesPayload(
                             authorityRevision, visionRevision, sceneId,
-                            maskWhenEmpty, regions, readObjectIds(buffer));
+                            maskWhenEmpty, regions, readObjectIds(buffer),
+                            buffer.readUtf(MAX_OBJECTS_JSON_LENGTH));
                 }
 
                 @Override
@@ -92,12 +94,14 @@ public record VttVisionSourcesPayload(
                         }
                     }
                     writeObjectIds(buffer, payload.visibleObjectIds());
+                    buffer.writeUtf(payload.replicatedObjectsJson(), MAX_OBJECTS_JSON_LENGTH);
                 }
             };
 
     public VttVisionSourcesPayload {
         regions = regions == null ? List.of() : List.copyOf(regions);
         visibleObjectIds = visibleObjectIds == null ? List.of() : List.copyOf(visibleObjectIds);
+        replicatedObjectsJson = replicatedObjectsJson == null ? "[]" : replicatedObjectsJson;
     }
 
     private static List<String> readObjectIds(RegistryFriendlyByteBuf buffer) {

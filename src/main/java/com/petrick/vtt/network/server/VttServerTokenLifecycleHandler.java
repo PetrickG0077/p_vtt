@@ -17,11 +17,15 @@ public final class VttServerTokenLifecycleHandler {
         if (update == null) {
             VTT.LOGGER.warn("Rejected VTT token lifecycle request {} from {}",
                     request.operation(), player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
             VttServerVisionSourceSync.sendToPlayer(player, state);
             return;
         }
-        PacketDistributor.sendToAllPlayers(update);
+        for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
+            if (VttServerPlayerEvents.isMaster(connected)) {
+                PacketDistributor.sendToPlayer(connected, update);
+            }
+        }
         VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }
 }

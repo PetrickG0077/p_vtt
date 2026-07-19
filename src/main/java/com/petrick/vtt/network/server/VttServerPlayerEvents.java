@@ -33,8 +33,10 @@ public final class VttServerPlayerEvents {
 
         sendRole(player);
         VttServerTabletopState state = VttServerTabletopState.get();
-        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene(), isMaster(player));
-        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+        VttServerAssetSyncService.sendActiveSceneAssets(
+                player, state.replicatedSceneFor(player), isMaster(player));
+        VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
+        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
         VttServerVisionSourceSync.sendToPlayer(player, state);
     }
 
@@ -46,8 +48,9 @@ public final class VttServerPlayerEvents {
         if (LAST_ROLES.get(player.getUUID()) != current) {
             sendRole(player);
             VttServerAssetSyncService.sendActiveSceneAssets(
-                    player, state.activeScene(), current == VttRole.MASTER);
-            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+                    player, state.replicatedSceneFor(player), current == VttRole.MASTER);
+            VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
+            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
         }
         VttServerVisionSourceSync.sendToPlayer(player, state);
     }

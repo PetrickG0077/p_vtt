@@ -21,15 +21,20 @@ public final class VttServerTokenTransformHandler {
             var confirmed = state.currentTokenTransform(
                     request.sceneId(), request.objectId(), player.getUUID().toString(),
                     request.clientSequence());
-            if (confirmed != null) {
+            if (confirmed != null && VttServerVisionSourceSync.canReceiveObject(
+                    player, state, request.objectId())) {
                 PacketDistributor.sendToPlayer(player, confirmed);
             } else {
-                PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+                PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
                 VttServerVisionSourceSync.sendToPlayer(player, state);
             }
             return;
         }
-        PacketDistributor.sendToAllPlayers(update);
         VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
+            if (VttServerVisionSourceSync.canReceiveObject(connected, state, update.objectId())) {
+                PacketDistributor.sendToPlayer(connected, update);
+            }
+        }
     }
 }

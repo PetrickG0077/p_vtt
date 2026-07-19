@@ -24,11 +24,11 @@ public final class VttClientAssetCache {
 
     private VttClientAssetCache() {}
 
-    public static void begin(int fileCount) {
+    public static void begin(int fileCount, boolean clearExisting) {
         expectedFiles = Math.max(0, Math.min(fileCount, MAX_FILES));
         completedFiles = 0;
         INCOMING.clear();
-        clearCache();
+        if (clearExisting) clearCache();
         VTT.LOGGER.info("Starting VTT server asset sync: {} files", expectedFiles);
     }
 

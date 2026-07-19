@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
@@ -40,7 +41,21 @@ public final class VttServerAssetSyncService {
 
     public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene, boolean includeAllTokens) {
         List<SyncFile> files = collectFiles(scene, includeAllTokens);
-        PacketDistributor.sendToPlayer(player, new VttAssetSyncStartPayload(files.size()));
+        sendFiles(player, files, true);
+    }
+
+    public static void sendVisibleTokenAssets(
+            ServerPlayer player, List<VttSceneObject> visibleObjects
+    ) {
+        if (player == null || visibleObjects == null || visibleObjects.isEmpty()) return;
+        VttScene subset = new VttScene("asset_sync", "Asset Sync");
+        visibleObjects.forEach(subset::addObject);
+        sendFiles(player, collectFiles(subset, false), false);
+    }
+
+    private static void sendFiles(ServerPlayer player, List<SyncFile> files, boolean clearExisting) {
+        PacketDistributor.sendToPlayer(player,
+                new VttAssetSyncStartPayload(files.size(), clearExisting));
         for (SyncFile file : files) sendFile(player, file);
         PacketDistributor.sendToPlayer(player, new VttAssetSyncCompletePayload());
         VTT.LOGGER.info("Sent {} VTT scene asset files to {}", files.size(), player.getGameProfile().getName());

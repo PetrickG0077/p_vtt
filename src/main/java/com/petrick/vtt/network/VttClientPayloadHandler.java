@@ -2,10 +2,12 @@ package com.petrick.vtt.network;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
@@ -23,9 +25,13 @@ import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+import java.lang.reflect.Type;
+import java.util.List;
+
 public final class VttClientPayloadHandler {
 
     private static final Gson GSON = new GsonBuilder().create();
+    private static final Type SCENE_OBJECT_LIST_TYPE = new TypeToken<List<VttSceneObject>>() {}.getType();
 
     private VttClientPayloadHandler() {
     }
@@ -55,13 +61,19 @@ public final class VttClientPayloadHandler {
     }
 
     public static void handleVisionSources(VttVisionSourcesPayload payload, IPayloadContext context) {
-        VTT.getApplication().getActiveSession().applyNetworkVisionSources(
-                payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
-                payload.maskWhenEmpty(), payload.regions(), payload.visibleObjectIds());
+        try {
+            List<VttSceneObject> objects = GSON.fromJson(
+                    payload.replicatedObjectsJson(), SCENE_OBJECT_LIST_TYPE);
+            VTT.getApplication().getActiveSession().applyNetworkVisionSources(
+                    payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
+                    payload.maskWhenEmpty(), payload.regions(), payload.visibleObjectIds(), objects);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error("Failed to apply VTT player replication payload", exception);
+        }
     }
 
     public static void handleAssetSyncStart(VttAssetSyncStartPayload payload, IPayloadContext context) {
-        VttClientAssetCache.begin(payload.fileCount());
+        VttClientAssetCache.begin(payload.fileCount(), payload.clearExisting());
     }
 
     public static void handleAssetChunk(VttAssetChunkPayload payload, IPayloadContext context) {
