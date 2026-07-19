@@ -162,6 +162,7 @@ public final class VttServerTokenDefinitionHandler {
                     connected, state.activeScene(), VttServerPlayerEvents.isMaster(connected)
             );
             PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload());
+            VttServerVisionSourceSync.sendToPlayer(connected, state);
         }
     }
 

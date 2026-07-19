@@ -224,7 +224,10 @@ public final class VTTScreen extends Screen {
         renderOpaqueBackground(context);
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
                 isMasterView(), !inputController.isEditingCollisionBox(), session.isLocalMaster(), panelVisibility.isDebugVisible(),
-                session.isLocalMaster() ? null : session.getLocalPlayerId());
+                session.isLocalMaster() ? null : session.getLocalPlayerId(),
+                !session.isLocalMaster() && session.isNetworkAuthorityActive()
+                        ? session.getNetworkVisionRegions() : null,
+                session.shouldMaskWhenNetworkVisionEmpty());
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 

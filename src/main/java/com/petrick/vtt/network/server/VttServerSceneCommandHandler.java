@@ -49,6 +49,7 @@ public final class VttServerSceneCommandHandler {
                         player, state.activeScene(), VttServerPlayerEvents.isMaster(player));
             }
             PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+            VttServerVisionSourceSync.sendToPlayer(player, state);
         }
         VTT.LOGGER.info("Applied VTT scene command {} from {}: active scene is {}",
                 request.operation(), requester.getGameProfile().getName(), state.activeScene().getId());
@@ -58,5 +59,6 @@ public final class VttServerSceneCommandHandler {
         VTT.LOGGER.warn("Rejected VTT scene command from {}: {}",
                 requester.getGameProfile().getName(), reason);
         PacketDistributor.sendToPlayer(requester, state.createSnapshotPayload());
+        VttServerVisionSourceSync.sendToPlayer(requester, state);
     }
 }

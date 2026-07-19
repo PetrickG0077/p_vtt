@@ -25,9 +25,12 @@ public final class VttServerTokenTransformHandler {
                 PacketDistributor.sendToPlayer(player, confirmed);
             } else {
                 PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+                VttServerVisionSourceSync.sendToPlayer(player, state);
             }
             return;
         }
         PacketDistributor.sendToAllPlayers(update);
+        VttServerVisionSourceSync.sendForMovedObject(
+                player.getServer(), state, update.objectId());
     }
 }

@@ -20,6 +20,7 @@ import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
+import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public final class VttClientPayloadHandler {
@@ -51,6 +52,12 @@ public final class VttClientPayloadHandler {
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT scene snapshot from server", exception);
         }
+    }
+
+    public static void handleVisionSources(VttVisionSourcesPayload payload, IPayloadContext context) {
+        VTT.getApplication().getActiveSession().applyNetworkVisionSources(
+                payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
+                payload.maskWhenEmpty(), payload.regions());
     }
 
     public static void handleAssetSyncStart(VttAssetSyncStartPayload payload, IPayloadContext context) {

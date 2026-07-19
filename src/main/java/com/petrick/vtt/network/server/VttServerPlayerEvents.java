@@ -35,23 +35,27 @@ public final class VttServerPlayerEvents {
         VttServerTabletopState state = VttServerTabletopState.get();
         VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene(), isMaster(player));
         PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+        VttServerVisionSourceSync.sendToPlayer(player, state);
     }
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent.Post event) {
         if (!(event.getEntity() instanceof ServerPlayer player) || player.tickCount % 20 != 0) return;
         VttRole current = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
-        if (LAST_ROLES.get(player.getUUID()) == current) return;
-
-        sendRole(player);
         VttServerTabletopState state = VttServerTabletopState.get();
-        VttServerAssetSyncService.sendActiveSceneAssets(player, state.activeScene(), current == VttRole.MASTER);
-        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+        if (LAST_ROLES.get(player.getUUID()) != current) {
+            sendRole(player);
+            VttServerAssetSyncService.sendActiveSceneAssets(
+                    player, state.activeScene(), current == VttRole.MASTER);
+            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+        }
+        VttServerVisionSourceSync.sendToPlayer(player, state);
     }
 
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         LAST_ROLES.remove(event.getEntity().getUUID());
+        VttServerVisionSourceSync.forget(event.getEntity().getUUID());
     }
 
     private static VttRole sendRole(ServerPlayer player) {

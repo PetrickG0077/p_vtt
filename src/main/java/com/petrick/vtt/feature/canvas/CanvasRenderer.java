@@ -17,7 +17,10 @@ import com.petrick.vtt.feature.tabletop.render.SceneDoorRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneFogRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneVisionDebugRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneVisionMaskRenderer;
+import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.platform.render.VRenderContext;
+
+import java.util.Collection;
 
 /**
  * Renderer inicial do canvas do VTT.
@@ -77,7 +80,9 @@ public final class CanvasRenderer {
             boolean editorSelectionVisible,
             boolean resizeHandlesVisible,
             boolean visionDebugVisible,
-            String visionOwnerId
+            String visionOwnerId,
+            Collection<AuthoritativeVisionRegion> authoritativeVisionRegions,
+            boolean maskWhenAuthoritativeVisionEmpty
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
@@ -89,7 +94,8 @@ public final class CanvasRenderer {
         }
         if (!masterView) {
             sceneVisionMaskRenderer.render(
-                    context, tabletopScene, scene, selectionManager, visionOwnerId);
+                    context, tabletopScene, scene, selectionManager, visionOwnerId,
+                    authoritativeVisionRegions, maskWhenAuthoritativeVisionEmpty);
         }
         sceneFogRenderer.render(context, tabletopScene, masterView);
     }

@@ -21,6 +21,7 @@ import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
+import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import net.minecraft.client.Minecraft;
 
 import java.nio.file.Path;
@@ -29,6 +30,8 @@ import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import net.neoforged.neoforge.network.PacketDistributor;
+
+import java.util.List;
 
 /**
  * Representa uma sessão ativa do VTT.
@@ -66,6 +69,9 @@ public final class VTTSession {
     private String localPlayerId;
     private long networkSnapshotVersion;
     private long networkAuthorityRevision;
+    private long networkVisionRevision = -1L;
+    private List<AuthoritativeVisionRegion> networkVisionRegions = List.of();
+    private boolean networkMaskWhenVisionEmpty = true;
     private boolean networkAuthorityActive;
 
     public VTTSession() {
@@ -161,9 +167,17 @@ public final class VTTSession {
             return;
         }
 
+        boolean visionScopeChanged = this.activeScene == null
+                || !scene.getId().equals(this.activeScene.getId())
+                || this.networkAuthorityRevision != authorityRevision;
         this.activeTabletop = tabletop;
         this.activeScene = scene;
         this.networkAuthorityRevision = Math.max(0L, authorityRevision);
+        if (visionScopeChanged) {
+            networkVisionRevision = -1L;
+            networkVisionRegions = List.of();
+            networkMaskWhenVisionEmpty = true;
+        }
         loadActiveSceneToCanvasScene();
         networkSnapshotVersion++;
         VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
@@ -179,6 +193,36 @@ public final class VTTSession {
 
     public boolean hasNetworkSnapshot() {
         return networkSnapshotVersion > 0;
+    }
+
+    public void applyNetworkVisionSources(
+            long authorityRevision, long visionRevision, String sceneId,
+            boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions
+    ) {
+        if (!networkAuthorityActive || activeScene == null
+                || authorityRevision != networkAuthorityRevision
+                || sceneId == null || !sceneId.equals(activeScene.getId())
+                || visionRevision <= networkVisionRevision) return;
+        networkVisionRevision = visionRevision;
+        networkVisionRegions = regions == null ? List.of()
+                : regions.stream()
+                .filter(region -> region != null && region.sourceObjectId() != null
+                        && !region.sourceObjectId().isBlank() && region.origin() != null
+                        && Double.isFinite(region.innerRadius())
+                        && Double.isFinite(region.outerRadius())
+                        && region.innerRadius() >= 0.0
+                        && region.outerRadius() >= region.innerRadius()
+                        && region.outerPolygon().size() >= 3)
+                .toList();
+        networkMaskWhenVisionEmpty = maskWhenEmpty;
+    }
+
+    public List<AuthoritativeVisionRegion> getNetworkVisionRegions() {
+        return networkVisionRegions;
+    }
+
+    public boolean shouldMaskWhenNetworkVisionEmpty() {
+        return networkMaskWhenVisionEmpty;
     }
 
     public void applyConfirmedTokenTransform(VttTokenTransformUpdatePayload update) {
@@ -447,6 +491,9 @@ public final class VTTSession {
         networkAuthorityActive = false;
         networkSnapshotVersion = 0L;
         networkAuthorityRevision = 0L;
+        networkVisionRevision = -1L;
+        networkVisionRegions = List.of();
+        networkMaskWhenVisionEmpty = true;
         localPlayerId = null;
         localRole = VttRole.MASTER;
 

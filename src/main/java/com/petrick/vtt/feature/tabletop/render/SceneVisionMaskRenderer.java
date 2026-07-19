@@ -5,12 +5,14 @@ import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionSourceResolver;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 
@@ -29,24 +31,44 @@ public final class SceneVisionMaskRenderer {
     public void render(
             VRenderContext context, VttScene tabletopScene,
             CanvasScene canvasScene, SelectionManager selectionManager,
-            String visionOwnerId
+            String visionOwnerId, Collection<AuthoritativeVisionRegion> authoritativeRegions,
+            boolean maskWhenAuthoritativeSourcesEmpty
     ) {
         if (tabletopScene == null) return;
-        List<CanvasObject> sources = sourceResolver.resolveAll(
-                tabletopScene, canvasScene, selectionManager, visionOwnerId);
-        if (sources.isEmpty()) {
-            if (shouldRenderNoVisionMask(tabletopScene, selectionManager, visionOwnerId)) {
+        if (authoritativeRegions != null && authoritativeRegions.isEmpty()) {
+            if (maskWhenAuthoritativeSourcesEmpty) {
                 context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
             }
             return;
         }
-        var segments = geometry.build(tabletopScene);
+
         List<VisionRegion> regions = new ArrayList<>();
-        for (CanvasObject source : sources) {
-            VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
-            List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
-                    source.transform().position(), radii.outerRadius(), segments);
-            if (outerWorldPolygon.size() >= 3) {
+        if (authoritativeRegions != null) {
+            double zoom = context.renderState().getCamera().getZoom();
+            for (AuthoritativeVisionRegion region : authoritativeRegions) {
+                if (region == null || region.origin() == null || region.outerPolygon().size() < 3) continue;
+                regions.add(new VisionRegion(
+                        region.outerPolygon().stream().map(context.renderState()::worldToScreen).toList(),
+                        context.renderState().worldToScreen(region.origin()),
+                        region.innerRadius() * zoom, region.outerRadius() * zoom));
+            }
+        } else {
+            List<CanvasObject> sources = sourceResolver.resolveAll(
+                    tabletopScene, canvasScene, selectionManager, visionOwnerId);
+            if (sources.isEmpty()) {
+                boolean renderEmptyMask = shouldRenderNoVisionMask(
+                        tabletopScene, selectionManager, visionOwnerId);
+                if (renderEmptyMask) {
+                    context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+                }
+                return;
+            }
+            var segments = geometry.build(tabletopScene);
+            for (CanvasObject source : sources) {
+                VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
+                List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
+                        source.transform().position(), radii.outerRadius(), segments);
+                if (outerWorldPolygon.size() < 3) continue;
                 double zoom = context.renderState().getCamera().getZoom();
                 regions.add(new VisionRegion(
                         outerWorldPolygon.stream().map(context.renderState()::worldToScreen).toList(),
@@ -54,11 +76,18 @@ public final class SceneVisionMaskRenderer {
                         radii.innerRadius() * zoom, radii.outerRadius() * zoom));
             }
         }
-        if (!regions.isEmpty()) {
-            List<List<Vec2d>> outerPolygons = regions.stream().map(VisionRegion::outerPolygon).toList();
-            fillOutsidePolygons(context, outerPolygons);
-            renderRadialGradient(context, regions, outerPolygons);
+        if (regions.isEmpty()) {
+            boolean renderEmptyMask = authoritativeRegions == null
+                    ? shouldRenderNoVisionMask(tabletopScene, selectionManager, visionOwnerId)
+                    : maskWhenAuthoritativeSourcesEmpty;
+            if (renderEmptyMask) {
+                context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+            }
+            return;
         }
+        List<List<Vec2d>> outerPolygons = regions.stream().map(VisionRegion::outerPolygon).toList();
+        fillOutsidePolygons(context, outerPolygons);
+        renderRadialGradient(context, regions, outerPolygons);
     }
 
     private boolean shouldRenderNoVisionMask(

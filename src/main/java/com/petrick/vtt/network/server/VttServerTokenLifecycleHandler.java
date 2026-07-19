@@ -18,8 +18,10 @@ public final class VttServerTokenLifecycleHandler {
             VTT.LOGGER.warn("Rejected VTT token lifecycle request {} from {}",
                     request.operation(), player.getGameProfile().getName());
             PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
+            VttServerVisionSourceSync.sendToPlayer(player, state);
             return;
         }
         PacketDistributor.sendToAllPlayers(update);
+        VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }
 }

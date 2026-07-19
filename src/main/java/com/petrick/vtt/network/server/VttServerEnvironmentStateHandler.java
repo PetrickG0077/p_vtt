@@ -20,6 +20,7 @@ public final class VttServerEnvironmentStateHandler {
             return;
         }
         PacketDistributor.sendToAllPlayers(update);
+        VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }
 
     public static void handleCommand(VttEnvironmentCommandPayload request, IPayloadContext context) {
@@ -34,5 +35,6 @@ public final class VttServerEnvironmentStateHandler {
             return;
         }
         PacketDistributor.sendToAllPlayers(update);
+        VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }
 }
