@@ -24,7 +24,9 @@ public final class DebugOverlay {
             int assetCount,
             int tokenDefinitionCount,
             int libraryFileCount,
-            long animatedImageCount
+            long animatedImageCount,
+            String networkDiagnostics,
+            String recoveryDiagnostics
     ) {
         GuiGraphics graphics = context.graphics();
 
@@ -109,6 +111,24 @@ public final class DebugOverlay {
                 15,
                 110,
                 0xFFAAAAAA,
+                false
+        );
+
+        context.graphics().drawString(
+                font,
+                networkDiagnostics,
+                15,
+                122,
+                0xFF80D8FF,
+                false
+        );
+
+        context.graphics().drawString(
+                font,
+                recoveryDiagnostics,
+                15,
+                134,
+                recoveryDiagnostics.contains("PENDING") ? 0xFFFFAA00 : 0xFF80D8FF,
                 false
         );
     }

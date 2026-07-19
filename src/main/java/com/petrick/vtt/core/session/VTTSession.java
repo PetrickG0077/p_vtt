@@ -30,6 +30,7 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.payload.VttReplicationResyncRequestPayload;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
@@ -78,6 +79,13 @@ public final class VTTSession {
     private List<String> networkVisibleObjectIds = List.of();
     private boolean networkMaskWhenVisionEmpty = true;
     private boolean networkAuthorityActive;
+    private boolean networkResyncPending;
+    private long networkRevisionGapCount;
+    private long networkResyncRequestCount;
+    private long networkSpawnCount;
+    private long networkDespawnCount;
+    private long lastNetworkResyncRequestAt;
+    private String lastNetworkRecoveryReason = "none";
 
     public VTTSession() {
         this.assetRegistry = new AssetRegistry();
@@ -178,9 +186,9 @@ public final class VTTSession {
         this.activeTabletop = tabletop;
         this.activeScene = scene;
         this.networkAuthorityRevision = Math.max(0L, authorityRevision);
+        networkVisionRevision = -1L;
+        networkReplicationRevision = -1L;
         if (visionScopeChanged) {
-            networkVisionRevision = -1L;
-            networkReplicationRevision = -1L;
             networkVisionRegions = List.of();
             networkMaskWhenVisionEmpty = true;
         }
@@ -191,6 +199,8 @@ public final class VTTSession {
                 .distinct()
                 .toList();
         networkSnapshotVersion++;
+        if (networkResyncPending) lastNetworkRecoveryReason = "recovered " + lastNetworkRecoveryReason;
+        networkResyncPending = false;
         VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
     }
 
@@ -210,10 +220,11 @@ public final class VTTSession {
             long authorityRevision, long visionRevision, String sceneId,
             boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions
     ) {
-        if (!networkAuthorityActive || activeScene == null
-                || authorityRevision != networkAuthorityRevision
-                || sceneId == null || !sceneId.equals(activeScene.getId())
-                || visionRevision <= networkVisionRevision) return;
+        if (!validNetworkScope(authorityRevision, sceneId, "VISION_SCOPE")) return;
+        if (visionRevision <= networkVisionRevision) return;
+        if (networkVisionRevision >= 0L && visionRevision > networkVisionRevision + 1L) {
+            requestNetworkResync("VISION_GAP_" + networkVisionRevision + "_TO_" + visionRevision);
+        }
         networkVisionRevision = visionRevision;
         networkVisionRegions = regions == null ? List.of()
                 : regions.stream()
@@ -244,10 +255,14 @@ public final class VTTSession {
             long authorityRevision, long replicationRevision, String sceneId,
             List<VttSceneObject> spawnedObjects, List<String> despawnObjectIds
     ) {
-        if (!networkAuthorityActive || activeScene == null
-                || authorityRevision != networkAuthorityRevision
-                || sceneId == null || !sceneId.equals(activeScene.getId())
-                || replicationRevision <= networkReplicationRevision) return;
+        if (!validNetworkScope(authorityRevision, sceneId, "REPLICATION_SCOPE")) return;
+        if (replicationRevision <= networkReplicationRevision || networkResyncPending) return;
+        if (networkReplicationRevision >= 0L
+                && replicationRevision > networkReplicationRevision + 1L) {
+            requestNetworkResync(
+                    "REPLICATION_GAP_" + networkReplicationRevision + "_TO_" + replicationRevision);
+            return;
+        }
         networkReplicationRevision = replicationRevision;
         if (activeScene == null || isLocalMaster()) return;
         List<VttSceneObject> safeObjects = spawnedObjects == null ? List.of()
@@ -276,6 +291,48 @@ public final class VTTSession {
             canvasScene.moveObjectToLayer(canvasObject.id(), spawned.getLayerIndex());
         }
         networkVisibleObjectIds = List.copyOf(visibleIds);
+        networkSpawnCount += safeObjects.size();
+        networkDespawnCount += despawnIds.size();
+        VTT.LOGGER.debug("Applied VTT replication R{}: {} spawn(s), {} despawn(s)",
+                replicationRevision, safeObjects.size(), despawnIds.size());
+    }
+
+    private boolean validNetworkScope(long authorityRevision, String sceneId, String reason) {
+        if (!networkAuthorityActive || activeScene == null) return false;
+        boolean valid = authorityRevision == networkAuthorityRevision
+                && sceneId != null && sceneId.equals(activeScene.getId());
+        if (!valid && authorityRevision >= networkAuthorityRevision) {
+            requestNetworkResync(reason);
+        }
+        return valid;
+    }
+
+    private void requestNetworkResync(String reason) {
+        long now = System.currentTimeMillis();
+        if (!networkAuthorityActive || activeScene == null
+                || now - lastNetworkResyncRequestAt < 2_000L) return;
+        lastNetworkResyncRequestAt = now;
+        networkResyncPending = true;
+        networkRevisionGapCount++;
+        networkResyncRequestCount++;
+        lastNetworkRecoveryReason = reason;
+        VTT.LOGGER.warn("Requesting VTT replication recovery: {} (A={}, V={}, R={})",
+                reason, networkAuthorityRevision, networkVisionRevision, networkReplicationRevision);
+        PacketDistributor.sendToServer(new VttReplicationResyncRequestPayload(
+                networkAuthorityRevision, activeScene.getId(), networkVisionRevision,
+                networkReplicationRevision, reason));
+    }
+
+    public String getNetworkReplicationDiagnostics() {
+        if (!networkAuthorityActive) return "Network: local session";
+        return "Network: A=" + networkAuthorityRevision + " V=" + networkVisionRevision
+                + " R=" + networkReplicationRevision + " visible=" + networkVisibleObjectIds.size();
+    }
+
+    public String getNetworkRecoveryDiagnostics() {
+        return "Replication: spawn=" + networkSpawnCount + " despawn=" + networkDespawnCount
+                + " gaps=" + networkRevisionGapCount + " resync=" + networkResyncRequestCount
+                + (networkResyncPending ? " PENDING" : "") + " last=" + lastNetworkRecoveryReason;
     }
 
     public void applyConfirmedTokenTransform(VttTokenTransformUpdatePayload update) {
@@ -551,6 +608,13 @@ public final class VTTSession {
         networkVisionRegions = List.of();
         networkVisibleObjectIds = List.of();
         networkMaskWhenVisionEmpty = true;
+        networkResyncPending = false;
+        networkRevisionGapCount = 0L;
+        networkResyncRequestCount = 0L;
+        networkSpawnCount = 0L;
+        networkDespawnCount = 0L;
+        lastNetworkResyncRequestAt = 0L;
+        lastNetworkRecoveryReason = "none";
         localPlayerId = null;
         localRole = VttRole.MASTER;
 

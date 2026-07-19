@@ -61,6 +61,7 @@ public final class VttServerPlayerEvents {
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         LAST_ROLES.remove(event.getEntity().getUUID());
         VttServerVisionSourceSync.forget(event.getEntity().getUUID());
+        VttServerReplicationResyncHandler.forget(event.getEntity().getUUID());
     }
 
     private static VttRole sendRole(ServerPlayer player) {

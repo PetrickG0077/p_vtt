@@ -248,7 +248,9 @@ public final class VTTScreen extends Screen {
                     assetRegistry.size(),
                     tokenDefinitionRegistry.size(),
                     session.getAssetLibraryScanResult().totalCount(),
-                    session.getAssetLibraryScanResult().animatedImageCount()
+                    session.getAssetLibraryScanResult().animatedImageCount(),
+                    session.getNetworkReplicationDiagnostics(),
+                    session.getNetworkRecoveryDiagnostics()
             );
         }
 

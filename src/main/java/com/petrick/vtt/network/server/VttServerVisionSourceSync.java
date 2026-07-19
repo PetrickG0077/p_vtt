@@ -109,6 +109,9 @@ public final class VttServerVisionSourceSync {
                 PacketDistributor.sendToPlayer(player, new VttPlayerReplicationPayload(
                         state.authorityRevision(), nextRevision(REPLICATION_REVISIONS, playerId),
                         state.activeScene().getId(), json, List.copyOf(despawnedIds)));
+                com.petrick.vtt.VTT.LOGGER.debug(
+                        "Sent VTT replication delta to {}: {} spawn(s), {} despawn(s)",
+                        player.getGameProfile().getName(), spawnedObjects.size(), despawnedIds.size());
             }
         }
         PLAYER_SCOPES.put(playerId, new PlayerScope(
@@ -158,6 +161,10 @@ public final class VttServerVisionSourceSync {
         REPLICATION_REVISIONS.remove(playerId);
         KNOWN_ASSETS.remove(playerId);
         PLAYER_SCOPES.remove(playerId);
+    }
+
+    public static void resetPlayerScope(UUID playerId) {
+        if (playerId != null) PLAYER_SCOPES.remove(playerId);
     }
 
     public static boolean canReceiveObject(

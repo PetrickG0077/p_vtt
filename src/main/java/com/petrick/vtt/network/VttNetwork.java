@@ -23,6 +23,8 @@ import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.server.VttServerSceneCommandHandler;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
+import com.petrick.vtt.network.payload.VttReplicationResyncRequestPayload;
+import com.petrick.vtt.network.server.VttServerReplicationResyncHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -31,7 +33,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "22";
+    private static final String PROTOCOL_VERSION = "23";
 
     private VttNetwork() {
     }
@@ -55,6 +57,9 @@ public final class VttNetwork {
         registrar.playToClient(VttPlayerReplicationPayload.TYPE,
                 VttPlayerReplicationPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handlePlayerReplication);
+        registrar.playToServer(VttReplicationResyncRequestPayload.TYPE,
+                VttReplicationResyncRequestPayload.STREAM_CODEC,
+                VttServerReplicationResyncHandler::handle);
         registrar.playToClient(VttAssetSyncStartPayload.TYPE, VttAssetSyncStartPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleAssetSyncStart);
         registrar.playToClient(VttAssetChunkPayload.TYPE, VttAssetChunkPayload.STREAM_CODEC,
