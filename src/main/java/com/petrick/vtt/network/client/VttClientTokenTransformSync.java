@@ -14,7 +14,10 @@ public final class VttClientTokenTransformSync {
     private static final Map<String, TokenState> LAST_SENT = new HashMap<>();
     private static final Map<String, Long> LAST_SENT_AT = new HashMap<>();
     private static final Map<String, Long> COLLISION_BYPASS_UNTIL = new HashMap<>();
+    private static final Map<String, Interpolation> INTERPOLATIONS = new HashMap<>();
     private static final long SEND_INTERVAL_MS = 100L;
+    private static final long INTERPOLATION_DURATION_MS = 140L;
+    private static final double TELEPORT_DISTANCE_SQUARED = 512.0 * 512.0;
     private static long snapshotVersion = -1L;
 
     private VttClientTokenTransformSync() {}
@@ -23,23 +26,28 @@ public final class VttClientTokenTransformSync {
         if (session == null || !session.hasNetworkSnapshot()) return;
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
+            INTERPOLATIONS.clear();
             capture(session);
             return;
         }
 
+        long now = System.currentTimeMillis();
+        advanceInterpolations(session, now);
+
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
             if (!object.hasSourceTokenDefinition()) continue;
+            if (INTERPOLATIONS.containsKey(object.id())) continue;
             TokenState current = TokenState.from(object,
                     session.getCanvasScene().getObjectLayerIndex(object.id()));
             if (current.equals(LAST_SENT.get(object.id()))) continue;
-            long now = System.currentTimeMillis();
             if (now - LAST_SENT_AT.getOrDefault(object.id(), 0L) < SEND_INTERVAL_MS) continue;
             LAST_SENT.put(object.id(), current);
             LAST_SENT_AT.put(object.id(), now);
             boolean bypassCollision = session.isLocalMaster()
                     && (Screen.hasAltDown() || consumeCollisionBypass(object.id(), now));
             PacketDistributor.sendToServer(new VttTokenTransformRequestPayload(
-                    object.id(), current.x(), current.y(), current.rotationDegrees(),
+                    session.getActiveScene().getId(), object.id(),
+                    current.x(), current.y(), current.rotationDegrees(),
                     current.scaleX(), current.scaleY(), current.layerIndex(),
                     current.flippedHorizontally(), current.activeStateId(), bypassCollision
             ));
@@ -61,16 +69,38 @@ public final class VttClientTokenTransformSync {
 
     public static void acceptConfirmed(VTTSession session, VttTokenTransformUpdatePayload update) {
         if (session == null || update == null) return;
+        if (session.getActiveScene() == null
+                || !update.sceneId().equals(session.getActiveScene().getId())) return;
         boolean ownAcceptedUpdate = update.accepted()
                 && update.originPlayerId().equals(session.getLocalPlayerId());
         if (ownAcceptedUpdate) {
+            INTERPOLATIONS.remove(update.objectId());
             return;
         }
         LAST_SENT.put(update.objectId(), new TokenState(update.x(), update.y(), update.rotationDegrees(),
                 update.scaleX(), update.scaleY(), update.layerIndex(),
                 update.flippedHorizontally(), update.activeStateId()));
         LAST_SENT_AT.put(update.objectId(), System.currentTimeMillis());
-        session.applyConfirmedTokenTransform(update);
+
+        CanvasObject object = session.getCanvasScene().findObjectById(update.objectId());
+        if (object == null) {
+            INTERPOLATIONS.remove(update.objectId());
+            session.applyConfirmedTokenTransform(update);
+            return;
+        }
+
+        TokenState start = TokenState.from(object,
+                session.getCanvasScene().getObjectLayerIndex(object.id()));
+        TokenState target = TokenState.from(update);
+        if (shouldSnap(start, target) || !hasContinuousDifference(start, target)) {
+            INTERPOLATIONS.remove(update.objectId());
+            session.applyConfirmedTokenTransform(update);
+            return;
+        }
+
+        INTERPOLATIONS.put(update.objectId(), new Interpolation(
+                start, target, update.originPlayerId(), update.accepted(),
+                System.currentTimeMillis(), INTERPOLATION_DURATION_MS, start));
     }
 
     public static void reset() {
@@ -78,6 +108,7 @@ public final class VttClientTokenTransformSync {
         LAST_SENT.clear();
         LAST_SENT_AT.clear();
         COLLISION_BYPASS_UNTIL.clear();
+        INTERPOLATIONS.clear();
     }
 
     private static void capture(VTTSession session) {
@@ -89,6 +120,73 @@ public final class VttClientTokenTransformSync {
         }
     }
 
+    private static void advanceInterpolations(VTTSession session, long now) {
+        INTERPOLATIONS.entrySet().removeIf(entry ->
+                session.getCanvasScene().findObjectById(entry.getKey()) == null);
+        for (var entry : Map.copyOf(INTERPOLATIONS).entrySet()) {
+            Interpolation interpolation = entry.getValue();
+            CanvasObject object = session.getCanvasScene().findObjectById(entry.getKey());
+            TokenState current = TokenState.from(object,
+                    session.getCanvasScene().getObjectLayerIndex(object.id()));
+            if (!current.equals(interpolation.lastDisplayed())) {
+                INTERPOLATIONS.remove(entry.getKey());
+                continue;
+            }
+            double progress = Math.min(1.0,
+                    (now - interpolation.startedAtMs()) / (double) interpolation.durationMs());
+            TokenState displayed = interpolate(interpolation.start(), interpolation.target(), progress);
+            session.applyConfirmedTokenTransform(displayed.toUpdate(
+                    session.getActiveScene().getId(), entry.getKey(),
+                    interpolation.originPlayerId(), interpolation.accepted()));
+            if (progress >= 1.0) {
+                INTERPOLATIONS.remove(entry.getKey());
+            } else {
+                INTERPOLATIONS.put(entry.getKey(), interpolation.withLastDisplayed(displayed));
+            }
+        }
+    }
+
+    private static boolean shouldSnap(TokenState start, TokenState target) {
+        double deltaX = target.x() - start.x();
+        double deltaY = target.y() - start.y();
+        return deltaX * deltaX + deltaY * deltaY > TELEPORT_DISTANCE_SQUARED
+                || !finite(start) || !finite(target);
+    }
+
+    private static boolean hasContinuousDifference(TokenState start, TokenState target) {
+        return Double.compare(start.x(), target.x()) != 0
+                || Double.compare(start.y(), target.y()) != 0
+                || Double.compare(start.rotationDegrees(), target.rotationDegrees()) != 0
+                || Double.compare(start.scaleX(), target.scaleX()) != 0
+                || Double.compare(start.scaleY(), target.scaleY()) != 0;
+    }
+
+    private static boolean finite(TokenState state) {
+        return Double.isFinite(state.x()) && Double.isFinite(state.y())
+                && Double.isFinite(state.rotationDegrees())
+                && Double.isFinite(state.scaleX()) && Double.isFinite(state.scaleY());
+    }
+
+    private static TokenState interpolate(TokenState start, TokenState target, double progress) {
+        return new TokenState(
+                lerp(start.x(), target.x(), progress),
+                lerp(start.y(), target.y(), progress),
+                lerpAngle(start.rotationDegrees(), target.rotationDegrees(), progress),
+                lerp(start.scaleX(), target.scaleX(), progress),
+                lerp(start.scaleY(), target.scaleY(), progress),
+                target.layerIndex(), target.flippedHorizontally(), target.activeStateId());
+    }
+
+    private static double lerp(double start, double end, double progress) {
+        return start + (end - start) * progress;
+    }
+
+    private static double lerpAngle(double start, double end, double progress) {
+        double delta = ((end - start + 540.0) % 360.0) - 180.0;
+        double result = (start + delta * progress) % 360.0;
+        return result < 0.0 ? result + 360.0 : result;
+    }
+
     private record TokenState(double x, double y, double rotationDegrees,
                               double scaleX, double scaleY, int layerIndex,
                               boolean flippedHorizontally, String activeStateId) {
@@ -97,6 +195,28 @@ public final class VttClientTokenTransformSync {
                     object.transform().rotationDegrees(), object.transform().scale().x(),
                     object.transform().scale().y(), layerIndex,
                     object.flippedHorizontally(), object.activeStateId());
+        }
+
+        private static TokenState from(VttTokenTransformUpdatePayload update) {
+            return new TokenState(update.x(), update.y(), update.rotationDegrees(),
+                    update.scaleX(), update.scaleY(), update.layerIndex(),
+                    update.flippedHorizontally(), update.activeStateId());
+        }
+
+        private VttTokenTransformUpdatePayload toUpdate(
+                String sceneId, String objectId, String originPlayerId, boolean accepted) {
+            return new VttTokenTransformUpdatePayload(sceneId, objectId, x, y, rotationDegrees,
+                    scaleX, scaleY, layerIndex, flippedHorizontally, activeStateId,
+                    originPlayerId, accepted);
+        }
+    }
+
+    private record Interpolation(TokenState start, TokenState target,
+                                 String originPlayerId, boolean accepted,
+                                 long startedAtMs, long durationMs, TokenState lastDisplayed) {
+        private Interpolation withLastDisplayed(TokenState displayed) {
+            return new Interpolation(start, target, originPlayerId, accepted,
+                    startedAtMs, durationMs, displayed);
         }
     }
 }

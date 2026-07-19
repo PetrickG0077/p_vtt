@@ -216,7 +216,8 @@ public final class VttServerTabletopState {
     public synchronized VttTokenTransformUpdatePayload applyTokenTransform(
             VttTokenTransformRequestPayload request, String playerId, boolean master
     ) {
-        if (request == null || playerId == null || !valid(request)) return null;
+        if (request == null || playerId == null || activeScene == null
+                || !activeScene.getId().equals(request.sceneId()) || !valid(request)) return null;
         VttSceneObject object = activeScene.getObjects().stream()
                 .filter(candidate -> candidate != null && request.objectId().equals(candidate.getId()))
                 .findFirst().orElse(null);
@@ -250,20 +251,22 @@ public final class VttServerTabletopState {
         object.getState().setActiveStateId(request.activeStateId());
         storage.saveScene(tabletop.getId(), activeScene);
 
-        return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
+        return new VttTokenTransformUpdatePayload(activeScene.getId(), object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(),
                 playerId, movementAccepted && masterFieldsAccepted);
     }
 
-    public synchronized VttTokenTransformUpdatePayload currentTokenTransform(String objectId, String playerId) {
-        if (objectId == null || objectId.isBlank()) return null;
+    public synchronized VttTokenTransformUpdatePayload currentTokenTransform(
+            String sceneId, String objectId, String playerId) {
+        if (sceneId == null || activeScene == null || !sceneId.equals(activeScene.getId())
+                || objectId == null || objectId.isBlank()) return null;
         VttSceneObject object = activeScene.getObjects().stream()
                 .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
                 .findFirst().orElse(null);
         if (object == null) return null;
-        return new VttTokenTransformUpdatePayload(object.getId(), object.getTransform().getX(),
+        return new VttTokenTransformUpdatePayload(activeScene.getId(), object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
