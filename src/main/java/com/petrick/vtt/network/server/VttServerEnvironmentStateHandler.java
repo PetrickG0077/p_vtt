@@ -26,7 +26,7 @@ public final class VttServerEnvironmentStateHandler {
         if (!(context.player() instanceof ServerPlayer player)) return;
         var state = VttServerTabletopState.get();
         var update = VttServerPlayerEvents.isMaster(player)
-                ? state.applyEnvironmentCommand(request) : null;
+                ? state.applyEnvironmentCommand(request, player.getUUID().toString()) : null;
         if (update == null) {
             VTT.LOGGER.warn("Rejected VTT environment command from {}",
                     player.getGameProfile().getName());

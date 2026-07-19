@@ -15,10 +15,13 @@ public final class VttClientTokenTransformSync {
     private static final Map<String, Long> LAST_SENT_AT = new HashMap<>();
     private static final Map<String, Long> COLLISION_BYPASS_UNTIL = new HashMap<>();
     private static final Map<String, Interpolation> INTERPOLATIONS = new HashMap<>();
+    private static final Map<String, Long> NEXT_SEQUENCE = new HashMap<>();
+    private static final Map<String, Long> LATEST_REVISION = new HashMap<>();
     private static final long SEND_INTERVAL_MS = 100L;
     private static final long INTERPOLATION_DURATION_MS = 140L;
     private static final double TELEPORT_DISTANCE_SQUARED = 512.0 * 512.0;
     private static long snapshotVersion = -1L;
+    private static long authorityRevision = -1L;
 
     private VttClientTokenTransformSync() {}
 
@@ -27,6 +30,11 @@ public final class VttClientTokenTransformSync {
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
             INTERPOLATIONS.clear();
+            if (authorityRevision != session.getNetworkAuthorityRevision()) {
+                authorityRevision = session.getNetworkAuthorityRevision();
+                NEXT_SEQUENCE.clear();
+                LATEST_REVISION.clear();
+            }
             capture(session);
             return;
         }
@@ -45,7 +53,9 @@ public final class VttClientTokenTransformSync {
             LAST_SENT_AT.put(object.id(), now);
             boolean bypassCollision = session.isLocalMaster()
                     && (Screen.hasAltDown() || consumeCollisionBypass(object.id(), now));
+            long clientSequence = NEXT_SEQUENCE.merge(object.id(), 1L, Long::sum);
             PacketDistributor.sendToServer(new VttTokenTransformRequestPayload(
+                    session.getNetworkAuthorityRevision(), clientSequence,
                     session.getActiveScene().getId(), object.id(),
                     current.x(), current.y(), current.rotationDegrees(),
                     current.scaleX(), current.scaleY(), current.layerIndex(),
@@ -70,7 +80,12 @@ public final class VttClientTokenTransformSync {
     public static void acceptConfirmed(VTTSession session, VttTokenTransformUpdatePayload update) {
         if (session == null || update == null) return;
         if (session.getActiveScene() == null
+                || update.authorityRevision() != session.getNetworkAuthorityRevision()
                 || !update.sceneId().equals(session.getActiveScene().getId())) return;
+        long latestRevision = LATEST_REVISION.getOrDefault(update.objectId(), -1L);
+        if (update.entityRevision() < latestRevision
+                || update.entityRevision() == latestRevision && update.accepted()) return;
+        LATEST_REVISION.put(update.objectId(), update.entityRevision());
         boolean ownAcceptedUpdate = update.accepted()
                 && update.originPlayerId().equals(session.getLocalPlayerId());
         if (ownAcceptedUpdate) {
@@ -100,6 +115,7 @@ public final class VttClientTokenTransformSync {
 
         INTERPOLATIONS.put(update.objectId(), new Interpolation(
                 start, target, update.originPlayerId(), update.accepted(),
+                update.authorityRevision(), update.entityRevision(), update.clientSequence(),
                 System.currentTimeMillis(), INTERPOLATION_DURATION_MS, start));
     }
 
@@ -109,6 +125,9 @@ public final class VttClientTokenTransformSync {
         LAST_SENT_AT.clear();
         COLLISION_BYPASS_UNTIL.clear();
         INTERPOLATIONS.clear();
+        NEXT_SEQUENCE.clear();
+        LATEST_REVISION.clear();
+        authorityRevision = -1L;
     }
 
     private static void capture(VTTSession session) {
@@ -136,7 +155,8 @@ public final class VttClientTokenTransformSync {
                     (now - interpolation.startedAtMs()) / (double) interpolation.durationMs());
             TokenState displayed = interpolate(interpolation.start(), interpolation.target(), progress);
             session.applyConfirmedTokenTransform(displayed.toUpdate(
-                    session.getActiveScene().getId(), entry.getKey(),
+                    interpolation.authorityRevision(), interpolation.entityRevision(),
+                    interpolation.clientSequence(), session.getActiveScene().getId(), entry.getKey(),
                     interpolation.originPlayerId(), interpolation.accepted()));
             if (progress >= 1.0) {
                 INTERPOLATIONS.remove(entry.getKey());
@@ -204,8 +224,11 @@ public final class VttClientTokenTransformSync {
         }
 
         private VttTokenTransformUpdatePayload toUpdate(
+                long authorityRevision, long entityRevision, long clientSequence,
                 String sceneId, String objectId, String originPlayerId, boolean accepted) {
-            return new VttTokenTransformUpdatePayload(sceneId, objectId, x, y, rotationDegrees,
+            return new VttTokenTransformUpdatePayload(
+                    authorityRevision, entityRevision, clientSequence,
+                    sceneId, objectId, x, y, rotationDegrees,
                     scaleX, scaleY, layerIndex, flippedHorizontally, activeStateId,
                     originPlayerId, accepted);
         }
@@ -213,9 +236,11 @@ public final class VttClientTokenTransformSync {
 
     private record Interpolation(TokenState start, TokenState target,
                                  String originPlayerId, boolean accepted,
+                                 long authorityRevision, long entityRevision, long clientSequence,
                                  long startedAtMs, long durationMs, TokenState lastDisplayed) {
         private Interpolation withLastDisplayed(TokenState displayed) {
             return new Interpolation(start, target, originPlayerId, accepted,
+                    authorityRevision, entityRevision, clientSequence,
                     startedAtMs, durationMs, displayed);
         }
     }

@@ -1,14 +1,14 @@
 package com.petrick.vtt.network.payload;
 
 import com.petrick.vtt.VTT;
-import io.netty.buffer.ByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /** A single master-authored environment mutation sent to the server. */
 public record VttEnvironmentCommandPayload(
+        long authorityRevision, long clientSequence,
         String operation, String sceneId, String entityType, String entityId, String entityJson)
         implements CustomPacketPayload {
     public static final String UPSERT = "UPSERT";
@@ -24,15 +24,26 @@ public record VttEnvironmentCommandPayload(
     public static final Type<VttEnvironmentCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "environment_command")
     );
-    public static final StreamCodec<ByteBuf, VttEnvironmentCommandPayload> STREAM_CODEC =
-            StreamCodec.composite(
-                    ByteBufCodecs.stringUtf8(16), VttEnvironmentCommandPayload::operation,
-                    ByteBufCodecs.stringUtf8(128), VttEnvironmentCommandPayload::sceneId,
-                    ByteBufCodecs.stringUtf8(24), VttEnvironmentCommandPayload::entityType,
-                    ByteBufCodecs.stringUtf8(128), VttEnvironmentCommandPayload::entityId,
-                    ByteBufCodecs.stringUtf8(MAX_JSON_LENGTH), VttEnvironmentCommandPayload::entityJson,
-                    VttEnvironmentCommandPayload::new
-            );
+    public static final StreamCodec<RegistryFriendlyByteBuf, VttEnvironmentCommandPayload> STREAM_CODEC =
+            new StreamCodec<>() {
+                @Override
+                public VttEnvironmentCommandPayload decode(RegistryFriendlyByteBuf buffer) {
+                    return new VttEnvironmentCommandPayload(buffer.readVarLong(), buffer.readVarLong(),
+                            buffer.readUtf(16), buffer.readUtf(128), buffer.readUtf(24),
+                            buffer.readUtf(128), buffer.readUtf(MAX_JSON_LENGTH));
+                }
+
+                @Override
+                public void encode(RegistryFriendlyByteBuf buffer, VttEnvironmentCommandPayload payload) {
+                    buffer.writeVarLong(payload.authorityRevision());
+                    buffer.writeVarLong(payload.clientSequence());
+                    buffer.writeUtf(payload.operation(), 16);
+                    buffer.writeUtf(payload.sceneId(), 128);
+                    buffer.writeUtf(payload.entityType(), 24);
+                    buffer.writeUtf(payload.entityId(), 128);
+                    buffer.writeUtf(payload.entityJson(), MAX_JSON_LENGTH);
+                }
+            };
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

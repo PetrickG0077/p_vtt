@@ -65,6 +65,7 @@ public final class VTTSession {
 
     private String localPlayerId;
     private long networkSnapshotVersion;
+    private long networkAuthorityRevision;
     private boolean networkAuthorityActive;
 
     public VTTSession() {
@@ -154,7 +155,7 @@ public final class VTTSession {
                 .resolve("config/vtt_assets/cache/server/tokens");
     }
 
-    public void applyNetworkSnapshot(VttTabletop tabletop, VttScene scene) {
+    public void applyNetworkSnapshot(VttTabletop tabletop, VttScene scene, long authorityRevision) {
         if (tabletop == null || scene == null) {
             VTT.LOGGER.warn("Ignored invalid VTT network snapshot");
             return;
@@ -162,6 +163,7 @@ public final class VTTSession {
 
         this.activeTabletop = tabletop;
         this.activeScene = scene;
+        this.networkAuthorityRevision = Math.max(0L, authorityRevision);
         loadActiveSceneToCanvasScene();
         networkSnapshotVersion++;
         VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
@@ -169,6 +171,10 @@ public final class VTTSession {
 
     public long getNetworkSnapshotVersion() {
         return networkSnapshotVersion;
+    }
+
+    public long getNetworkAuthorityRevision() {
+        return networkAuthorityRevision;
     }
 
     public boolean hasNetworkSnapshot() {
@@ -232,7 +238,7 @@ public final class VTTSession {
                     || !activeTabletop.getSceneIds().contains(sceneId)) return false;
             if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.SWITCH, sceneId, ""));
+                    networkAuthorityRevision, VttSceneCommandPayload.SWITCH, sceneId, ""));
             return true;
         }
         if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
@@ -289,7 +295,7 @@ public final class VTTSession {
         if (!isLocalMaster() || displayName == null || displayName.isBlank()
                 || displayName.length() > 48) return false;
         PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                VttSceneCommandPayload.CREATE, "", displayName.trim()));
+                networkAuthorityRevision, VttSceneCommandPayload.CREATE, "", displayName.trim()));
         return true;
     }
 
@@ -297,7 +303,8 @@ public final class VTTSession {
         if (activeScene == null || !isLocalMaster()) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.SET_BACKGROUND, "", assetId == null ? "" : assetId));
+                    networkAuthorityRevision, VttSceneCommandPayload.SET_BACKGROUND,
+                    "", assetId == null ? "" : assetId));
             return true;
         }
         activeScene.setBackgroundAssetId(assetId);
@@ -311,7 +318,8 @@ public final class VTTSession {
                 || !activeTabletop.getSceneIds().contains(sceneId)) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.RENAME, sceneId, displayName.trim()));
+                    networkAuthorityRevision, VttSceneCommandPayload.RENAME,
+                    sceneId, displayName.trim()));
             return true;
         }
         VttScene target = sceneId.equals(activeScene.getId())
@@ -330,7 +338,7 @@ public final class VTTSession {
                 || !activeTabletop.getSceneIds().contains(sceneId)) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.DELETE, sceneId, ""));
+                    networkAuthorityRevision, VttSceneCommandPayload.DELETE, sceneId, ""));
             return true;
         }
         boolean deletingActive = sceneId.equals(activeScene.getId());
@@ -438,6 +446,7 @@ public final class VTTSession {
         if (!networkAuthorityActive) return;
         networkAuthorityActive = false;
         networkSnapshotVersion = 0L;
+        networkAuthorityRevision = 0L;
         localPlayerId = null;
         localRole = VttRole.MASTER;
 

@@ -15,6 +15,7 @@ public final class VttServerSceneCommandHandler {
         if (!(context.player() instanceof ServerPlayer requester)) return;
         VttServerTabletopState state = VttServerTabletopState.get();
         if (!VttServerPlayerEvents.isMaster(requester) || request == null
+                || request.authorityRevision() != state.authorityRevision()
                 || request.operation() == null || request.targetId() == null || request.value() == null) {
             reject(requester, state, "unauthorized or invalid request");
             return;

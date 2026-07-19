@@ -7,6 +7,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 public record VttTokenTransformRequestPayload(
+        long authorityRevision, long clientSequence,
         String sceneId, String objectId, double x, double y, double rotationDegrees,
         double scaleX, double scaleY, int layerIndex,
         boolean flippedHorizontally, String activeStateId, boolean bypassCollision
@@ -20,7 +21,8 @@ public record VttTokenTransformRequestPayload(
         return new StreamCodec<>() {
             @Override
             public VttTokenTransformRequestPayload decode(RegistryFriendlyByteBuf buffer) {
-                return new VttTokenTransformRequestPayload(buffer.readUtf(128), buffer.readUtf(128),
+                return new VttTokenTransformRequestPayload(buffer.readVarLong(), buffer.readVarLong(),
+                        buffer.readUtf(128), buffer.readUtf(128),
                         buffer.readDouble(), buffer.readDouble(),
                         buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(),
                         buffer.readBoolean(), buffer.readUtf(128), buffer.readBoolean());
@@ -28,6 +30,8 @@ public record VttTokenTransformRequestPayload(
 
             @Override
             public void encode(RegistryFriendlyByteBuf buffer, VttTokenTransformRequestPayload payload) {
+                buffer.writeVarLong(payload.authorityRevision());
+                buffer.writeVarLong(payload.clientSequence());
                 buffer.writeUtf(payload.sceneId(), 128);
                 buffer.writeUtf(payload.objectId(), 128);
                 buffer.writeDouble(payload.x());

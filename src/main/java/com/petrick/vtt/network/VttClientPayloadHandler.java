@@ -46,7 +46,8 @@ public final class VttClientPayloadHandler {
         try {
             VttTabletop tabletop = GSON.fromJson(payload.tabletopJson(), VttTabletop.class);
             VttScene scene = GSON.fromJson(payload.sceneJson(), VttScene.class);
-            VTT.getApplication().getActiveSession().applyNetworkSnapshot(tabletop, scene);
+            VTT.getApplication().getActiveSession().applyNetworkSnapshot(
+                    tabletop, scene, payload.authorityRevision());
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT scene snapshot from server", exception);
         }

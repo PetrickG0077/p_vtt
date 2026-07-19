@@ -26,7 +26,10 @@ public final class VttClientEnvironmentCommandSync {
     private static final Map<String, String> lastHiddenFog = new LinkedHashMap<>();
     private static final Map<String, String> lastRevealedFog = new LinkedHashMap<>();
     private static final Map<String, String> lastVision = new LinkedHashMap<>();
+    private static final Map<String, Long> nextSequences = new LinkedHashMap<>();
+    private static final Map<String, Long> latestRevisions = new LinkedHashMap<>();
     private static long snapshotVersion = -1L;
+    private static long authorityRevision = -1L;
     private static String lastFogConfigJson;
     private static String activeSceneId;
 
@@ -46,6 +49,11 @@ public final class VttClientEnvironmentCommandSync {
 
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
+            if (authorityRevision != session.getNetworkAuthorityRevision()) {
+                authorityRevision = session.getNetworkAuthorityRevision();
+                nextSequences.clear();
+                latestRevisions.clear();
+            }
             replace(lastWalls, walls);
             replace(lastDoors, doors);
             replace(lastHiddenFog, hiddenFog);
@@ -69,7 +77,12 @@ public final class VttClientEnvironmentCommandSync {
 
     public static void accept(VTTSession session, VttEnvironmentCommandUpdatePayload update) {
         if (session == null || update == null || !session.hasNetworkSnapshot()) return;
-        if (!update.sceneId().equals(session.getActiveScene().getId())) return;
+        if (update.authorityRevision() != session.getNetworkAuthorityRevision()
+                || !update.sceneId().equals(session.getActiveScene().getId())) return;
+        String revisionKey = entityKey(update.entityType(), update.entityId());
+        if (update.entityRevision() <= latestRevisions.getOrDefault(revisionKey, -1L)) return;
+        latestRevisions.put(revisionKey, update.entityRevision());
+        if (update.originPlayerId().equals(session.getLocalPlayerId())) return;
         try {
             boolean delete = VttEnvironmentCommandPayload.DELETE.equals(update.operation());
             switch (update.entityType()) {
@@ -129,8 +142,11 @@ public final class VttClientEnvironmentCommandSync {
         lastHiddenFog.clear();
         lastRevealedFog.clear();
         lastVision.clear();
+        nextSequences.clear();
+        latestRevisions.clear();
         lastFogConfigJson = null;
         activeSceneId = null;
+        authorityRevision = -1L;
     }
 
     private static <T> Map<String, String> jsonById(List<T> values, Function<T, String> idGetter) {
@@ -178,8 +194,15 @@ public final class VttClientEnvironmentCommandSync {
             return;
         }
         if (activeSceneId == null || activeSceneId.isBlank()) return;
+        String sequenceKey = entityKey(entityType, entityId);
+        long clientSequence = nextSequences.merge(sequenceKey, 1L, Long::sum);
         PacketDistributor.sendToServer(new VttEnvironmentCommandPayload(
-                operation, activeSceneId, entityType, entityId, json == null ? "" : json));
+                authorityRevision, clientSequence, operation, activeSceneId,
+                entityType, entityId, json == null ? "" : json));
+    }
+
+    private static String entityKey(String entityType, String entityId) {
+        return entityType + "\u0000" + entityId;
     }
 
     private static void updateLast(Map<String, String> target,
