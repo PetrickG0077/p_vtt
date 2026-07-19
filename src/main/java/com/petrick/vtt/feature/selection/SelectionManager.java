@@ -77,25 +77,39 @@ public final class SelectionManager {
     }
 
     public void selectObjectsInside(CanvasScene scene, Rectd worldBounds) {
+        selectObjectsInside(scene, worldBounds, false);
+    }
+
+    public void selectObjectsInside(CanvasScene scene, Rectd worldBounds, boolean includeHidden) {
         clearSelection();
-        addObjectsInside(scene, worldBounds);
+        addObjectsInside(scene, worldBounds, includeHidden);
     }
 
     public void addObjectsInside(CanvasScene scene, Rectd worldBounds) {
+        addObjectsInside(scene, worldBounds, false);
+    }
+
+    public void addObjectsInside(CanvasScene scene, Rectd worldBounds, boolean includeHidden) {
         for (CanvasObject object : scene.getObjects()) {
-            if (object.visible() && object.bounds().intersects(worldBounds)) {
+            if ((object.visible() || includeHidden) && object.bounds().intersects(worldBounds)) {
                 select(object.id());
             }
         }
     }
 
     public CanvasObject findTopmostObjectAtPoint(CanvasScene scene, Vec2d worldPosition) {
+        return findTopmostObjectAtPoint(scene, worldPosition, false);
+    }
+
+    public CanvasObject findTopmostObjectAtPoint(
+            CanvasScene scene, Vec2d worldPosition, boolean includeHidden
+    ) {
         List<CanvasObject> objects = scene.getObjects();
 
         for (int i = objects.size() - 1; i >= 0; i--) {
             CanvasObject object = objects.get(i);
 
-            if (!object.visible()) {
+            if (!object.visible() && !includeHidden) {
                 continue;
             }
 

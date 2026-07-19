@@ -30,7 +30,6 @@ public final class VttServerTokenTransformHandler {
             return;
         }
         PacketDistributor.sendToAllPlayers(update);
-        VttServerVisionSourceSync.sendForMovedObject(
-                player.getServer(), state, update.objectId());
+        VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }
 }

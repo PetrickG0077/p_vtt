@@ -49,33 +49,26 @@ public final class VttServerVisionSourceSync {
         boolean ownsDisabledToken = scene.getObjects().stream()
                 .anyMatch(object -> object != null && ownerId.equals(object.getOwnerId())
                         && !object.isVisionEnabled());
+        boolean maskWhenEmpty = !ownsDisabledToken;
+        List<String> visibleObjectIds = scene.getObjects().stream()
+                .filter(object -> object != null && object.getId() != null
+                        && object.getState() != null && object.getState().isVisible())
+                .filter(object -> ownerId.equals(object.getOwnerId())
+                        || regions.isEmpty() && !maskWhenEmpty
+                        || regions.stream().anyMatch(region -> pointInsidePolygon(
+                                new Vec2d(object.getTransform().getX(), object.getTransform().getY()),
+                                region.outerPolygon())))
+                .map(object -> object.getId())
+                .distinct()
+                .toList();
         PacketDistributor.sendToPlayer(player, new VttVisionSourcesPayload(
                 state.authorityRevision(), nextRevision(player.getUUID()), scene.getId(),
-                !ownsDisabledToken, regions));
+                maskWhenEmpty, regions, visibleObjectIds));
     }
 
     public static void broadcast(MinecraftServer server, VttServerTabletopState state) {
         if (server == null) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) sendToPlayer(player, state);
-    }
-
-    public static void sendForMovedObject(
-            MinecraftServer server, VttServerTabletopState state, String objectId
-    ) {
-        if (server == null || state == null || state.activeScene() == null || objectId == null) return;
-        String ownerId = state.activeScene().getObjects().stream()
-                .filter(object -> object != null && objectId.equals(object.getId())
-                        && object.isVisionEnabled())
-                .map(object -> object.getOwnerId())
-                .filter(id -> id != null && !id.isBlank())
-                .findFirst().orElse(null);
-        if (ownerId == null) return;
-        try {
-            ServerPlayer owner = server.getPlayerList().getPlayer(UUID.fromString(ownerId));
-            if (owner != null) sendToPlayer(owner, state);
-        } catch (IllegalArgumentException ignored) {
-            // Legacy owner strings are not authoritative multiplayer UUIDs.
-        }
     }
 
     public static void forget(UUID playerId) {
@@ -87,5 +80,19 @@ public final class VttServerVisionSourceSync {
         long next = current == Long.MAX_VALUE ? 1L : current + 1L;
         REVISIONS.put(playerId, next);
         return next;
+    }
+
+    private static boolean pointInsidePolygon(Vec2d point, List<Vec2d> polygon) {
+        if (point == null || polygon == null || polygon.size() < 3) return false;
+        boolean inside = false;
+        for (int first = 0, second = polygon.size() - 1; first < polygon.size(); second = first++) {
+            Vec2d a = polygon.get(first);
+            Vec2d b = polygon.get(second);
+            boolean crosses = (a.y() > point.y()) != (b.y() > point.y())
+                    && point.x() < (b.x() - a.x()) * (point.y() - a.y())
+                    / (b.y() - a.y()) + a.x();
+            if (crosses) inside = !inside;
+        }
+        return inside;
     }
 }

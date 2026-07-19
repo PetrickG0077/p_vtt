@@ -71,6 +71,7 @@ public final class VTTSession {
     private long networkAuthorityRevision;
     private long networkVisionRevision = -1L;
     private List<AuthoritativeVisionRegion> networkVisionRegions = List.of();
+    private List<String> networkVisibleObjectIds = List.of();
     private boolean networkMaskWhenVisionEmpty = true;
     private boolean networkAuthorityActive;
 
@@ -176,6 +177,7 @@ public final class VTTSession {
         if (visionScopeChanged) {
             networkVisionRevision = -1L;
             networkVisionRegions = List.of();
+            networkVisibleObjectIds = List.of();
             networkMaskWhenVisionEmpty = true;
         }
         loadActiveSceneToCanvasScene();
@@ -197,7 +199,8 @@ public final class VTTSession {
 
     public void applyNetworkVisionSources(
             long authorityRevision, long visionRevision, String sceneId,
-            boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions
+            boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions,
+            List<String> visibleObjectIds
     ) {
         if (!networkAuthorityActive || activeScene == null
                 || authorityRevision != networkAuthorityRevision
@@ -214,11 +217,20 @@ public final class VTTSession {
                         && region.outerRadius() >= region.innerRadius()
                         && region.outerPolygon().size() >= 3)
                 .toList();
+        networkVisibleObjectIds = visibleObjectIds == null ? List.of()
+                : visibleObjectIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
         networkMaskWhenVisionEmpty = maskWhenEmpty;
     }
 
     public List<AuthoritativeVisionRegion> getNetworkVisionRegions() {
         return networkVisionRegions;
+    }
+
+    public List<String> getNetworkVisibleObjectIds() {
+        return networkVisibleObjectIds;
     }
 
     public boolean shouldMaskWhenNetworkVisionEmpty() {
@@ -236,6 +248,7 @@ public final class VTTSession {
         );
         var replacement = object.withTransform(transform)
                 .withFlippedHorizontally(update.flippedHorizontally())
+                .withVisible(update.visible())
                 .withActiveState(update.activeStateId());
         canvasScene.replaceObject(replacement);
         canvasScene.moveObjectToLayer(update.objectId(), update.layerIndex());
@@ -250,6 +263,7 @@ public final class VTTSession {
                         sceneObject.getTransform().setScaleX(update.scaleX());
                         sceneObject.getTransform().setScaleY(update.scaleY());
                         sceneObject.getState().setFlippedHorizontally(update.flippedHorizontally());
+                        sceneObject.getState().setVisible(update.visible());
                         sceneObject.getState().setActiveStateId(update.activeStateId());
                     });
             for (var sceneObject : activeScene.getObjects()) {
@@ -493,6 +507,7 @@ public final class VTTSession {
         networkAuthorityRevision = 0L;
         networkVisionRevision = -1L;
         networkVisionRegions = List.of();
+        networkVisibleObjectIds = List.of();
         networkMaskWhenVisionEmpty = true;
         localPlayerId = null;
         localRole = VttRole.MASTER;

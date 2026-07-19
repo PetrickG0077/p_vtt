@@ -170,7 +170,7 @@ public final class SelectTool implements Tool {
         }
 
         CanvasObject clickedObject = context.selectionManager()
-                .findTopmostObjectAtPoint(context.scene(), worldPosition);
+                .findTopmostObjectAtPoint(context.scene(), worldPosition, isMaster());
 
         if (clickedObject == null) {
             if (!isControlDown(modifiers)) {
@@ -230,9 +230,11 @@ public final class SelectTool implements Tool {
             Rectd worldSelectionBounds = getWorldSelectionBounds(context);
 
             if (additiveSelection) {
-                context.selectionManager().addObjectsInside(context.scene(), worldSelectionBounds);
+                context.selectionManager().addObjectsInside(
+                        context.scene(), worldSelectionBounds, isMaster());
             } else {
-                context.selectionManager().selectObjectsInside(context.scene(), worldSelectionBounds);
+                context.selectionManager().selectObjectsInside(
+                        context.scene(), worldSelectionBounds, isMaster());
             }
             removeUnauthorizedSelection(context);
 
@@ -550,7 +552,7 @@ public final class SelectTool implements Tool {
         Vec2d mouse = new Vec2d(mouseX, mouseY);
 
         for (CanvasObject object : context.scene().getObjects()) {
-            if (!object.visible()) {
+            if (!object.visible() && !isMaster()) {
                 continue;
             }
 
@@ -836,6 +838,10 @@ public final class SelectTool implements Tool {
         return scene.getObjects().stream()
                 .filter(sceneObject -> sceneObject != null && object.id().equals(sceneObject.getId()))
                 .anyMatch(sceneObject -> playerId.equals(sceneObject.getOwnerId()));
+    }
+
+    private boolean isMaster() {
+        return roleSupplier.get() == VttRole.MASTER;
     }
 
     private void removeUnauthorizedSelection(ToolContext context) {

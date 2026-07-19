@@ -57,7 +57,7 @@ public final class VttClientPayloadHandler {
     public static void handleVisionSources(VttVisionSourcesPayload payload, IPayloadContext context) {
         VTT.getApplication().getActiveSession().applyNetworkVisionSources(
                 payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
-                payload.maskWhenEmpty(), payload.regions());
+                payload.maskWhenEmpty(), payload.regions(), payload.visibleObjectIds());
     }
 
     public static void handleAssetSyncStart(VttAssetSyncStartPayload payload, IPayloadContext context) {

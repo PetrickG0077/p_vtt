@@ -59,7 +59,8 @@ public final class VttClientTokenTransformSync {
                     session.getActiveScene().getId(), object.id(),
                     current.x(), current.y(), current.rotationDegrees(),
                     current.scaleX(), current.scaleY(), current.layerIndex(),
-                    current.flippedHorizontally(), current.activeStateId(), bypassCollision
+                    current.flippedHorizontally(), current.visible(),
+                    current.activeStateId(), bypassCollision
             ));
         }
     }
@@ -94,7 +95,7 @@ public final class VttClientTokenTransformSync {
         }
         LAST_SENT.put(update.objectId(), new TokenState(update.x(), update.y(), update.rotationDegrees(),
                 update.scaleX(), update.scaleY(), update.layerIndex(),
-                update.flippedHorizontally(), update.activeStateId()));
+                update.flippedHorizontally(), update.visible(), update.activeStateId()));
         LAST_SENT_AT.put(update.objectId(), System.currentTimeMillis());
 
         CanvasObject object = session.getCanvasScene().findObjectById(update.objectId());
@@ -194,7 +195,8 @@ public final class VttClientTokenTransformSync {
                 lerpAngle(start.rotationDegrees(), target.rotationDegrees(), progress),
                 lerp(start.scaleX(), target.scaleX(), progress),
                 lerp(start.scaleY(), target.scaleY(), progress),
-                target.layerIndex(), target.flippedHorizontally(), target.activeStateId());
+                target.layerIndex(), target.flippedHorizontally(), target.visible(),
+                target.activeStateId());
     }
 
     private static double lerp(double start, double end, double progress) {
@@ -209,18 +211,19 @@ public final class VttClientTokenTransformSync {
 
     private record TokenState(double x, double y, double rotationDegrees,
                               double scaleX, double scaleY, int layerIndex,
-                              boolean flippedHorizontally, String activeStateId) {
+                              boolean flippedHorizontally, boolean visible,
+                              String activeStateId) {
         private static TokenState from(CanvasObject object, int layerIndex) {
             return new TokenState(object.transform().position().x(), object.transform().position().y(),
                     object.transform().rotationDegrees(), object.transform().scale().x(),
                     object.transform().scale().y(), layerIndex,
-                    object.flippedHorizontally(), object.activeStateId());
+                    object.flippedHorizontally(), object.visible(), object.activeStateId());
         }
 
         private static TokenState from(VttTokenTransformUpdatePayload update) {
             return new TokenState(update.x(), update.y(), update.rotationDegrees(),
                     update.scaleX(), update.scaleY(), update.layerIndex(),
-                    update.flippedHorizontally(), update.activeStateId());
+                    update.flippedHorizontally(), update.visible(), update.activeStateId());
         }
 
         private VttTokenTransformUpdatePayload toUpdate(
@@ -229,7 +232,7 @@ public final class VttClientTokenTransformSync {
             return new VttTokenTransformUpdatePayload(
                     authorityRevision, entityRevision, clientSequence,
                     sceneId, objectId, x, y, rotationDegrees,
-                    scaleX, scaleY, layerIndex, flippedHorizontally, activeStateId,
+                    scaleX, scaleY, layerIndex, flippedHorizontally, visible, activeStateId,
                     originPlayerId, accepted);
         }
     }

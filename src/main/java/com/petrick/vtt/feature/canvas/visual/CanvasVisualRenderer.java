@@ -1,5 +1,6 @@
 package com.petrick.vtt.feature.canvas.visual;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
@@ -43,22 +44,44 @@ public final class CanvasVisualRenderer {
             int right,
             int bottom
     ) {
+        render(context, visual, left, top, right, bottom, 1.0F);
+    }
+
+    public void render(
+            VRenderContext context,
+            CanvasVisual visual,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            float opacity
+    ) {
+        float safeOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
         if (visual instanceof ColorVisual colorVisual) {
-            renderColorVisual(context, colorVisual, left, top, right, bottom);
+            renderColorVisual(context, colorVisual, left, top, right, bottom, safeOpacity);
             return;
         }
 
-        if (visual instanceof TextureVisual textureVisual) {
-            renderTextureVisual(context, textureVisual.assetRef(), left, top, right, bottom);
-            return;
+        boolean translucent = safeOpacity < 1.0F;
+        if (translucent) {
+            RenderSystem.enableBlend();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, safeOpacity);
         }
+        try {
+            if (visual instanceof TextureVisual textureVisual) {
+                renderTextureVisual(context, textureVisual.assetRef(), left, top, right, bottom);
+                return;
+            }
 
-        if (visual instanceof AnimatedTextureVisual animatedTextureVisual) {
-            renderAnimatedTextureVisual(context, animatedTextureVisual, left, top, right, bottom);
-            return;
+            if (visual instanceof AnimatedTextureVisual animatedTextureVisual) {
+                renderAnimatedTextureVisual(context, animatedTextureVisual, left, top, right, bottom);
+                return;
+            }
+
+            renderMissingTexture(context, left, top, right, bottom, safeOpacity);
+        } finally {
+            if (translucent) RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
-
-        renderMissingTexture(context, left, top, right, bottom);
     }
 
     private void renderColorVisual(
@@ -67,14 +90,15 @@ public final class CanvasVisualRenderer {
             int left,
             int top,
             int right,
-            int bottom
+            int bottom,
+            float opacity
     ) {
         context.graphics().fill(
                 left,
                 top,
                 right,
                 bottom,
-                visual.color()
+                withOpacity(visual.color(), opacity)
         );
     }
 
@@ -96,7 +120,7 @@ public final class CanvasVisualRenderer {
             return;
         }
 
-        renderMissingTexture(context, left, top, right, bottom);
+        renderMissingTexture(context, left, top, right, bottom, 1.0F);
     }
 
     private void renderAnimatedTextureVisual(
@@ -207,14 +231,21 @@ public final class CanvasVisualRenderer {
             int left,
             int top,
             int right,
-            int bottom
+            int bottom,
+            float opacity
     ) {
         context.graphics().fill(
                 left,
                 top,
                 right,
                 bottom,
-                MISSING_TEXTURE_COLOR
+                withOpacity(MISSING_TEXTURE_COLOR, opacity)
         );
+    }
+
+    private int withOpacity(int color, float opacity) {
+        int alpha = color >>> 24;
+        int adjustedAlpha = Math.round(alpha * Math.max(0.0F, Math.min(1.0F, opacity)));
+        return (adjustedAlpha << 24) | (color & 0x00FFFFFF);
     }
 }

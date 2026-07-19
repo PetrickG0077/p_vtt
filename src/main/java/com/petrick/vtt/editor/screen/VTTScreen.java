@@ -227,7 +227,9 @@ public final class VTTScreen extends Screen {
                 session.isLocalMaster() ? null : session.getLocalPlayerId(),
                 !session.isLocalMaster() && session.isNetworkAuthorityActive()
                         ? session.getNetworkVisionRegions() : null,
-                session.shouldMaskWhenNetworkVisionEmpty());
+                session.shouldMaskWhenNetworkVisionEmpty(),
+                !session.isLocalMaster() && session.isNetworkAuthorityActive()
+                        ? session.getNetworkVisibleObjectIds() : null);
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 

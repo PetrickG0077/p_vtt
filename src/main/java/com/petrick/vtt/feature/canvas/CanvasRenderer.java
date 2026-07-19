@@ -21,6 +21,8 @@ import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.platform.render.VRenderContext;
 
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Renderer inicial do canvas do VTT.
@@ -82,11 +84,13 @@ public final class CanvasRenderer {
             boolean visionDebugVisible,
             String visionOwnerId,
             Collection<AuthoritativeVisionRegion> authoritativeVisionRegions,
-            boolean maskWhenAuthoritativeVisionEmpty
+            boolean maskWhenAuthoritativeVisionEmpty,
+            Collection<String> authoritativeVisibleObjectIds
     ) {
         gridRenderer.render(context);
         sceneBackgroundRenderer.render(context, tabletopScene);
-        renderObjects(context, scene, selectionManager, editorSelectionVisible, resizeHandlesVisible);
+        renderObjects(context, scene, selectionManager, editorSelectionVisible,
+                resizeHandlesVisible, masterView, authoritativeVisibleObjectIds);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         if (masterView && visionDebugVisible) {
@@ -105,14 +109,17 @@ public final class CanvasRenderer {
             CanvasScene scene,
             SelectionManager selectionManager,
             boolean editorSelectionVisible,
-            boolean resizeHandlesVisible
+            boolean resizeHandlesVisible,
+            boolean masterView,
+            Collection<String> authoritativeVisibleObjectIds
     ) {
+        Set<String> visibleIds = authoritativeVisibleObjectIds == null
+                ? null : new HashSet<>(authoritativeVisibleObjectIds);
         for (CanvasObject object : scene.getObjects()) {
-            if (!object.visible()) {
-                continue;
-            }
+            if (!object.visible() && !masterView) continue;
+            if (visibleIds != null && !visibleIds.contains(object.id())) continue;
 
-            renderObject(context, object);
+            renderObject(context, object, object.visible() ? 1.0F : 0.5F);
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
@@ -122,7 +129,7 @@ public final class CanvasRenderer {
         }
     }
 
-    private void renderObject(VRenderContext context, CanvasObject object) {
+    private void renderObject(VRenderContext context, CanvasObject object, float opacity) {
         Vec2d screenCenter = context.renderState().worldToScreen(object.transform().position());
 
         double zoom = context.renderState().getCamera().getZoom();
@@ -166,7 +173,8 @@ public final class CanvasRenderer {
                 localLeft,
                 localTop,
                 localRight,
-                localBottom
+                localBottom,
+                opacity
         );
 
         poseStack.popPose();

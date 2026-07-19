@@ -264,7 +264,8 @@ public final class VttServerTabletopState {
         boolean masterFieldsAccepted = master
                 || (nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 && nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
-                && request.layerIndex() == currentLayerIndex(object));
+                && request.layerIndex() == currentLayerIndex(object)
+                && request.visible() == object.getState().isVisible());
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
@@ -273,6 +274,7 @@ public final class VttServerTabletopState {
             object.getTransform().setScaleX(request.scaleX());
             object.getTransform().setScaleY(request.scaleY());
             moveObjectToLayer(object, request.layerIndex());
+            object.getState().setVisible(request.visible());
         }
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
@@ -283,7 +285,8 @@ public final class VttServerTabletopState {
                 activeScene.getId(), object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
-                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(),
+                object.getState().isFlippedHorizontally(), object.getState().isVisible(),
+                object.getState().getActiveStateId(),
                 playerId, movementAccepted && masterFieldsAccepted);
     }
 
@@ -300,7 +303,8 @@ public final class VttServerTabletopState {
                 activeScene.getId(), object.getId(), object.getTransform().getX(),
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
-                object.getState().isFlippedHorizontally(), object.getState().getActiveStateId(), playerId, false);
+                object.getState().isFlippedHorizontally(), object.getState().isVisible(),
+                object.getState().getActiveStateId(), playerId, false);
     }
 
     public synchronized VttTokenLifecycleUpdatePayload applyTokenLifecycle(
