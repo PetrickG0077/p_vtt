@@ -95,6 +95,7 @@ public final class VTTSession {
         this.tabletopStorage = new TabletopStorage(tabletopStoragePaths);
         this.activeTabletop = tabletopStorage.loadOrCreateDefaultTabletop();
         this.activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
+        this.activeTabletop.setSceneDisplayName(activeScene.getId(), activeScene.getDisplayName());
 
         CreatedTokenStorage.loadCreatedTokens(
                 tokenDefinitionRegistry,
@@ -231,7 +232,7 @@ public final class VTTSession {
                     || !activeTabletop.getSceneIds().contains(sceneId)) return false;
             if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.SWITCH, sceneId));
+                    VttSceneCommandPayload.SWITCH, sceneId, ""));
             return true;
         }
         if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
@@ -274,6 +275,7 @@ public final class VTTSession {
         VttScene createdScene = new VttScene(sceneId, displayName.trim());
         tabletopStorage.saveScene(activeTabletop.getId(), createdScene);
         activeTabletop.addSceneId(sceneId);
+        activeTabletop.setSceneDisplayName(sceneId, displayName.trim());
         activeTabletop.setActiveSceneId(sceneId);
         activeScene = createdScene;
         tabletopStorage.saveTabletop(activeTabletop);
@@ -287,7 +289,7 @@ public final class VTTSession {
         if (!isLocalMaster() || displayName == null || displayName.isBlank()
                 || displayName.length() > 48) return false;
         PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                VttSceneCommandPayload.CREATE, displayName.trim()));
+                VttSceneCommandPayload.CREATE, "", displayName.trim()));
         return true;
     }
 
@@ -295,11 +297,58 @@ public final class VTTSession {
         if (activeScene == null || !isLocalMaster()) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    VttSceneCommandPayload.SET_BACKGROUND, assetId == null ? "" : assetId));
+                    VttSceneCommandPayload.SET_BACKGROUND, "", assetId == null ? "" : assetId));
             return true;
         }
         activeScene.setBackgroundAssetId(assetId);
         saveActiveTabletopAndScene();
+        return true;
+    }
+
+    public boolean renameScene(String sceneId, String displayName) {
+        if (!isLocalMaster() || sceneId == null || sceneId.isBlank() || displayName == null
+                || displayName.isBlank() || displayName.length() > 48
+                || !activeTabletop.getSceneIds().contains(sceneId)) return false;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    VttSceneCommandPayload.RENAME, sceneId, displayName.trim()));
+            return true;
+        }
+        VttScene target = sceneId.equals(activeScene.getId())
+                ? activeScene : tabletopStorage.loadScene(activeTabletop.getId(), sceneId);
+        if (target == null) return false;
+        target.setDisplayName(displayName.trim());
+        activeTabletop.setSceneDisplayName(sceneId, displayName.trim());
+        tabletopStorage.saveScene(activeTabletop.getId(), target);
+        tabletopStorage.saveTabletop(activeTabletop);
+        return true;
+    }
+
+    public boolean deleteScene(String sceneId) {
+        if (!isLocalMaster() || sceneId == null || sceneId.isBlank()
+                || activeTabletop.getSceneIds().size() <= 1
+                || !activeTabletop.getSceneIds().contains(sceneId)) return false;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    VttSceneCommandPayload.DELETE, sceneId, ""));
+            return true;
+        }
+        boolean deletingActive = sceneId.equals(activeScene.getId());
+        VttScene replacement = null;
+        if (deletingActive) {
+            String replacementId = activeTabletop.getSceneIds().stream()
+                    .filter(id -> !sceneId.equals(id)).findFirst().orElse(null);
+            replacement = tabletopStorage.loadScene(activeTabletop.getId(), replacementId);
+            if (replacement == null) return false;
+        }
+        if (!tabletopStorage.deleteScene(activeTabletop.getId(), sceneId)) return false;
+        activeTabletop.removeSceneId(sceneId);
+        if (deletingActive) {
+            activeScene = replacement;
+            activeTabletop.setActiveSceneId(replacement.getId());
+            loadActiveSceneToCanvasScene();
+        }
+        tabletopStorage.saveTabletop(activeTabletop);
         return true;
     }
 

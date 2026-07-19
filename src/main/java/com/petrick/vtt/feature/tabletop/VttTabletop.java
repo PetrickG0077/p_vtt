@@ -2,6 +2,8 @@ package com.petrick.vtt.feature.tabletop;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Representa uma campanha/mesa maior.
@@ -24,6 +26,9 @@ public final class VttTabletop {
     private String activeSceneId;
 
     private final List<String> sceneIds = new ArrayList<>();
+
+    /** Lightweight scene metadata used by the scene list without loading every scene JSON. */
+    private Map<String, String> sceneDisplayNames = new LinkedHashMap<>();
 
     public VttTabletop() {
         this("default", "Default Tabletop");
@@ -74,6 +79,7 @@ public final class VttTabletop {
         if (!sceneIds.contains(sceneId)) {
             sceneIds.add(sceneId);
         }
+        sceneDisplayNames().putIfAbsent(sceneId, sceneId);
 
         if (activeSceneId == null || activeSceneId.isBlank()) {
             activeSceneId = sceneId;
@@ -86,12 +92,30 @@ public final class VttTabletop {
         }
 
         sceneIds.remove(sceneId);
+        sceneDisplayNames().remove(sceneId);
 
         if (sceneId.equals(activeSceneId)) {
             activeSceneId = sceneIds.isEmpty()
                     ? null
                     : sceneIds.get(0);
         }
+    }
+
+    public String getSceneDisplayName(String sceneId) {
+        if (sceneId == null) return "";
+        return sceneDisplayNames().getOrDefault(sceneId, sceneId);
+    }
+
+    public void setSceneDisplayName(String sceneId, String displayName) {
+        if (sceneId == null || sceneId.isBlank()) return;
+        String normalized = displayName == null || displayName.isBlank()
+                ? sceneId : displayName.trim();
+        sceneDisplayNames().put(sceneId, normalized);
+    }
+
+    private Map<String, String> sceneDisplayNames() {
+        if (sceneDisplayNames == null) sceneDisplayNames = new LinkedHashMap<>();
+        return sceneDisplayNames;
     }
 
     private String normalizeId(String value) {

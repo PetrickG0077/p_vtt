@@ -52,6 +52,8 @@ public final class VttServerTabletopState {
         this.storage = new TabletopStorage(paths);
         this.tabletop = storage.loadOrCreateDefaultTabletop();
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
+        this.tabletop.setSceneDisplayName(activeScene.getId(), activeScene.getDisplayName());
+        storage.saveTabletop(tabletop);
     }
 
     public static synchronized VttServerTabletopState get() {
@@ -99,8 +101,46 @@ public final class VttServerTabletopState {
         VttScene created = new VttScene(sceneId, trimmedName);
         storage.saveScene(tabletop.getId(), created);
         tabletop.addSceneId(sceneId);
+        tabletop.setSceneDisplayName(sceneId, trimmedName);
         tabletop.setActiveSceneId(sceneId);
         activeScene = created;
+        storage.saveTabletop(tabletop);
+        return true;
+    }
+
+    public synchronized boolean renameScene(String sceneId, String displayName) {
+        if (sceneId == null || sceneId.isBlank() || !tabletop.getSceneIds().contains(sceneId)
+                || displayName == null || displayName.isBlank() || displayName.length() > 48) return false;
+        String trimmedName = displayName.trim();
+        VttScene target = sceneId.equals(activeScene.getId())
+                ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+        if (target == null) return false;
+        target.setDisplayName(trimmedName);
+        tabletop.setSceneDisplayName(sceneId, trimmedName);
+        storage.saveScene(tabletop.getId(), target);
+        storage.saveTabletop(tabletop);
+        return true;
+    }
+
+    public synchronized boolean deleteScene(String sceneId) {
+        if (sceneId == null || sceneId.isBlank() || tabletop.getSceneIds().size() <= 1
+                || !tabletop.getSceneIds().contains(sceneId)) return false;
+        boolean deletingActive = sceneId.equals(activeScene.getId());
+        VttScene replacement = null;
+        if (deletingActive) {
+            String replacementId = tabletop.getSceneIds().stream()
+                    .filter(id -> !sceneId.equals(id)).findFirst().orElse(null);
+            if (replacementId == null) return false;
+            replacement = storage.loadScene(tabletop.getId(), replacementId);
+            if (replacement == null) return false;
+        }
+        if (!storage.deleteScene(tabletop.getId(), sceneId)) return false;
+        tabletop.removeSceneId(sceneId);
+        if (deletingActive) {
+            activeScene = replacement;
+            tabletop.setActiveSceneId(replacement.getId());
+            tabletop.setSceneDisplayName(replacement.getId(), replacement.getDisplayName());
+        }
         storage.saveTabletop(tabletop);
         return true;
     }

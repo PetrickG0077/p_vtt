@@ -29,7 +29,7 @@ public final class SceneListOverlay {
         } else {
             for (String id : ids) {
                 boolean active = activeScene != null && id.equals(activeScene.getId());
-                String name = active ? activeScene.getDisplayName() : id;
+                String name = active ? activeScene.getDisplayName() : tabletop.getSceneDisplayName(id);
                 context.graphics().drawString(font, (active ? "> " : "  ") + name,
                         X + PADDING, rowY, active ? 0xFFFFCC66 : 0xFFDDDDDD, false);
                 rowY += LINE_HEIGHT;

@@ -214,4 +214,19 @@ public final class TabletopStorage {
             );
         }
     }
+
+    public boolean deleteScene(String tabletopId, String sceneId) {
+        if (tabletopId == null || tabletopId.isBlank() || sceneId == null || sceneId.isBlank()) {
+            return false;
+        }
+        Path file = paths.sceneFile(tabletopId, sceneId);
+        try {
+            Files.deleteIfExists(file);
+            VTT.LOGGER.info("Deleted VTT scene JSON: {}", file);
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            VTT.LOGGER.error("Failed to delete VTT scene JSON: {}", file, exception);
+            return false;
+        }
+    }
 }

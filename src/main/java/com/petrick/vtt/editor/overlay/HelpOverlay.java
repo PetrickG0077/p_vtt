@@ -35,6 +35,7 @@ public final class HelpOverlay {
                 "Help",
                 "F1: Toggle help",
                 "F2: Scenes",
+                "Right-click scene: Rename/Delete",
                 "Ctrl+M: Master/Player",
                 "",
                 "Tools:",

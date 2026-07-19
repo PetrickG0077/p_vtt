@@ -39,7 +39,9 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
+import com.petrick.vtt.editor.catalog.SceneContextMenu;
 import com.petrick.vtt.editor.overlay.TokenCatalogContextMenuOverlay;
+import com.petrick.vtt.editor.overlay.SceneContextMenuOverlay;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
@@ -115,6 +117,10 @@ public final class VTTScreen extends Screen {
 
     private final TokenCatalogContextMenuOverlay tokenCatalogContextMenuOverlay = new TokenCatalogContextMenuOverlay();
 
+    private final SceneContextMenu sceneContextMenu = new SceneContextMenu();
+
+    private final SceneContextMenuOverlay sceneContextMenuOverlay = new SceneContextMenuOverlay();
+
     private TokenCreationDraft tokenCreationDraft;
 
     private boolean tokenImagePickerActive;
@@ -138,6 +144,12 @@ public final class VTTScreen extends Screen {
     private String renameBuffer;
 
     private String newSceneNameBuffer;
+
+    private String renamingSceneId;
+
+    private String sceneRenameBuffer;
+
+    private String pendingDeleteSceneId;
 
     private boolean playerViewPreview;
 
@@ -298,6 +310,7 @@ public final class VTTScreen extends Screen {
                 this.font,
                 tokenCatalogContextMenu
         );
+        sceneContextMenuOverlay.render(context, this.font, sceneContextMenu);
 
         if (renamingObjectId != null) {
             renderRenameDialog(context);
@@ -306,6 +319,8 @@ public final class VTTScreen extends Screen {
         if (newSceneNameBuffer != null) {
             renderNewSceneDialog(context);
         }
+        if (renamingSceneId != null) renderSceneRenameDialog(context);
+        if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
     }
 
     private void renderAssetCatalog(VRenderContext context) {
@@ -419,7 +434,7 @@ public final class VTTScreen extends Screen {
             return renderState == null || inputController.mouseClicked(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
-        if (newSceneNameBuffer != null) return true;
+        if (newSceneNameBuffer != null || renamingSceneId != null || pendingDeleteSceneId != null) return true;
 
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
             return true;
@@ -435,6 +450,19 @@ public final class VTTScreen extends Screen {
                         getKeyboardModifiers(), renderState);
             }
             return true;
+        }
+
+        if (sceneContextMenu.isOpen()) {
+            SceneContextMenuOverlay.Action action = sceneContextMenuOverlay.getActionAt(
+                    sceneContextMenu, mouseX, mouseY);
+            if (action != SceneContextMenuOverlay.Action.NONE) {
+                handleSceneContextMenuAction(action);
+                return true;
+            }
+            if (!sceneContextMenuOverlay.containsPoint(sceneContextMenu, mouseX, mouseY)) {
+                sceneContextMenu.close();
+                return true;
+            }
         }
 
         if (tokenCatalogContextMenu.isOpen()) {
@@ -474,6 +502,16 @@ public final class VTTScreen extends Screen {
             lastTokenImagePickerClickedItemId = null;
             lastTokenImagePickerClickTime = 0L;
             return true;
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && panelVisibility.isSceneListVisible()) {
+            Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
+                    session.getActiveTabletop(), mouseX, mouseY);
+            if (clickedSceneId.isPresent()) {
+                tokenCatalogContextMenu.close();
+                sceneContextMenu.open((int) mouseX + 8, (int) mouseY, clickedSceneId.get());
+                return true;
+            }
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT
@@ -1071,6 +1109,28 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (renamingSceneId != null) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmSceneRename();
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                renamingSceneId = null;
+                sceneRenameBuffer = null;
+            } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !sceneRenameBuffer.isEmpty()) {
+                sceneRenameBuffer = sceneRenameBuffer.substring(0, sceneRenameBuffer.length() - 1);
+            }
+            return true;
+        }
+
+        if (pendingDeleteSceneId != null) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                session.deleteScene(pendingDeleteSceneId);
+                pendingDeleteSceneId = null;
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                pendingDeleteSceneId = null;
+            }
+            return true;
+        }
+
         if (newSceneNameBuffer != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmNewScene();
@@ -1111,6 +1171,11 @@ public final class VTTScreen extends Screen {
         if (tokenCatalogContextMenu.isOpen() && keyCode == GLFW.GLFW_KEY_ESCAPE) {
             tokenCatalogContextMenu.close();
             tokenCatalogOverlay.allowDetailsPopup();
+            return true;
+        }
+
+        if (sceneContextMenu.isOpen() && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            sceneContextMenu.close();
             return true;
         }
 
@@ -1629,6 +1694,12 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (renamingSceneId != null) {
+            if (isAllowedRenameCharacter(codePoint) && sceneRenameBuffer.length() < 48) {
+                sceneRenameBuffer += codePoint;
+            }
+            return true;
+        }
         if (newSceneNameBuffer != null) {
             if (isAllowedRenameCharacter(codePoint) && newSceneNameBuffer.length() < 48) {
                 newSceneNameBuffer += codePoint;
@@ -1880,6 +1951,60 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private void handleSceneContextMenuAction(SceneContextMenuOverlay.Action action) {
+        String sceneId = sceneContextMenu.getSceneId();
+        sceneContextMenu.close();
+        if (sceneId == null) return;
+        if (action == SceneContextMenuOverlay.Action.RENAME) {
+            renamingSceneId = sceneId;
+            sceneRenameBuffer = session.getActiveTabletop().getSceneDisplayName(sceneId);
+        } else if (action == SceneContextMenuOverlay.Action.DELETE
+                && session.getActiveTabletop().getSceneIds().size() > 1) {
+            pendingDeleteSceneId = sceneId;
+        }
+    }
+
+    private void confirmSceneRename() {
+        if (renamingSceneId == null || sceneRenameBuffer == null || sceneRenameBuffer.isBlank()) return;
+        if (session.renameScene(renamingSceneId, sceneRenameBuffer)) {
+            renamingSceneId = null;
+            sceneRenameBuffer = null;
+        }
+    }
+
+    private void renderSceneRenameDialog(VRenderContext context) {
+        int width = 300, height = 70;
+        int x = context.screenWidth() / 2 - width / 2;
+        int y = context.screenHeight() / 2 - height / 2;
+        renderSceneDialogFrame(context, x, y, width, height);
+        context.graphics().drawString(this.font, "Rename Scene", x + 10, y + 10, 0xFFFFFFFF, false);
+        context.graphics().drawString(this.font, sceneRenameBuffer + "_", x + 10, y + 28,
+                0xFFFFFFFF, false);
+        context.graphics().drawString(this.font, "Enter: rename   Esc: cancel", x + 10, y + 48,
+                0xFFAAAAAA, false);
+    }
+
+    private void renderDeleteSceneConfirmation(VRenderContext context) {
+        int width = 330, height = 70;
+        int x = context.screenWidth() / 2 - width / 2;
+        int y = context.screenHeight() / 2 - height / 2;
+        renderSceneDialogFrame(context, x, y, width, height);
+        String name = session.getActiveTabletop().getSceneDisplayName(pendingDeleteSceneId);
+        context.graphics().drawString(this.font, "Delete Scene", x + 10, y + 10, 0xFFFF5555, false);
+        context.graphics().drawString(this.font, "Delete '" + name + "'?", x + 10, y + 28,
+                0xFFFFFFFF, false);
+        context.graphics().drawString(this.font, "Enter: delete   Esc: cancel", x + 10, y + 48,
+                0xFFAAAAAA, false);
+    }
+
+    private void renderSceneDialogFrame(VRenderContext context, int x, int y, int width, int height) {
+        context.graphics().fill(x, y, x + width, y + height, 0xEE000000);
+        context.graphics().hLine(x, x + width, y, 0xFFFFAA44);
+        context.graphics().hLine(x, x + width, y + height, 0xFFFFAA44);
+        context.graphics().vLine(x, y, y + height, 0xFFFFAA44);
+        context.graphics().vLine(x + width, y, y + height, 0xFFFFAA44);
+    }
+
     private void handleActiveSceneChange() {
         String activeSceneId = session.getActiveScene() == null
                 ? null : session.getActiveScene().getId();
@@ -1888,10 +2013,14 @@ public final class VTTScreen extends Screen {
         selectionManager.clearSelection();
         inputController.selectHandTool();
         tokenCatalogContextMenu.close();
+        sceneContextMenu.close();
         renamingObjectId = null;
         renameBuffer = null;
         newSceneNameBuffer = null;
         tokenCreationDraft = null;
+        renamingSceneId = null;
+        sceneRenameBuffer = null;
+        pendingDeleteSceneId = null;
         backgroundImagePickerActive = false;
         tokenImagePickerActive = false;
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);

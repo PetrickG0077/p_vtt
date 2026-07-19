@@ -15,15 +15,18 @@ public final class VttServerSceneCommandHandler {
         if (!(context.player() instanceof ServerPlayer requester)) return;
         VttServerTabletopState state = VttServerTabletopState.get();
         if (!VttServerPlayerEvents.isMaster(requester) || request == null
-                || request.operation() == null || request.value() == null) {
+                || request.operation() == null || request.targetId() == null || request.value() == null) {
             reject(requester, state, "unauthorized or invalid request");
             return;
         }
 
+        String previousSceneId = state.activeScene().getId();
         boolean changed = switch (request.operation()) {
             case VttSceneCommandPayload.CREATE -> state.createAndActivateScene(request.value());
-            case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.value());
+            case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.targetId());
             case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
+            case VttSceneCommandPayload.RENAME -> state.renameScene(request.targetId(), request.value());
+            case VttSceneCommandPayload.DELETE -> state.deleteScene(request.targetId());
             default -> false;
         };
         if (!changed) {
@@ -36,9 +39,14 @@ public final class VttServerSceneCommandHandler {
             reject(requester, state, "server unavailable");
             return;
         }
+        boolean sceneChanged = !previousSceneId.equals(state.activeScene().getId());
+        boolean assetsChanged = sceneChanged
+                || VttSceneCommandPayload.SET_BACKGROUND.equals(request.operation());
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            VttServerAssetSyncService.sendActiveSceneAssets(
-                    player, state.activeScene(), VttServerPlayerEvents.isMaster(player));
+            if (assetsChanged) {
+                VttServerAssetSyncService.sendActiveSceneAssets(
+                        player, state.activeScene(), VttServerPlayerEvents.isMaster(player));
+            }
             PacketDistributor.sendToPlayer(player, state.createSnapshotPayload());
         }
         VTT.LOGGER.info("Applied VTT scene command {} from {}: active scene is {}",
