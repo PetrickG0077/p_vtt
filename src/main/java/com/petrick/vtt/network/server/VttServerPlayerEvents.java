@@ -51,8 +51,10 @@ public final class VttServerPlayerEvents {
                     player, state.replicatedSceneFor(player), current == VttRole.MASTER);
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
             PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
+            VttServerVisionSourceSync.sendToPlayer(player, state);
+            return;
         }
-        VttServerVisionSourceSync.sendToPlayer(player, state);
+        VttServerVisionSourceSync.heartbeat(player, state);
     }
 
     @SubscribeEvent

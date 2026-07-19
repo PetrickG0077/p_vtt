@@ -19,7 +19,7 @@ public final class VttServerEnvironmentStateHandler {
             PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
             return;
         }
-        VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        VttServerVisionSourceSync.broadcast(player.getServer(), state, true);
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
             PacketDistributor.sendToPlayer(connected, state.currentEnvironmentState(connected));
         }
@@ -36,7 +36,11 @@ public final class VttServerEnvironmentStateHandler {
             PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
             return;
         }
-        VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        boolean changesVisionGeometry = VttEnvironmentCommandPayload.WALL.equals(update.entityType())
+                || VttEnvironmentCommandPayload.DOOR.equals(update.entityType())
+                || VttEnvironmentCommandPayload.VISION.equals(update.entityType());
+        VttServerVisionSourceSync.broadcast(
+                player.getServer(), state, changesVisionGeometry);
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
             if (!VttEnvironmentCommandPayload.VISION.equals(update.entityType())
                     || VttServerVisionSourceSync.canReceiveObject(

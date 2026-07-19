@@ -73,6 +73,7 @@ public final class VTTSession {
     private long networkSnapshotVersion;
     private long networkAuthorityRevision;
     private long networkVisionRevision = -1L;
+    private long networkReplicationRevision = -1L;
     private List<AuthoritativeVisionRegion> networkVisionRegions = List.of();
     private List<String> networkVisibleObjectIds = List.of();
     private boolean networkMaskWhenVisionEmpty = true;
@@ -179,11 +180,16 @@ public final class VTTSession {
         this.networkAuthorityRevision = Math.max(0L, authorityRevision);
         if (visionScopeChanged) {
             networkVisionRevision = -1L;
+            networkReplicationRevision = -1L;
             networkVisionRegions = List.of();
-            networkVisibleObjectIds = List.of();
             networkMaskWhenVisionEmpty = true;
         }
         loadActiveSceneToCanvasScene();
+        networkVisibleObjectIds = scene.getObjects().stream()
+                .filter(object -> object != null && object.getId() != null && !object.getId().isBlank())
+                .map(VttSceneObject::getId)
+                .distinct()
+                .toList();
         networkSnapshotVersion++;
         VTT.LOGGER.info("Applied VTT network snapshot for scene: {}", scene.getId());
     }
@@ -202,8 +208,7 @@ public final class VTTSession {
 
     public void applyNetworkVisionSources(
             long authorityRevision, long visionRevision, String sceneId,
-            boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions,
-            List<String> visibleObjectIds, List<VttSceneObject> replicatedObjects
+            boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions
     ) {
         if (!networkAuthorityActive || activeScene == null
                 || authorityRevision != networkAuthorityRevision
@@ -220,13 +225,7 @@ public final class VTTSession {
                         && region.outerRadius() >= region.innerRadius()
                         && region.outerPolygon().size() >= 3)
                 .toList();
-        networkVisibleObjectIds = visibleObjectIds == null ? List.of()
-                : visibleObjectIds.stream()
-                .filter(id -> id != null && !id.isBlank())
-                .distinct()
-                .toList();
         networkMaskWhenVisionEmpty = maskWhenEmpty;
-        reconcileNetworkReplicatedObjects(replicatedObjects);
     }
 
     public List<AuthoritativeVisionRegion> getNetworkVisionRegions() {
@@ -241,33 +240,42 @@ public final class VTTSession {
         return networkMaskWhenVisionEmpty;
     }
 
-    private void reconcileNetworkReplicatedObjects(List<VttSceneObject> replicatedObjects) {
+    public void applyNetworkReplication(
+            long authorityRevision, long replicationRevision, String sceneId,
+            List<VttSceneObject> spawnedObjects, List<String> despawnObjectIds
+    ) {
+        if (!networkAuthorityActive || activeScene == null
+                || authorityRevision != networkAuthorityRevision
+                || sceneId == null || !sceneId.equals(activeScene.getId())
+                || replicationRevision <= networkReplicationRevision) return;
+        networkReplicationRevision = replicationRevision;
         if (activeScene == null || isLocalMaster()) return;
-        List<VttSceneObject> safeObjects = replicatedObjects == null ? List.of()
-                : replicatedObjects.stream()
+        List<VttSceneObject> safeObjects = spawnedObjects == null ? List.of()
+                : spawnedObjects.stream()
                 .filter(object -> object != null && object.getId() != null && !object.getId().isBlank())
                 .toList();
-        Set<String> replicatedIds = safeObjects.stream()
-                .map(VttSceneObject::getId)
+        Set<String> despawnIds = despawnObjectIds == null ? Set.of()
+                : despawnObjectIds.stream()
+                .filter(id -> id != null && !id.isBlank())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        Set<String> canvasIdsToRemove = canvasScene.getObjects().stream()
-                .filter(object -> object.hasSourceTokenDefinition() && !replicatedIds.contains(object.id()))
-                .map(object -> object.id())
-                .collect(java.util.stream.Collectors.toSet());
-        canvasScene.removeObjects(canvasIdsToRemove);
+        canvasScene.removeObjects(despawnIds);
+        despawnIds.forEach(activeScene::removeObject);
+        despawnIds.forEach(activeScene::removeVisionSourceObjectId);
 
-        activeScene.getObjects().removeIf(object -> object != null
-                && !replicatedIds.contains(object.getId()));
-        for (VttSceneObject replicated : safeObjects) {
-            activeScene.removeObject(replicated.getId());
-            activeScene.addObject(replicated);
-            if (canvasScene.findObjectById(replicated.getId()) != null) continue;
+        LinkedHashSet<String> visibleIds = new LinkedHashSet<>(networkVisibleObjectIds);
+        visibleIds.removeAll(despawnIds);
+        for (VttSceneObject spawned : safeObjects) {
+            activeScene.removeObject(spawned.getId());
+            activeScene.addObject(spawned);
+            visibleIds.add(spawned.getId());
+            if (canvasScene.findObjectById(spawned.getId()) != null) continue;
             var canvasObject = VttSceneToCanvasSceneMapper.convertObject(
-                    replicated, tokenDefinitionRegistry);
+                    spawned, tokenDefinitionRegistry);
             if (canvasObject == null) continue;
             canvasScene.addObject(canvasObject);
-            canvasScene.moveObjectToLayer(canvasObject.id(), replicated.getLayerIndex());
+            canvasScene.moveObjectToLayer(canvasObject.id(), spawned.getLayerIndex());
         }
+        networkVisibleObjectIds = List.copyOf(visibleIds);
     }
 
     public void applyConfirmedTokenTransform(VttTokenTransformUpdatePayload update) {
@@ -539,6 +547,7 @@ public final class VTTSession {
         networkSnapshotVersion = 0L;
         networkAuthorityRevision = 0L;
         networkVisionRevision = -1L;
+        networkReplicationRevision = -1L;
         networkVisionRegions = List.of();
         networkVisibleObjectIds = List.of();
         networkMaskWhenVisionEmpty = true;

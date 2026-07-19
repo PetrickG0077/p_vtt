@@ -22,6 +22,7 @@ import com.petrick.vtt.network.server.VttServerTokenLifecycleHandler;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.server.VttServerSceneCommandHandler;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
+import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -30,7 +31,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "21";
+    private static final String PROTOCOL_VERSION = "22";
 
     private VttNetwork() {
     }
@@ -51,6 +52,9 @@ public final class VttNetwork {
         );
         registrar.playToClient(VttVisionSourcesPayload.TYPE, VttVisionSourcesPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleVisionSources);
+        registrar.playToClient(VttPlayerReplicationPayload.TYPE,
+                VttPlayerReplicationPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handlePlayerReplication);
         registrar.playToClient(VttAssetSyncStartPayload.TYPE, VttAssetSyncStartPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleAssetSyncStart);
         registrar.playToClient(VttAssetChunkPayload.TYPE, VttAssetChunkPayload.STREAM_CODEC,

@@ -23,6 +23,7 @@ import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
+import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -61,12 +62,20 @@ public final class VttClientPayloadHandler {
     }
 
     public static void handleVisionSources(VttVisionSourcesPayload payload, IPayloadContext context) {
+        VTT.getApplication().getActiveSession().applyNetworkVisionSources(
+                payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
+                payload.maskWhenEmpty(), payload.regions());
+    }
+
+    public static void handlePlayerReplication(
+            VttPlayerReplicationPayload payload, IPayloadContext context
+    ) {
         try {
             List<VttSceneObject> objects = GSON.fromJson(
-                    payload.replicatedObjectsJson(), SCENE_OBJECT_LIST_TYPE);
-            VTT.getApplication().getActiveSession().applyNetworkVisionSources(
-                    payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
-                    payload.maskWhenEmpty(), payload.regions(), payload.visibleObjectIds(), objects);
+                    payload.spawnedObjectsJson(), SCENE_OBJECT_LIST_TYPE);
+            VTT.getApplication().getActiveSession().applyNetworkReplication(
+                    payload.authorityRevision(), payload.replicationRevision(), payload.sceneId(),
+                    objects, payload.despawnObjectIds());
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT player replication payload", exception);
         }

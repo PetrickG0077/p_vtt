@@ -30,7 +30,8 @@ public final class VttServerTokenTransformHandler {
             }
             return;
         }
-        VttServerVisionSourceSync.broadcast(player.getServer(), state);
+        VttServerVisionSourceSync.afterTokenTransform(
+                player.getServer(), state, update.objectId());
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
             if (VttServerVisionSourceSync.canReceiveObject(connected, state, update.objectId())) {
                 PacketDistributor.sendToPlayer(connected, update);

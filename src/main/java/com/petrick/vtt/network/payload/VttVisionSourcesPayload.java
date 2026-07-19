@@ -14,10 +14,8 @@ import java.util.List;
 /** Server-selected vision sources for one player in the active scene. */
 public record VttVisionSourcesPayload(
         long authorityRevision, long visionRevision, String sceneId,
-        boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions,
-        List<String> visibleObjectIds, String replicatedObjectsJson
+        boolean maskWhenEmpty, List<AuthoritativeVisionRegion> regions
 ) implements CustomPacketPayload {
-    public static final int MAX_OBJECTS_JSON_LENGTH = 8 * 1024 * 1024;
     private static final int MAX_REGION_COUNT = 4_096;
     private static final int MAX_POINTS_PER_REGION = 32_768;
     private static final int MAX_TOTAL_POINTS = 131_072;
@@ -59,8 +57,7 @@ public record VttVisionSourcesPayload(
                     }
                     return new VttVisionSourcesPayload(
                             authorityRevision, visionRevision, sceneId,
-                            maskWhenEmpty, regions, readObjectIds(buffer),
-                            buffer.readUtf(MAX_OBJECTS_JSON_LENGTH));
+                            maskWhenEmpty, regions);
                 }
 
                 @Override
@@ -93,34 +90,11 @@ public record VttVisionSourcesPayload(
                             buffer.writeDouble(point.y());
                         }
                     }
-                    writeObjectIds(buffer, payload.visibleObjectIds());
-                    buffer.writeUtf(payload.replicatedObjectsJson(), MAX_OBJECTS_JSON_LENGTH);
                 }
             };
 
     public VttVisionSourcesPayload {
         regions = regions == null ? List.of() : List.copyOf(regions);
-        visibleObjectIds = visibleObjectIds == null ? List.of() : List.copyOf(visibleObjectIds);
-        replicatedObjectsJson = replicatedObjectsJson == null ? "[]" : replicatedObjectsJson;
-    }
-
-    private static List<String> readObjectIds(RegistryFriendlyByteBuf buffer) {
-        int count = buffer.readVarInt();
-        if (count < 0 || count > MAX_REGION_COUNT) {
-            throw new IllegalArgumentException("Invalid VTT visible object count: " + count);
-        }
-        List<String> result = new ArrayList<>(count);
-        for (int index = 0; index < count; index++) result.add(buffer.readUtf(128));
-        return List.copyOf(result);
-    }
-
-    private static void writeObjectIds(RegistryFriendlyByteBuf buffer, List<String> objectIds) {
-        List<String> safeIds = objectIds == null ? List.of() : objectIds;
-        if (safeIds.size() > MAX_REGION_COUNT) {
-            throw new IllegalArgumentException("Too many VTT visible objects");
-        }
-        buffer.writeVarInt(safeIds.size());
-        for (String objectId : safeIds) buffer.writeUtf(objectId, 128);
     }
 
     @Override
