@@ -13,11 +13,19 @@ public final class VttServerSceneCommandHandler {
 
     public static void handle(VttSceneCommandPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer requester)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND)) return;
+        if (!VttServerPlayerEvents.isMaster(requester)) {
+            VttServerRequestRateLimiter.reject(
+                    requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND,
+                    "permission denied");
+            return;
+        }
         VttServerTabletopState state = VttServerTabletopState.get();
-        if (!VttServerPlayerEvents.isMaster(requester) || request == null
+        if (request == null
                 || request.authorityRevision() != state.authorityRevision()
                 || request.operation() == null || request.targetId() == null || request.value() == null) {
-            reject(requester, state, "unauthorized or invalid request");
+            reject(requester, "invalid request");
             return;
         }
 
@@ -31,13 +39,13 @@ public final class VttServerSceneCommandHandler {
             default -> false;
         };
         if (!changed) {
-            reject(requester, state, "command was not accepted");
+            reject(requester, "command was not accepted");
             return;
         }
 
         MinecraftServer server = requester.getServer();
         if (server == null) {
-            reject(requester, state, "server unavailable");
+            reject(requester, "server unavailable");
             return;
         }
         boolean sceneChanged = !previousSceneId.equals(state.activeScene().getId());
@@ -56,10 +64,8 @@ public final class VttServerSceneCommandHandler {
                 request.operation(), requester.getGameProfile().getName(), state.activeScene().getId());
     }
 
-    private static void reject(ServerPlayer requester, VttServerTabletopState state, String reason) {
-        VTT.LOGGER.warn("Rejected VTT scene command from {}: {}",
-                requester.getGameProfile().getName(), reason);
-        PacketDistributor.sendToPlayer(requester, state.createSnapshotPayload(requester));
-        VttServerVisionSourceSync.sendToPlayer(requester, state);
+    private static void reject(ServerPlayer requester, String reason) {
+        VttServerRequestRateLimiter.reject(
+                requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND, reason);
     }
 }

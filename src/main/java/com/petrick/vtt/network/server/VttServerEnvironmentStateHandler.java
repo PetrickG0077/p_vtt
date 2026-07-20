@@ -1,6 +1,5 @@
 package com.petrick.vtt.network.server;
 
-import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import net.minecraft.server.level.ServerPlayer;
@@ -12,11 +11,20 @@ public final class VttServerEnvironmentStateHandler {
 
     public static void handle(VttEnvironmentStateRequestPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.ENVIRONMENT)) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "permission denied");
+            return;
+        }
         var state = VttServerTabletopState.get();
-        var update = VttServerPlayerEvents.isMaster(player) ? state.applyEnvironmentState(request) : null;
+        var update = state.applyEnvironmentState(request);
         if (update == null) {
-            VTT.LOGGER.warn("Rejected VTT door/fog update from {}", player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "invalid door/fog update");
             return;
         }
         VttServerVisionSourceSync.broadcast(player.getServer(), state, true);
@@ -27,13 +35,20 @@ public final class VttServerEnvironmentStateHandler {
 
     public static void handleCommand(VttEnvironmentCommandPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.ENVIRONMENT)) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "permission denied");
+            return;
+        }
         var state = VttServerTabletopState.get();
-        var update = VttServerPlayerEvents.isMaster(player)
-                ? state.applyEnvironmentCommand(request, player.getUUID().toString()) : null;
+        var update = state.applyEnvironmentCommand(request, player.getUUID().toString());
         if (update == null) {
-            VTT.LOGGER.warn("Rejected VTT environment command from {}",
-                    player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.currentEnvironmentState(player));
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "invalid environment command");
             return;
         }
         boolean changesVisionGeometry = VttEnvironmentCommandPayload.WALL.equals(update.entityType())

@@ -19,5 +19,6 @@ public final class VttServerPersistenceEvents {
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         VttServerTabletopState.shutdown();
+        VttServerRequestRateLimiter.clear();
     }
 }

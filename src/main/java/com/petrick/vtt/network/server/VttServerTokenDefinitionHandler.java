@@ -29,8 +29,13 @@ public final class VttServerTokenDefinitionHandler {
     private VttServerTokenDefinitionHandler() {}
 
     public static void handle(VttTokenDefinitionUpsertPayload payload, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player) || !VttServerPlayerEvents.isMaster(player)) {
-            VTT.LOGGER.warn("Rejected VTT token definition update from non-OP player");
+        if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION)) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
+                    "permission denied");
             return;
         }
         try {
@@ -49,15 +54,21 @@ public final class VttServerTokenDefinitionHandler {
     }
 
     public static void handleCommand(VttTokenDefinitionCommandPayload payload, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player) || !VttServerPlayerEvents.isMaster(player)) {
-            VTT.LOGGER.warn("Rejected VTT token definition command from non-OP player");
+        if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION)) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
+                    "permission denied");
             return;
         }
         if (payload == null || payload.operation() == null || payload.definitionId() == null
                 || payload.definitionId().length() > 256
                 || !payload.definitionId().startsWith("user/tokens/")) {
-            VTT.LOGGER.warn("Rejected invalid VTT token definition command from {}",
-                    player.getGameProfile().getName());
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
+                    "invalid definition command");
             return;
         }
 

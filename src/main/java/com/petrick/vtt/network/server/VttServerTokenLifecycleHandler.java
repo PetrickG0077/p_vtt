@@ -1,6 +1,5 @@
 package com.petrick.vtt.network.server;
 
-import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -11,14 +10,21 @@ public final class VttServerTokenLifecycleHandler {
 
     public static void handle(VttTokenLifecycleRequestPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE)) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
+                    "permission denied");
+            return;
+        }
         var state = VttServerTabletopState.get();
         var update = state.applyTokenLifecycle(
                 request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player));
         if (update == null) {
-            VTT.LOGGER.warn("Rejected VTT token lifecycle request {} from {}",
-                    request.operation(), player.getGameProfile().getName());
-            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
-            VttServerVisionSourceSync.sendToPlayer(player, state);
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
+                    "invalid " + request.operation() + " command");
             return;
         }
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {

@@ -1,6 +1,5 @@
 package com.petrick.vtt.network.server;
 
-import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -12,21 +11,32 @@ public final class VttServerTokenTransformHandler {
     public static void handle(VttTokenTransformRequestPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
         var state = VttServerTabletopState.get();
-        var update = state.applyTokenTransform(
-                request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player)
-        );
-        if (update == null) {
-            VTT.LOGGER.warn("Rejected VTT token transform from {} for object {}",
-                    player.getGameProfile().getName(), request.objectId());
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.TOKEN_TRANSFORM)) {
+            if (!VttServerRequestRateLimiter.allow(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_TRANSFORM_CORRECTION)) return;
             var confirmed = state.currentTokenTransform(
                     request.sceneId(), request.objectId(), player.getUUID().toString(),
                     request.clientSequence());
             if (confirmed != null && VttServerVisionSourceSync.canReceiveObject(
                     player, state, request.objectId())) {
                 PacketDistributor.sendToPlayer(player, confirmed);
-            } else {
-                PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
-                VttServerVisionSourceSync.sendToPlayer(player, state);
+            }
+            return;
+        }
+        var update = state.applyTokenTransform(
+                request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player)
+        );
+        if (update == null) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_TRANSFORM,
+                    "invalid or unauthorized transform for object " + request.objectId());
+            var confirmed = state.currentTokenTransform(
+                    request.sceneId(), request.objectId(), player.getUUID().toString(),
+                    request.clientSequence());
+            if (confirmed != null && VttServerVisionSourceSync.canReceiveObject(
+                    player, state, request.objectId())) {
+                PacketDistributor.sendToPlayer(player, confirmed);
             }
             return;
         }
