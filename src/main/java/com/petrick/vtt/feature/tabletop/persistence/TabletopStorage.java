@@ -186,13 +186,13 @@ public final class TabletopStorage {
         }
     }
 
-    public void saveScene(String tabletopId, VttScene scene) {
+    public boolean saveScene(String tabletopId, VttScene scene) {
         if (tabletopId == null || tabletopId.isBlank()) {
-            return;
+            return false;
         }
 
         if (scene == null) {
-            return;
+            return false;
         }
 
         paths.ensureTabletopFoldersExist(tabletopId);
@@ -206,12 +206,14 @@ public final class TabletopStorage {
                     "Saved VTT scene JSON: {}",
                     file
             );
+            return true;
         } catch (IOException | RuntimeException exception) {
             VTT.LOGGER.error(
                     "Failed to save VTT scene JSON: {}",
                     file,
                     exception
             );
+            return false;
         }
     }
 

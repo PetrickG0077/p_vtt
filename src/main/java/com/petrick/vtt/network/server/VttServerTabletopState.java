@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public final class VttServerTabletopState {
 
@@ -46,6 +47,8 @@ public final class VttServerTabletopState {
     private static final Type DOOR_LIST_TYPE = new TypeToken<List<VttDoor>>() {}.getType();
     private static final Type WALL_LIST_TYPE = new TypeToken<List<VttWall>>() {}.getType();
     private static final Type VISION_LIST_TYPE = new TypeToken<List<VisionState>>() {}.getType();
+    private static final long SCENE_SAVE_DEBOUNCE_MS = 1_000L;
+    private static final long SCENE_SAVE_MAX_DIRTY_MS = 5_000L;
     private static VttServerTabletopState instance;
 
     private final VttTabletop tabletop;
@@ -60,6 +63,12 @@ public final class VttServerTabletopState {
     private final Map<String, Long> lastTokenTransformSequences = new HashMap<>();
     private final Map<String, Long> environmentRevisions = new HashMap<>();
     private final Map<String, Long> lastEnvironmentSequences = new HashMap<>();
+    private boolean activeSceneDirty;
+    private long activeSceneDirtySince;
+    private long lastSceneMutationAt;
+    private long pendingSceneMutationCount;
+    private long completedSceneSaveCount;
+    private long lastCompletedSceneSaveAt;
 
     private VttServerTabletopState() {
         TabletopStoragePaths paths = new TabletopStoragePaths(FMLPaths.GAMEDIR.get());
@@ -81,6 +90,16 @@ public final class VttServerTabletopState {
             instance = new VttServerTabletopState();
         }
         return instance;
+    }
+
+    public static synchronized void tickPersistenceIfInitialized() {
+        if (instance != null) instance.tickPersistence();
+    }
+
+    public static synchronized void shutdown() {
+        if (instance == null) return;
+        instance.flushActiveSceneNow("server stopping");
+        instance = null;
     }
 
     public synchronized VttSceneSnapshotPayload createSnapshotPayload(ServerPlayer player) {
@@ -153,13 +172,68 @@ public final class VttServerTabletopState {
         return authorityRevision;
     }
 
+    public synchronized void tickPersistence() {
+        if (!activeSceneDirty) return;
+        long now = System.currentTimeMillis();
+        boolean idleLongEnough = now - lastSceneMutationAt >= SCENE_SAVE_DEBOUNCE_MS;
+        boolean dirtyTooLong = now - activeSceneDirtySince >= SCENE_SAVE_MAX_DIRTY_MS;
+        if (idleLongEnough || dirtyTooLong) flushActiveSceneNow(
+                dirtyTooLong ? "maximum dirty age" : "debounce elapsed");
+    }
+
+    public synchronized boolean flushActiveSceneNow(String reason) {
+        if (!activeSceneDirty) return true;
+        return saveSceneImmediately(activeScene, reason == null ? "explicit flush" : reason);
+    }
+
+    public synchronized long pendingSceneMutationCount() {
+        return pendingSceneMutationCount;
+    }
+
+    public synchronized long completedSceneSaveCount() {
+        return completedSceneSaveCount;
+    }
+
+    public synchronized long lastCompletedSceneSaveAt() {
+        return lastCompletedSceneSaveAt;
+    }
+
+    private void markActiveSceneDirty() {
+        long now = System.currentTimeMillis();
+        if (!activeSceneDirty) {
+            activeSceneDirtySince = now;
+            VTT.LOGGER.debug("Queued debounced VTT save for scene {}", activeScene.getId());
+        }
+        activeSceneDirty = true;
+        lastSceneMutationAt = now;
+        pendingSceneMutationCount++;
+    }
+
+    private boolean saveSceneImmediately(VttScene scene, String reason) {
+        if (scene == null) return false;
+        long groupedMutations = scene == activeScene ? pendingSceneMutationCount : 0L;
+        boolean saved = storage.saveScene(tabletop.getId(), scene);
+        if (!saved) return false;
+        completedSceneSaveCount++;
+        lastCompletedSceneSaveAt = System.currentTimeMillis();
+        if (scene == activeScene) {
+            activeSceneDirty = false;
+            activeSceneDirtySince = 0L;
+            lastSceneMutationAt = 0L;
+            pendingSceneMutationCount = 0L;
+        }
+        VTT.LOGGER.debug("Flushed VTT scene {} after {} pending mutation(s): {}",
+                scene.getId(), groupedMutations, reason);
+        return true;
+    }
+
     public synchronized boolean switchToScene(String sceneId) {
         if (sceneId == null || sceneId.isBlank()) return false;
         if (sceneId.equals(tabletop.getActiveSceneId())) return true;
         if (!tabletop.getSceneIds().contains(sceneId)) return false;
         VttScene target = storage.loadScene(tabletop.getId(), sceneId);
         if (target == null) return false;
-        storage.saveScene(tabletop.getId(), activeScene);
+        if (!flushActiveSceneNow("scene switch")) return false;
         activeScene = target;
         objectSpatialIndex.rebuild(activeScene);
         visionGeometryIndex.rebuild(activeScene);
@@ -183,9 +257,9 @@ public final class VttServerTabletopState {
         int suffix = 2;
         while (tabletop.getSceneIds().contains(sceneId)) sceneId = baseId + "_" + suffix++;
 
-        storage.saveScene(tabletop.getId(), activeScene);
+        if (!flushActiveSceneNow("scene creation")) return false;
         VttScene created = new VttScene(sceneId, trimmedName);
-        storage.saveScene(tabletop.getId(), created);
+        if (!saveSceneImmediately(created, "scene creation")) return false;
         tabletop.addSceneId(sceneId);
         tabletop.setSceneDisplayName(sceneId, trimmedName);
         tabletop.setActiveSceneId(sceneId);
@@ -206,8 +280,11 @@ public final class VttServerTabletopState {
                 ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
         if (target == null) return false;
         target.setDisplayName(trimmedName);
+        if (target == activeScene) {
+            markActiveSceneDirty();
+            if (!flushActiveSceneNow("scene rename")) return false;
+        } else if (!saveSceneImmediately(target, "scene rename")) return false;
         tabletop.setSceneDisplayName(sceneId, trimmedName);
-        storage.saveScene(tabletop.getId(), target);
         storage.saveTabletop(tabletop);
         return true;
     }
@@ -224,6 +301,7 @@ public final class VttServerTabletopState {
             replacement = storage.loadScene(tabletop.getId(), replacementId);
             if (replacement == null) return false;
         }
+        if (!flushActiveSceneNow("scene delete")) return false;
         if (!storage.deleteScene(tabletop.getId(), sceneId)) return false;
         tabletop.removeSceneId(sceneId);
         if (deletingActive) {
@@ -250,15 +328,17 @@ public final class VttServerTabletopState {
     public synchronized boolean setActiveSceneBackground(String assetId) {
         if (activeScene == null || assetId == null || assetId.length() > 512) return false;
         if (assetId.isBlank()) {
+            if (activeScene.getBackgroundAssetId() == null) return true;
             activeScene.setBackgroundAssetId(null);
-            storage.saveScene(tabletop.getId(), activeScene);
-            return true;
+            markActiveSceneDirty();
+            return flushActiveSceneNow("background change");
         }
         String validatedId = validateBackgroundAssetId(assetId.trim());
         if (validatedId == null) return false;
+        if (validatedId.equals(activeScene.getBackgroundAssetId())) return true;
         activeScene.setBackgroundAssetId(validatedId);
-        storage.saveScene(tabletop.getId(), activeScene);
-        return true;
+        markActiveSceneDirty();
+        return flushActiveSceneNow("background change");
     }
 
     private String validateBackgroundAssetId(String assetId) {
@@ -281,10 +361,13 @@ public final class VttServerTabletopState {
 
     public synchronized void updateTokenDefinitionOwnership(String definitionId, String ownerId) {
         if (definitionId == null || definitionId.isBlank()) return;
-        activeScene.getObjects().stream()
+        List<VttSceneObject> matchingObjects = activeScene.getObjects().stream()
                 .filter(object -> object != null && definitionId.equals(object.getSourceTokenDefinitionId()))
-                .forEach(object -> object.setOwnerId(ownerId));
-        storage.saveScene(tabletop.getId(), activeScene);
+                .toList();
+        if (matchingObjects.stream().allMatch(object -> Objects.equals(object.getOwnerId(), ownerId))) return;
+        matchingObjects.forEach(object -> object.setOwnerId(ownerId));
+        markActiveSceneDirty();
+        flushActiveSceneNow("token ownership change");
     }
 
     public synchronized int removeObjectsUsingTokenDefinition(String definitionId) {
@@ -306,7 +389,12 @@ public final class VttServerTabletopState {
                     && definitionId.equals(object.getSourceTokenDefinitionId()));
             removedIds.forEach(scene::removeVisionSourceObjectId);
             normalizeLayerIndices(scene);
-            storage.saveScene(tabletop.getId(), scene);
+            if (scene == activeScene) {
+                markActiveSceneDirty();
+                flushActiveSceneNow("token definition removal");
+            } else {
+                saveSceneImmediately(scene, "token definition removal");
+            }
             removedCount += removedIds.size();
         }
         objectSpatialIndex.rebuild(activeScene);
@@ -338,15 +426,26 @@ public final class VttServerTabletopState {
                     : movementCollision.clipSceneObjectMovement(activeScene, object, requestedDelta);
         }
         boolean movementAccepted = allowedDelta.subtract(requestedDelta).lengthSquared() <= 0.0000001;
+        int previousLayerIndex = currentLayerIndex(object);
         boolean masterFieldsAccepted = master
                 || (nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 && nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
-                && request.layerIndex() == currentLayerIndex(object)
+                && request.layerIndex() == previousLayerIndex
                 && request.visible() == object.getState().isVisible());
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
+        double acceptedRotation = normalizeRotation(request.rotationDegrees());
+        boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
+                || !nearlyEqual(acceptedPosition.y(), object.getTransform().getY())
+                || !nearlyEqual(acceptedRotation, object.getTransform().getRotationDegrees())
+                || object.getState().isFlippedHorizontally() != request.flippedHorizontally()
+                || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
+                || master && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
+                || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
+                || request.layerIndex() != previousLayerIndex
+                || request.visible() != object.getState().isVisible());
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
-        object.getTransform().setRotationDegrees(normalizeRotation(request.rotationDegrees()));
+        object.getTransform().setRotationDegrees(acceptedRotation);
         if (master) {
             object.getTransform().setScaleX(request.scaleX());
             object.getTransform().setScaleY(request.scaleY());
@@ -356,7 +455,7 @@ public final class VttServerTabletopState {
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
         objectSpatialIndex.addOrUpdate(object);
-        storage.saveScene(tabletop.getId(), activeScene);
+        if (contentChanged) markActiveSceneDirty();
 
         long entityRevision = nextRevision(tokenTransformRevisions, object.getId());
         return new VttTokenTransformUpdatePayload(authorityRevision, entityRevision, request.clientSequence(),
@@ -409,7 +508,8 @@ public final class VttServerTabletopState {
             activeScene.getObjects().add(layerIndex, object);
             objectSpatialIndex.addOrUpdate(object);
             normalizeLayerIndices();
-            storage.saveScene(tabletop.getId(), activeScene);
+            markActiveSceneDirty();
+            flushActiveSceneNow("token creation");
             return new VttTokenLifecycleUpdatePayload("CREATE", request.objectId(), authoritativeId,
                     GSON.toJson(object), playerId);
         } catch (RuntimeException exception) {
@@ -427,7 +527,8 @@ public final class VttServerTabletopState {
         objectSpatialIndex.remove(objectId);
         activeScene.removeVisionSourceObjectId(objectId);
         normalizeLayerIndices();
-        storage.saveScene(tabletop.getId(), activeScene);
+        markActiveSceneDirty();
+        flushActiveSceneNow("token deletion");
         return new VttTokenLifecycleUpdatePayload("DELETE", objectId, objectId, "", playerId);
     }
 
@@ -519,7 +620,7 @@ public final class VttServerTabletopState {
                             }
                         });
             }
-            storage.saveScene(tabletop.getId(), activeScene);
+            markActiveSceneDirty();
             return currentEnvironmentState();
         } catch (RuntimeException exception) {
             VTT.LOGGER.warn("Could not decode VTT environment update", exception);
@@ -565,7 +666,7 @@ public final class VttServerTabletopState {
 
             if (!delete) confirmedJson = authoritativeEnvironmentJson(
                     command.entityType(), command.entityId());
-            storage.saveScene(tabletop.getId(), activeScene);
+            markActiveSceneDirty();
             long entityRevision = nextRevision(environmentRevisions, revisionKey);
             return new VttEnvironmentCommandUpdatePayload(
                     authorityRevision, entityRevision, command.clientSequence(),
