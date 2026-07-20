@@ -71,6 +71,7 @@ public final class VttServerTabletopState {
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
         this.objectSpatialIndex.rebuild(activeScene);
         this.visionGeometryIndex.rebuild(activeScene);
+        this.movementCollision.rebuildObstacleIndex(activeScene);
         this.tabletop.setSceneDisplayName(activeScene.getId(), activeScene.getDisplayName());
         storage.saveTabletop(tabletop);
     }
@@ -162,6 +163,7 @@ public final class VttServerTabletopState {
         activeScene = target;
         objectSpatialIndex.rebuild(activeScene);
         visionGeometryIndex.rebuild(activeScene);
+        movementCollision.rebuildObstacleIndex(activeScene);
         advanceAuthorityRevision();
         tabletop.setActiveSceneId(sceneId);
         storage.saveTabletop(tabletop);
@@ -190,6 +192,7 @@ public final class VttServerTabletopState {
         activeScene = created;
         objectSpatialIndex.rebuild(activeScene);
         visionGeometryIndex.rebuild(activeScene);
+        movementCollision.rebuildObstacleIndex(activeScene);
         advanceAuthorityRevision();
         storage.saveTabletop(tabletop);
         return true;
@@ -227,6 +230,7 @@ public final class VttServerTabletopState {
             activeScene = replacement;
             objectSpatialIndex.rebuild(activeScene);
             visionGeometryIndex.rebuild(activeScene);
+            movementCollision.rebuildObstacleIndex(activeScene);
             advanceAuthorityRevision();
             tabletop.setActiveSceneId(replacement.getId());
             tabletop.setSceneDisplayName(replacement.getId(), replacement.getDisplayName());
@@ -499,6 +503,7 @@ public final class VttServerTabletopState {
                     .forEach(activeScene::addDoor);
             activeScene.setFogOfWar(fog);
             visionGeometryIndex.rebuild(activeScene);
+            movementCollision.rebuildObstacleIndex(activeScene);
             for (VisionState vision : visionStates) {
                 if (vision == null || vision.objectId() == null || !Double.isFinite(vision.innerRadius())
                         || !Double.isFinite(vision.outerRadius())) continue;
@@ -554,6 +559,7 @@ public final class VttServerTabletopState {
             if (VttEnvironmentCommandPayload.WALL.equals(command.entityType())
                     || VttEnvironmentCommandPayload.DOOR.equals(command.entityType())) {
                 visionGeometryIndex.rebuild(activeScene);
+                movementCollision.rebuildObstacleIndex(activeScene);
             }
             lastEnvironmentSequences.put(sequenceKey, command.clientSequence());
 

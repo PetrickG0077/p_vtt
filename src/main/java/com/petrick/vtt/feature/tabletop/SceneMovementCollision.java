@@ -1,12 +1,16 @@
 package com.petrick.vtt.feature.tabletop;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Clips token movement against walls and closed doors that block movement. */
@@ -14,6 +18,12 @@ public final class SceneMovementCollision {
     private static final double SWEEP_STEP = 1.0;
     private static final int BINARY_SEARCH_STEPS = 8;
     private static final double TOUCH_EPSILON = 0.001;
+    private final ObstacleSpatialIndex sceneObjectObstacleIndex = new ObstacleSpatialIndex();
+
+    public void rebuildObstacleIndex(VttScene scene) {
+        sceneObjectObstacleIndex.rebuild(
+                scene, scene == null ? List.of() : buildObstacles(scene));
+    }
 
     public Vec2d clipMovement(
             VttScene tabletopScene, CanvasScene canvasScene,
@@ -43,9 +53,18 @@ public final class SceneMovementCollision {
                 || requestedDelta.lengthSquared() <= 0.0) {
             return requestedDelta == null ? Vec2d.ZERO : requestedDelta;
         }
-        List<Obstacle> obstacles = buildObstacles(tabletopScene);
+        if (!sceneObjectObstacleIndex.isBuiltFor(tabletopScene)) rebuildObstacleIndex(tabletopScene);
+        RectShape movingShape = sceneTokenShape(movingObject);
+        List<Obstacle> obstacles;
+        try {
+            obstacles = sceneObjectObstacleIndex.query(sweptBounds(movingShape, requestedDelta));
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("VTT movement obstacle query failed; using full collision fallback", exception);
+            rebuildObstacleIndex(tabletopScene);
+            obstacles = sceneObjectObstacleIndex.allObstacles();
+        }
         if (obstacles.isEmpty()) return requestedDelta;
-        return clipShapes(List.of(sceneTokenShape(movingObject)), obstacles, requestedDelta);
+        return clipShapes(List.of(movingShape), obstacles, requestedDelta);
     }
 
     private Vec2d clipShapes(
@@ -154,6 +173,22 @@ public final class SceneMovementCollision {
     private RectShape moved(RectShape shape, Vec2d offset) {
         return new RectShape(shape.center().add(offset), shape.axisX(), shape.axisY(),
                 shape.halfWidth(), shape.halfHeight());
+    }
+
+    private Bounds sweptBounds(RectShape shape, Vec2d delta) {
+        double extentX = Math.abs(shape.axisX().x()) * shape.halfWidth()
+                + Math.abs(shape.axisY().x()) * shape.halfHeight();
+        double extentY = Math.abs(shape.axisX().y()) * shape.halfWidth()
+                + Math.abs(shape.axisY().y()) * shape.halfHeight();
+        return new Bounds(
+                shape.center().x() + Math.min(0.0, delta.x()) - extentX,
+                shape.center().y() + Math.min(0.0, delta.y()) - extentY,
+                shape.center().x() + Math.max(0.0, delta.x()) + extentX,
+                shape.center().y() + Math.max(0.0, delta.y()) + extentY);
+    }
+
+    private Bounds shapeBounds(RectShape shape) {
+        return sweptBounds(shape, Vec2d.ZERO);
     }
 
     private List<Obstacle> buildObstacles(VttScene scene) {
@@ -274,9 +309,109 @@ public final class SceneMovementCollision {
         return first.subtract(second).lengthSquared() <= 0.0000001;
     }
 
+    private final class ObstacleSpatialIndex {
+        private static final double CELL_SIZE = 256.0;
+        private static final long MAX_CELLS_PER_OBSTACLE = 4_096L;
+
+        private final Map<CellKey, LinkedHashSet<Integer>> cells = new HashMap<>();
+        private final Set<Integer> globalObstacles = new LinkedHashSet<>();
+        private List<Obstacle> obstacles = List.of();
+        private List<Bounds> bounds = List.of();
+        private String sceneId;
+
+        private void rebuild(VttScene scene, List<Obstacle> newObstacles) {
+            cells.clear();
+            globalObstacles.clear();
+            sceneId = scene == null ? null : scene.getId();
+            obstacles = newObstacles == null ? List.of() : List.copyOf(newObstacles);
+            List<Bounds> rebuiltBounds = new ArrayList<>(obstacles.size());
+            for (int index = 0; index < obstacles.size(); index++) {
+                Bounds obstacleBounds = shapeBounds(obstacles.get(index).shape());
+                rebuiltBounds.add(obstacleBounds);
+                indexObstacle(index, obstacleBounds);
+            }
+            bounds = List.copyOf(rebuiltBounds);
+        }
+
+        private List<Obstacle> query(Bounds query) {
+            if (query == null || !query.finite()) return obstacles;
+            long firstX = cellCoordinate(query.minX());
+            long lastX = cellCoordinate(query.maxX());
+            long firstY = cellCoordinate(query.minY());
+            long lastY = cellCoordinate(query.maxY());
+            long columns = lastX - firstX + 1L;
+            long rows = lastY - firstY + 1L;
+            Set<Integer> candidates = new LinkedHashSet<>(globalObstacles);
+            if (columns > 0L && rows > 0L && columns <= 10_000L && rows <= 10_000L
+                    && columns * rows <= Math.max(64L, cells.size() * 4L)) {
+                for (long x = firstX; x <= lastX; x++) {
+                    for (long y = firstY; y <= lastY; y++) {
+                        Set<Integer> values = cells.get(new CellKey(x, y));
+                        if (values != null) candidates.addAll(values);
+                    }
+                }
+            } else {
+                for (int index = 0; index < bounds.size(); index++) {
+                    if (bounds.get(index).intersects(query)) candidates.add(index);
+                }
+            }
+            List<Obstacle> result = new ArrayList<>(candidates.size());
+            for (int index : candidates) {
+                if (index >= 0 && index < obstacles.size() && bounds.get(index).intersects(query)) {
+                    result.add(obstacles.get(index));
+                }
+            }
+            return List.copyOf(result);
+        }
+
+        private void indexObstacle(int index, Bounds obstacle) {
+            long firstX = cellCoordinate(obstacle.minX());
+            long lastX = cellCoordinate(obstacle.maxX());
+            long firstY = cellCoordinate(obstacle.minY());
+            long lastY = cellCoordinate(obstacle.maxY());
+            long columns = lastX - firstX + 1L;
+            long rows = lastY - firstY + 1L;
+            if (columns <= 0L || rows <= 0L || columns > MAX_CELLS_PER_OBSTACLE
+                    || rows > MAX_CELLS_PER_OBSTACLE
+                    || columns * rows > MAX_CELLS_PER_OBSTACLE) {
+                globalObstacles.add(index);
+                return;
+            }
+            for (long x = firstX; x <= lastX; x++) {
+                for (long y = firstY; y <= lastY; y++) {
+                    cells.computeIfAbsent(new CellKey(x, y), ignored -> new LinkedHashSet<>()).add(index);
+                }
+            }
+        }
+
+        private boolean isBuiltFor(VttScene scene) {
+            return scene != null && scene.getId().equals(sceneId);
+        }
+
+        private List<Obstacle> allObstacles() {
+            return obstacles;
+        }
+
+        private long cellCoordinate(double value) {
+            return (long) Math.floor(value / CELL_SIZE);
+        }
+    }
+
     private record Interval(double start, double end) {}
     private record Obstacle(String sourceId, RectShape shape) {}
     private record RectShape(
             Vec2d center, Vec2d axisX, Vec2d axisY, double halfWidth, double halfHeight
     ) {}
+    private record CellKey(long x, long y) {}
+    private record Bounds(double minX, double minY, double maxX, double maxY) {
+        private boolean intersects(Bounds other) {
+            return maxX >= other.minX && minX <= other.maxX
+                    && maxY >= other.minY && minY <= other.maxY;
+        }
+
+        private boolean finite() {
+            return Double.isFinite(minX) && Double.isFinite(minY)
+                    && Double.isFinite(maxX) && Double.isFinite(maxY);
+        }
+    }
 }
