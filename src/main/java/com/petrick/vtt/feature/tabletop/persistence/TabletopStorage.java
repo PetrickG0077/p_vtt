@@ -96,14 +96,15 @@ public final class TabletopStorage {
     public synchronized VttTabletop loadTabletop(String tabletopId) {
         Path file = paths.tabletopFile(tabletopId);
         VttTabletop tabletop = loadWithRecovery(file, VttTabletop.class,
-                this::validTabletop, "tabletop");
+                this::validTabletop, "tabletop", TabletopSchemaMigrator.DocumentType.TABLETOP);
         if (tabletop != null) warnComplexity(tabletop.getId(), VttSceneLimits.inspect(tabletop));
         return tabletop;
     }
 
     public synchronized VttScene loadScene(String tabletopId, String sceneId) {
         Path file = paths.sceneFile(tabletopId, sceneId);
-        VttScene scene = loadWithRecovery(file, VttScene.class, this::validScene, "scene");
+        VttScene scene = loadWithRecovery(file, VttScene.class, this::validScene,
+                "scene", TabletopSchemaMigrator.DocumentType.SCENE);
         if (scene != null) {
             scene.getWalls().forEach(wall -> {
                 if (wall != null) wall.normalizeLegacyGeometry();
@@ -146,6 +147,7 @@ public final class TabletopStorage {
             return false;
         }
 
+        tabletop.setSchemaVersion(TabletopSchemaMigrator.CURRENT_TABLETOP_SCHEMA_VERSION);
         paths.ensureTabletopFoldersExist(tabletop.getId());
 
         Path file = paths.tabletopFile(tabletop.getId());
@@ -163,6 +165,7 @@ public final class TabletopStorage {
             return false;
         }
 
+        scene.setSchemaVersion(TabletopSchemaMigrator.CURRENT_SCENE_SCHEMA_VERSION);
         paths.ensureTabletopFoldersExist(tabletopId);
 
         Path file = paths.sceneFile(tabletopId, scene.getId());
@@ -180,6 +183,7 @@ public final class TabletopStorage {
             Files.deleteIfExists(temporaryFile(file));
             Files.deleteIfExists(backupFile(file));
             Files.deleteIfExists(backupTemporaryFile(file));
+            deleteMigrationBackups(file);
             VTT.LOGGER.info("Deleted VTT scene JSON: {}", file);
             return true;
         } catch (IOException | RuntimeException exception) {
@@ -191,14 +195,17 @@ public final class TabletopStorage {
     private boolean validTabletop(VttTabletop tabletop) {
         if (tabletop == null || tabletop.getId() == null || tabletop.getId().isBlank()
                 || tabletop.getSceneIds() == null || tabletop.getActiveSceneId() == null
-                || tabletop.getActiveSceneId().isBlank()) return false;
+                || tabletop.getActiveSceneId().isBlank()
+                || tabletop.getSchemaVersion()
+                != TabletopSchemaMigrator.CURRENT_TABLETOP_SCHEMA_VERSION) return false;
         return tabletop.getSceneIds().contains(tabletop.getActiveSceneId());
     }
 
     private boolean validScene(VttScene scene) {
         try {
             if (scene == null || scene.getId() == null || scene.getId().isBlank()
-                    || scene.getObjects() == null) return false;
+                    || scene.getObjects() == null || scene.getSchemaVersion()
+                    != TabletopSchemaMigrator.CURRENT_SCENE_SCHEMA_VERSION) return false;
             scene.getVisionSourceObjectIds();
             scene.getFogOfWar().getHiddenAreas();
             scene.getFogOfWar().getRevealedAreas();
@@ -276,33 +283,96 @@ public final class TabletopStorage {
     }
 
     private <T> T loadWithRecovery(
-            Path file, Class<T> type, Predicate<T> validator, String label
+            Path file, Class<T> type, Predicate<T> validator, String label,
+            TabletopSchemaMigrator.DocumentType documentType
     ) {
         Path temporary = temporaryFile(file);
         Path backup = backupFile(file);
         Path backupTemporary = backupTemporaryFile(file);
         deleteQuietly(backupTemporary);
 
-        T primary = readValidated(file, type, validator);
+        LoadedDocument<T> primary = readCompatible(
+                file, type, validator, label, documentType);
         if (primary != null) {
             deleteQuietly(temporary);
-            return primary;
+            persistMigrationIfNeeded(file, primary, type, validator, label);
+            return primary.value();
         }
         if (Files.exists(file)) VTT.LOGGER.warn("Invalid VTT {} JSON detected: {}", label, file);
 
-        T pending = readValidated(temporary, type, validator);
+        LoadedDocument<T> pending = readCompatible(
+                temporary, type, validator, label, documentType);
         if (pending != null && promoteRecoveryFile(temporary, file, label, "temporary")) {
-            return pending;
+            persistMigrationIfNeeded(file, pending, type, validator, label);
+            return pending.value();
         }
         deleteQuietly(temporary);
 
-        T recovered = readValidated(backup, type, validator);
+        LoadedDocument<T> recovered = readCompatible(
+                backup, type, validator, label, documentType);
         if (recovered != null && restoreBackup(
                 backup, file, temporary, type, validator, label)) {
-            return recovered;
+            persistMigrationIfNeeded(file, recovered, type, validator, label);
+            return recovered.value();
         }
         if (Files.exists(backup)) VTT.LOGGER.error("Invalid VTT {} backup JSON: {}", label, backup);
         return null;
+    }
+
+    private <T> LoadedDocument<T> readCompatible(
+            Path file, Class<T> type, Predicate<T> validator, String label,
+            TabletopSchemaMigrator.DocumentType documentType
+    ) {
+        if (file == null || !Files.isRegularFile(file)) return null;
+        try {
+            TabletopSchemaMigrator.MigrationResult migration = TabletopSchemaMigrator.migrate(
+                    Files.readString(file, StandardCharsets.UTF_8), documentType);
+            T value = GSON.fromJson(migration.document(), type);
+            return value != null && validator.test(value)
+                    ? new LoadedDocument<>(value, migration.sourceVersion(), migration.migrated())
+                    : null;
+        } catch (TabletopSchemaMigrator.UnsupportedSchemaVersionException exception) {
+            VTT.LOGGER.error("Refusing to load VTT {} with unsupported schema version {} "
+                            + "(maximum supported: {}): {}", label, exception.foundVersion(),
+                    exception.supportedVersion(), file);
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private <T> void persistMigrationIfNeeded(
+            Path file, LoadedDocument<T> loaded, Class<T> type,
+            Predicate<T> validator, String label
+    ) {
+        if (loaded == null || !loaded.migrated()) return;
+        if (!backupBeforeMigration(file, loaded.sourceVersion(), label)) return;
+        if (writeAtomically(file, loaded.value(), type, validator, label)) {
+            VTT.LOGGER.info("Migrated VTT {} schema from version {} to current version: {}",
+                    label, loaded.sourceVersion(), file);
+        }
+    }
+
+    private boolean backupBeforeMigration(Path file, int sourceVersion, String label) {
+        Path backup = migrationBackupFile(file, sourceVersion);
+        Path temporary = migrationBackupTemporaryFile(file, sourceVersion);
+        if (Files.isRegularFile(backup)) return true;
+        try {
+            Files.deleteIfExists(temporary);
+            Files.copy(file, temporary, StandardCopyOption.REPLACE_EXISTING);
+            forceFile(temporary);
+            if (Files.mismatch(file, temporary) != -1L) {
+                throw new IOException("VTT migration backup does not match its source");
+            }
+            moveReplacing(temporary, backup);
+            VTT.LOGGER.info("Backed up legacy VTT {} before schema migration: {}", label, backup);
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            VTT.LOGGER.error("Failed to back up VTT {} before schema migration: {}",
+                    label, file, exception);
+            deleteQuietly(temporary);
+            return false;
+        }
     }
 
     private <T> void replaceBackup(
@@ -393,6 +463,30 @@ public final class TabletopStorage {
         return file.resolveSibling(file.getFileName() + ".bak.tmp");
     }
 
+    private Path migrationBackupFile(Path file, int sourceVersion) {
+        return file.resolveSibling(file.getFileName() + ".schema-v" + sourceVersion + ".bak");
+    }
+
+    private Path migrationBackupTemporaryFile(Path file, int sourceVersion) {
+        Path backup = migrationBackupFile(file, sourceVersion);
+        return backup.resolveSibling(backup.getFileName() + ".tmp");
+    }
+
+    private void deleteMigrationBackups(Path file) throws IOException {
+        Path parent = file.getParent();
+        if (parent == null || !Files.isDirectory(parent)) return;
+        String prefix = file.getFileName() + ".schema-v";
+        try (var children = Files.list(parent)) {
+            for (Path child : children.toList()) {
+                String name = child.getFileName().toString();
+                if (name.startsWith(prefix)
+                        && (name.endsWith(".bak") || name.endsWith(".bak.tmp"))) {
+                    Files.deleteIfExists(child);
+                }
+            }
+        }
+    }
+
     private void deleteQuietly(Path file) {
         try {
             Files.deleteIfExists(file);
@@ -400,4 +494,6 @@ public final class TabletopStorage {
             VTT.LOGGER.debug("Could not remove stale VTT temporary file: {}", file, exception);
         }
     }
+
+    private record LoadedDocument<T>(T value, int sourceVersion, boolean migrated) {}
 }

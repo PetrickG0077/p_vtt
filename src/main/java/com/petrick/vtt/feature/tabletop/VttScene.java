@@ -16,6 +16,8 @@ import java.util.List;
  */
 public final class VttScene {
 
+    private int schemaVersion = 1;
+
     private String id;
 
     private String displayName;
@@ -83,6 +85,14 @@ public final class VttScene {
         }
 
         this.backgroundAssetId = backgroundAssetId;
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public String getVisionSourceObjectId() {

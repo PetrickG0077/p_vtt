@@ -19,6 +19,8 @@ import java.util.Map;
  */
 public final class VttTabletop {
 
+    private int schemaVersion = 1;
+
     private String id;
 
     private String displayName;
@@ -99,6 +101,14 @@ public final class VttTabletop {
                     ? null
                     : sceneIds.get(0);
         }
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public String getSceneDisplayName(String sceneId) {
