@@ -7,7 +7,6 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
-import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
 import net.neoforged.fml.loading.FMLPaths;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
@@ -102,11 +101,15 @@ public final class VttServerTabletopState {
         instance = null;
     }
 
-    public synchronized VttSceneSnapshotPayload createSnapshotPayload(ServerPlayer player) {
+    public synchronized SceneSnapshotData createSnapshotData(ServerPlayer player) {
         VttScene replicatedScene = replicatedSceneFor(player);
-        return new VttSceneSnapshotPayload(
+        return new SceneSnapshotData(
                 GSON.toJson(tabletop), GSON.toJson(replicatedScene), authorityRevision);
     }
+
+    public record SceneSnapshotData(
+            String tabletopJson, String sceneJson, long authorityRevision
+    ) {}
 
     public synchronized VttScene replicatedSceneFor(ServerPlayer player) {
         if (player == null || VttServerPlayerEvents.isMaster(player)) return activeScene;

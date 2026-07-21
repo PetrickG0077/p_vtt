@@ -4,7 +4,6 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** Applies scene lifecycle commands exclusively on the authoritative server. */
@@ -57,7 +56,7 @@ public final class VttServerSceneCommandHandler {
                         player, state.replicatedSceneFor(player), VttServerPlayerEvents.isMaster(player));
                 VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
             }
-            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
+            VttServerSceneSnapshotSync.sendToPlayer(player, state);
             VttServerVisionSourceSync.sendToPlayer(player, state);
         }
         VTT.LOGGER.info("Applied VTT scene command {} from {}: active scene is {}",

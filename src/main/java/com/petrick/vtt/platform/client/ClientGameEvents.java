@@ -11,6 +11,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
+import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -30,6 +31,7 @@ public final class ClientGameEvents {
         VttClientTokenLifecycleSync.tick(VTT.getApplication().getActiveSession());
         VttClientEnvironmentCommandSync.tick(VTT.getApplication().getActiveSession());
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
+        VttClientSceneSnapshotReceiver.tick();
 
         Minecraft minecraft = Minecraft.getInstance();
 
@@ -40,6 +42,7 @@ public final class ClientGameEvents {
 
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        VttClientSceneSnapshotReceiver.reset();
         var session = VTT.getApplication().getActiveSession();
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();

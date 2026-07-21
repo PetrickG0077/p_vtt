@@ -2,7 +2,9 @@ package com.petrick.vtt.network;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
-import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
@@ -33,7 +35,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "23";
+    private static final String PROTOCOL_VERSION = "24";
 
     private VttNetwork() {
     }
@@ -47,11 +49,15 @@ public final class VttNetwork {
                 VttIdentityPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleIdentity
         );
-        registrar.playToClient(
-                VttSceneSnapshotPayload.TYPE,
-                VttSceneSnapshotPayload.STREAM_CODEC,
-                VttClientPayloadHandler::handleSceneSnapshot
-        );
+        registrar.playToClient(VttSceneSnapshotStartPayload.TYPE,
+                VttSceneSnapshotStartPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleSceneSnapshotStart);
+        registrar.playToClient(VttSceneSnapshotChunkPayload.TYPE,
+                VttSceneSnapshotChunkPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleSceneSnapshotChunk);
+        registrar.playToClient(VttSceneSnapshotCompletePayload.TYPE,
+                VttSceneSnapshotCompletePayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleSceneSnapshotComplete);
         registrar.playToClient(VttVisionSourcesPayload.TYPE, VttVisionSourcesPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleVisionSources);
         registrar.playToClient(VttPlayerReplicationPayload.TYPE,

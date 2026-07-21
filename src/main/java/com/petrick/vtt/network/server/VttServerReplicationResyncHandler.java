@@ -3,7 +3,6 @@ package com.petrick.vtt.network.server;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttReplicationResyncRequestPayload;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** Sends a private recovery snapshot, with a server-side rate limit against request spam. */
@@ -23,7 +22,7 @@ public final class VttServerReplicationResyncHandler {
         VttServerAssetSyncService.sendActiveSceneAssets(
                 player, replicatedScene, VttServerPlayerEvents.isMaster(player));
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
+        VttServerSceneSnapshotSync.sendToPlayer(player, state);
         VttServerVisionSourceSync.sendToPlayer(player, state);
         VTT.LOGGER.warn(
                 "Recovered VTT replication for {} after {} (client A={}, V={}, R={})",

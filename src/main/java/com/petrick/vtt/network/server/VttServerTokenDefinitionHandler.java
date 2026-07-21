@@ -9,7 +9,6 @@ import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.io.IOException;
@@ -173,7 +172,7 @@ public final class VttServerTokenDefinitionHandler {
                     connected, state.replicatedSceneFor(connected), VttServerPlayerEvents.isMaster(connected)
             );
             VttServerVisionSourceSync.markCurrentAssetsSent(connected, state);
-            PacketDistributor.sendToPlayer(connected, state.createSnapshotPayload(connected));
+            VttServerSceneSnapshotSync.sendToPlayer(connected, state);
             VttServerVisionSourceSync.sendToPlayer(connected, state);
         }
     }

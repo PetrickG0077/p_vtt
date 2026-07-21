@@ -36,7 +36,7 @@ public final class VttServerPlayerEvents {
         VttServerAssetSyncService.sendActiveSceneAssets(
                 player, state.replicatedSceneFor(player), isMaster(player));
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-        PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
+        VttServerSceneSnapshotSync.sendToPlayer(player, state);
         VttServerVisionSourceSync.sendToPlayer(player, state);
     }
 
@@ -50,7 +50,7 @@ public final class VttServerPlayerEvents {
             VttServerAssetSyncService.sendActiveSceneAssets(
                     player, state.replicatedSceneFor(player), current == VttRole.MASTER);
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-            PacketDistributor.sendToPlayer(player, state.createSnapshotPayload(player));
+            VttServerSceneSnapshotSync.sendToPlayer(player, state);
             VttServerVisionSourceSync.sendToPlayer(player, state);
             return;
         }

@@ -9,11 +9,14 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
-import com.petrick.vtt.network.payload.VttSceneSnapshotPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
+import com.petrick.vtt.network.payload.VttSceneSnapshotCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
 import com.petrick.vtt.network.client.VttClientAssetCache;
+import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.client.VttClientEnvironmentStateSync;
@@ -50,14 +53,35 @@ public final class VttClientPayloadHandler {
         VTT.LOGGER.info("Received VTT identity: player={}, role={}", payload.playerId(), session.getLocalRole());
     }
 
-    public static void handleSceneSnapshot(VttSceneSnapshotPayload payload, IPayloadContext context) {
+    public static void handleSceneSnapshotStart(
+            VttSceneSnapshotStartPayload payload, IPayloadContext context
+    ) {
+        VttClientSceneSnapshotReceiver.begin(payload);
+    }
+
+    public static void handleSceneSnapshotChunk(
+            VttSceneSnapshotChunkPayload payload, IPayloadContext context
+    ) {
+        VttClientSceneSnapshotReceiver.accept(payload);
+    }
+
+    public static void handleSceneSnapshotComplete(
+            VttSceneSnapshotCompletePayload payload, IPayloadContext context
+    ) {
+        var snapshot = VttClientSceneSnapshotReceiver.finish(payload);
+        if (snapshot == null) return;
         try {
-            VttTabletop tabletop = GSON.fromJson(payload.tabletopJson(), VttTabletop.class);
-            VttScene scene = GSON.fromJson(payload.sceneJson(), VttScene.class);
+            VttTabletop tabletop = GSON.fromJson(snapshot.tabletopJson(), VttTabletop.class);
+            VttScene scene = GSON.fromJson(snapshot.sceneJson(), VttScene.class);
+            if (tabletop == null || scene == null) {
+                throw new IllegalArgumentException("Snapshot contains null tabletop or scene");
+            }
             VTT.getApplication().getActiveSession().applyNetworkSnapshot(
-                    tabletop, scene, payload.authorityRevision());
+                    tabletop, scene, snapshot.authorityRevision());
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT scene snapshot from server", exception);
+            VttClientSceneSnapshotReceiver.recoverAfterApplyFailure(
+                    snapshot.authorityRevision());
         }
     }
 
