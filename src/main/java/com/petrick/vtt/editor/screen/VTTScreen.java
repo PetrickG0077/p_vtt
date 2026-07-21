@@ -14,6 +14,7 @@ import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
+import com.petrick.vtt.editor.hud.EditorHudOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
@@ -42,7 +43,6 @@ import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
 import com.petrick.vtt.editor.catalog.SceneContextMenu;
 import com.petrick.vtt.editor.overlay.TokenCatalogContextMenuOverlay;
 import com.petrick.vtt.editor.overlay.SceneContextMenuOverlay;
-import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
 import com.petrick.vtt.platform.client.VttAssetSyncHudOverlay;
@@ -86,6 +86,8 @@ public final class VTTScreen extends Screen {
     private final CanvasRenderer canvasRenderer;
 
     private final InputController inputController;
+
+    private final EditorHudOverlay editorHudOverlay;
 
     private final EditorPanelVisibility panelVisibility;
 
@@ -155,6 +157,12 @@ public final class VTTScreen extends Screen {
 
     private boolean playerViewPreview;
 
+    private boolean hudPlayersOpen;
+
+    private boolean hudSettingsOpen;
+
+    private boolean hudCreationOpen;
+
     private String observedActiveSceneId;
 
     public VTTScreen() {
@@ -175,6 +183,7 @@ public final class VTTScreen extends Screen {
         this.inputController = new InputController(camera, scene, selectionManager,
                 session::getActiveScene, session::saveCanvasSceneToActiveScene,
                 session::getLocalRole, session::getLocalPlayerId);
+        this.editorHudOverlay = new EditorHudOverlay();
 
         this.panelVisibility = new EditorPanelVisibility();
 
@@ -237,6 +246,7 @@ public final class VTTScreen extends Screen {
 
         if (playerViewPreview) {
             renderEditorNotice(context);
+            renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
             return;
         }
@@ -260,16 +270,16 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (panelVisibility.isSelectionInspectorVisible()) {
+        if (session.isLocalMaster() && panelVisibility.isSelectionInspectorVisible()) {
             selectionInspectorOverlay.render(context, this.font, scene, selectionManager,
                     session.getActiveScene(), session.getLocalPlayerId());
         }
 
-        if (panelVisibility.isAssetCatalogVisible()) {
+        if (session.getLocalRole().canUseCatalogs() && panelVisibility.isAssetCatalogVisible()) {
             renderAssetCatalog(context);
         }
 
-        if (panelVisibility.isTokenCatalogVisible()) {
+        if (session.getLocalRole().canUseCatalogs() && panelVisibility.isTokenCatalogVisible()) {
             tokenCatalogOverlay.render(
                     context,
                     this.font,
@@ -279,11 +289,11 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (panelVisibility.isSceneOutlinerVisible()) {
+        if (session.isLocalMaster() && panelVisibility.isSceneOutlinerVisible()) {
             sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
         }
 
-        if (panelVisibility.isSceneListVisible()) {
+        if (session.isLocalMaster() && panelVisibility.isSceneListVisible()) {
             sceneListOverlay.render(context, this.font, session.getActiveTabletop(),
                     session.getActiveScene());
         }
@@ -325,6 +335,8 @@ public final class VTTScreen extends Screen {
                 tokenCatalogContextMenu
         );
         sceneContextMenuOverlay.render(context, this.font, sceneContextMenu);
+        renderEditorNotice(context);
+        renderEditorHud(context);
 
         if (renamingObjectId != null) {
             renderRenameDialog(context);
@@ -335,7 +347,6 @@ public final class VTTScreen extends Screen {
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
-        renderEditorNotice(context);
         VttAssetSyncHudOverlay.render(graphics);
     }
 
@@ -345,9 +356,188 @@ public final class VTTScreen extends Screen {
         int textWidth = this.font.width(message);
         int x = Math.max(4, (this.width - textWidth) / 2 - 6);
         int width = Math.min(this.width - x - 4, textWidth + 12);
-        context.graphics().fill(x, 24, x + width, 40, 0xDD220000);
+        context.graphics().fill(x, 50, x + width, 66, 0xDD220000);
         context.graphics().drawCenteredString(
-                this.font, message, this.width / 2, 28, 0xFFFF7777);
+                this.font, message, this.width / 2, 54, 0xFFFF7777);
+    }
+
+    private void renderEditorHud(VRenderContext context) {
+        boolean master = session.isLocalMaster();
+        if (!master) {
+            hudCreationOpen = false;
+            panelVisibility.hideMasterPanels();
+            String activeTool = inputController.getActiveToolId();
+            if (!"hand".equals(activeTool) && !"select".equals(activeTool)) {
+                inputController.selectHandTool();
+            }
+        }
+        editorHudOverlay.render(context, this.font, editorHudState());
+    }
+
+    private EditorHudOverlay.State editorHudState() {
+        TokenDefinition selectedToken = selectedTokenDefinition();
+        boolean canDeleteToken = CreatedTokenStorage.isUserCreatedToken(selectedToken);
+        String activeSceneName = session.getActiveScene() == null
+                ? "" : session.getActiveScene().getDisplayName();
+        boolean canDeleteScene = session.getActiveTabletop() != null
+                && session.getActiveTabletop().getSceneIds().size() > 1
+                && session.getActiveScene() != null;
+        return new EditorHudOverlay.State(
+                session.isLocalMaster(), inputController.getActiveToolId(),
+                hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
+                panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
+                panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
+                session.getLocalPlayerId(), activeSceneName, canDeleteScene,
+                selectedToken == null ? "" : selectedToken.displayName(), canDeleteToken);
+    }
+
+    private TokenDefinition selectedTokenDefinition() {
+        if (!tokenCatalogSelection.hasSelection()) return null;
+        return tokenDefinitionRegistry.findById(
+                tokenCatalogSelection.getSelectedTokenDefinitionId()).orElse(null);
+    }
+
+    private boolean handleEditorHudMouseClicked(double mouseX, double mouseY, int button) {
+        EditorHudOverlay.State state = editorHudState();
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return editorHudOverlay.containsHud(mouseX, mouseY, width, height, state);
+        }
+        EditorHudOverlay.Action action = editorHudOverlay.actionAt(
+                mouseX, mouseY, width, height, state);
+        if (action == EditorHudOverlay.Action.NONE) {
+            boolean insideHud = editorHudOverlay.containsHud(mouseX, mouseY, width, height, state);
+            if (!insideHud) closeHudPopups();
+            return insideHud;
+        }
+        handleEditorHudAction(action);
+        return true;
+    }
+
+    private void handleEditorHudAction(EditorHudOverlay.Action action) {
+        boolean master = session.isLocalMaster();
+        tokenCatalogContextMenu.close();
+        tokenCatalogOverlay.allowDetailsPopup();
+        sceneContextMenu.close();
+        switch (action) {
+            case CLOSE -> this.onClose();
+            case PLAYERS -> {
+                hudPlayersOpen = !hudPlayersOpen;
+                hudSettingsOpen = false;
+                hudCreationOpen = false;
+            }
+            case SETTINGS -> {
+                hudSettingsOpen = !hudSettingsOpen;
+                hudPlayersOpen = false;
+                hudCreationOpen = false;
+            }
+            case OUTLINER -> {
+                if (master) panelVisibility.toggleSceneOutliner();
+                closeHudPopups();
+            }
+            case HAND -> {
+                inputController.selectHandTool();
+                closeHudPopups();
+            }
+            case SELECT -> {
+                inputController.selectSelectTool();
+                closeHudPopups();
+            }
+            case FOG -> {
+                if (master) {
+                    selectionManager.clearSelection();
+                    inputController.selectFogTool();
+                }
+                closeHudPopups();
+            }
+            case WALL -> {
+                if (master) {
+                    selectionManager.clearSelection();
+                    inputController.selectWallTool();
+                }
+                closeHudPopups();
+            }
+            case DOOR -> {
+                if (master) {
+                    selectionManager.clearSelection();
+                    inputController.selectDoorTool();
+                }
+                closeHudPopups();
+            }
+            case MEASURE -> VttClientEditorNotice.show("Measure Tool will be added later");
+            case UNDO -> VttClientEditorNotice.show("Undo history will be added later");
+            case REDO -> VttClientEditorNotice.show("Redo history will be added later");
+            case SCENES -> {
+                if (master) panelVisibility.toggleSceneList();
+                closeHudPopups();
+            }
+            case TOKENS -> {
+                if (master) panelVisibility.toggleTokenCatalog();
+                closeHudPopups();
+            }
+            case CREATION -> {
+                if (master) {
+                    hudCreationOpen = !hudCreationOpen;
+                    hudPlayersOpen = false;
+                    hudSettingsOpen = false;
+                }
+            }
+            case CREATE_SCENE -> {
+                if (master) newSceneNameBuffer = "";
+                closeHudPopups();
+            }
+            case CREATE_TOKEN -> {
+                if (master) beginCreateTokenDefinition();
+                closeHudPopups();
+            }
+            case DELETE_ACTIVE_SCENE -> {
+                if (master && session.getActiveScene() != null
+                        && session.getActiveTabletop() != null
+                        && session.getActiveTabletop().getSceneIds().size() > 1) {
+                    pendingDeleteSceneId = session.getActiveScene().getId();
+                } else {
+                    VttClientEditorNotice.show("At least one scene must remain");
+                }
+                closeHudPopups();
+            }
+            case DELETE_SELECTED_TOKEN -> {
+                if (master) deleteSelectedTokenDefinitionFromHud();
+                closeHudPopups();
+            }
+            case NONE -> {
+            }
+        }
+    }
+
+    private void beginCreateTokenDefinition() {
+        tokenCreationDraft = new TokenCreationDraft();
+        tokenImagePickerActive = false;
+        lastTokenImagePickerClickedItemId = null;
+        lastTokenImagePickerClickTime = 0L;
+    }
+
+    private void deleteSelectedTokenDefinitionFromHud() {
+        TokenDefinition tokenDefinition = selectedTokenDefinition();
+        if (tokenDefinition == null) {
+            VttClientEditorNotice.show("Select a token in the token list first");
+            return;
+        }
+        if (!CreatedTokenStorage.isUserCreatedToken(tokenDefinition)) {
+            VttClientEditorNotice.show("Built-in tokens cannot be deleted");
+            return;
+        }
+        if (session.isNetworkAuthorityActive()) {
+            if (VttClientTokenDefinitionSync.sendDelete(tokenDefinition.id())) {
+                tokenCatalogSelection.clear();
+            }
+            return;
+        }
+        deleteTokenDefinition(tokenDefinition);
+    }
+
+    private void closeHudPopups() {
+        hudPlayersOpen = false;
+        hudSettingsOpen = false;
+        hudCreationOpen = false;
     }
 
     private void renderAssetCatalog(VRenderContext context) {
@@ -387,23 +577,9 @@ public final class VTTScreen extends Screen {
                 0xFFFFFFFF
         );
 
-        graphics.drawCenteredString(
-                this.font,
-                "Sprint 3 - Tabletop, Scenes & Persistence",
-                this.width / 2,
-                this.height / 2,
-                0xFFAAAAAA
-        );
-
-        graphics.drawCenteredString(this.font,
-                playerViewPreview ? "View: PLAYER PREVIEW" : "Role: " + session.getLocalRole(),
-                this.width / 2, this.height / 2 + 16,
-                playerViewPreview ? 0xFFFF6666
-                        : session.isLocalMaster() ? 0xFFFFCC66 : 0xFF66CCFF);
-
         if (playerViewPreview) {
             graphics.drawCenteredString(this.font, "PLAYER PREVIEW - Ctrl+P to exit",
-                    this.width / 2, 8, 0xFFFF6666);
+                    this.width / 2, 70, 0xFFFF6666);
         }
     }
 
@@ -421,6 +597,12 @@ public final class VTTScreen extends Screen {
         }
 
         if (tokenCreationDraft != null) {
+            CursorManager.reset();
+            return;
+        }
+
+        if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
+                editorHudState())) {
             CursorManager.reset();
             return;
         }
@@ -458,6 +640,7 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (playerViewPreview) {
+            if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
             return renderState == null || inputController.mouseClicked(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
@@ -470,6 +653,8 @@ public final class VTTScreen extends Screen {
         if (handleTokenCreationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
+
+        if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
         if (!session.getLocalRole().canEditTabletop()) {
             if (renderState != null) {
@@ -515,20 +700,6 @@ public final class VTTScreen extends Screen {
                 tokenCatalogOverlay.allowDetailsPopup();
                 return true;
             }
-        }
-
-        if (panelVisibility.isTokenCatalogVisible()
-                && tokenCatalogOverlay.isCreateTokenButtonAt(
-                tokenDefinitionRegistry,
-                this.height,
-                mouseX,
-                mouseY
-        )) {
-            tokenCreationDraft = new TokenCreationDraft();
-            tokenImagePickerActive = false;
-            lastTokenImagePickerClickedItemId = null;
-            lastTokenImagePickerClickTime = 0L;
-            return true;
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && panelVisibility.isSceneListVisible()) {
@@ -629,11 +800,6 @@ public final class VTTScreen extends Screen {
             }
 
             if (panelVisibility.isSceneListVisible()) {
-                if (sceneListOverlay.isCreateSceneButtonAt(
-                        session.getActiveTabletop(), mouseX, mouseY)) {
-                    newSceneNameBuffer = "";
-                    return true;
-                }
                 Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
                         session.getActiveTabletop(), mouseX, mouseY);
                 if (clickedSceneId.isPresent()) {
@@ -1093,6 +1259,8 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
+                editorHudState())) return true;
         if (playerViewPreview) {
             return renderState == null || inputController.mouseScrolled(
                     mouseX, mouseY, scrollX, scrollY, renderState);
@@ -1261,6 +1429,12 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_ESCAPE
+                && (hudPlayersOpen || hudSettingsOpen || hudCreationOpen)) {
+            closeHudPopups();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE
                 && (inputController.closeCollisionBoxEditor()
                 || inputController.cancelWallDrawing()
                 || inputController.cancelDoorEditing()
@@ -1417,7 +1591,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_F
-                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) == 0) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             selectionManager.clearSelection();
             inputController.selectFogTool();
@@ -1495,7 +1669,8 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F) {
+        if (keyCode == GLFW.GLFW_KEY_F
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
             if (!canTransformSelectedTokens()) return true;
             inputController.flipSelectedObjectsHorizontally();
             return true;
@@ -1744,6 +1919,7 @@ public final class VTTScreen extends Screen {
             newSceneNameBuffer = null;
             cancelRename();
             inputController.selectHandTool();
+            closeHudPopups();
         }
         VTT.LOGGER.info("Player view preview {}", playerViewPreview ? "enabled" : "disabled");
     }
@@ -2095,6 +2271,7 @@ public final class VTTScreen extends Screen {
         pendingDeleteSceneId = null;
         backgroundImagePickerActive = false;
         tokenImagePickerActive = false;
+        closeHudPopups();
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);
     }
 

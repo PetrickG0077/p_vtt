@@ -15,7 +15,7 @@ public final class SceneListOverlay {
                        VttScene activeScene) {
         if (tabletop == null) return;
         List<String> ids = tabletop.getSceneIds();
-        int height = PADDING * 2 + 30 + Math.max(1, ids.size()) * LINE_HEIGHT + LINE_HEIGHT;
+        int height = PADDING * 2 + 26 + Math.max(1, ids.size()) * LINE_HEIGHT;
         context.graphics().fill(X, Y, X + WIDTH, Y + height, 0xDD000000);
         context.graphics().hLine(X, X + WIDTH, Y, 0xFFFFAA44);
         context.graphics().hLine(X, X + WIDTH, Y + height, 0xFFFFAA44);
@@ -35,7 +35,6 @@ public final class SceneListOverlay {
                 rowY += LINE_HEIGHT;
             }
         }
-        context.graphics().drawString(font, "+ New Scene", X + PADDING, rowY + 4, 0xFF66DD88, false);
     }
 
     public Optional<String> findSceneIdAt(VttTabletop tabletop, double mouseX, double mouseY) {
@@ -49,10 +48,4 @@ public final class SceneListOverlay {
         return Optional.empty();
     }
 
-    public boolean isCreateSceneButtonAt(VttTabletop tabletop, double mouseX, double mouseY) {
-        if (tabletop == null || mouseX < X || mouseX > X + WIDTH) return false;
-        int rowCount = Math.max(1, tabletop.getSceneIds().size());
-        int top = Y + PADDING + 18 + rowCount * LINE_HEIGHT + 4;
-        return mouseY >= top && mouseY <= top + LINE_HEIGHT;
-    }
 }

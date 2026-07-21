@@ -112,19 +112,6 @@ public final class TokenCatalogOverlay {
         drawLine(context, font, "Token Catalog", textX, textY, TITLE_COLOR);
         textY += LINE_HEIGHT + 4;
 
-        renderCreateTokenButton(
-                context,
-                font,
-                x + PANEL_WIDTH - PADDING - 18,
-                y + PADDING,
-                isCreateTokenButtonAt(
-                        tokenDefinitionRegistry,
-                        context.screenHeight(),
-                        context.mouseX(),
-                        context.mouseY()
-                )
-        );
-
         drawLine(
                 context,
                 font,
@@ -236,42 +223,6 @@ public final class TokenCatalogOverlay {
                 && mouseX <= panelX + PANEL_WIDTH
                 && mouseY >= panelY
                 && mouseY <= panelY + panelHeight;
-    }
-
-    private void renderCreateTokenButton(
-            VRenderContext context,
-            Font font,
-            int x,
-            int y,
-            boolean hovered
-    ) {
-        int size = 18;
-
-        int borderColor = hovered ? 0xFFFFAA33 : PANEL_BORDER;
-
-        context.graphics().fill(
-                x,
-                y,
-                x + size,
-                y + size,
-                0xAA000000
-        );
-
-        context.graphics().hLine(x, x + size, y, borderColor);
-        context.graphics().hLine(x, x + size, y + size, borderColor);
-        context.graphics().vLine(x, y, y + size, borderColor);
-        context.graphics().vLine(x + size, y, y + size, borderColor);
-
-        String text = "+";
-
-        context.graphics().drawString(
-                font,
-                text,
-                x + size / 2 - font.width(text) / 2 + 1,
-                y + size / 2 - 4 + 1,
-                0xFFFFFFFF,
-                false
-        );
     }
 
     private void renderTokenRow(
@@ -413,31 +364,6 @@ public final class TokenCatalogOverlay {
                 y + PADDING,
                 TEXT_COLOR
         );
-    }
-
-    public boolean isCreateTokenButtonAt(
-            TokenDefinitionRegistry tokenDefinitionRegistry,
-            int screenHeight,
-            double mouseX,
-            double mouseY
-    ) {
-        int tokenCount = tokenDefinitionRegistry == null
-                ? 0
-                : tokenDefinitionRegistry.size();
-
-        int panelHeight = calculatePanelHeight(tokenCount);
-
-        int panelX = PANEL_X;
-        int panelY = getPanelY(screenHeight, panelHeight);
-
-        int buttonSize = 18;
-        int buttonX = panelX + PANEL_WIDTH - PADDING - buttonSize;
-        int buttonY = panelY + PADDING;
-
-        return mouseX >= buttonX
-                && mouseX <= buttonX + buttonSize
-                && mouseY >= buttonY
-                && mouseY <= buttonY + buttonSize;
     }
 
     public TokenDefinition findTokenAt(
