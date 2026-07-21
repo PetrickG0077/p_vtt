@@ -1,5 +1,7 @@
 package com.petrick.vtt.network.server;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -22,8 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -48,10 +51,12 @@ import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 public final class VttServerAssetSyncService {
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final long SYNC_TIMEOUT_MS = 120_000L;
     private static final int MAX_CHUNKS_PER_TICK = 4;
     private static final int MAX_HASH_CACHE_ENTRIES = 8_192;
     private static final long HASH_CACHE_PRUNE_INTERVAL_MS = 60_000L;
+    private static final int HASH_CACHE_FORMAT_VERSION = 1;
     private static final Map<UUID, PendingSync> PENDING = new HashMap<>();
     private static final Map<UUID, ManifestPreparation> PREPARING = new HashMap<>();
     private static final Deque<UUID> ACTIVE_TRANSFERS = new ArrayDeque<>();
@@ -66,6 +71,9 @@ public final class VttServerAssetSyncService {
     });
     private static String serverId;
     private static long lastHashCachePruneAt;
+    private static Path hashCacheRoot;
+    private static boolean hashCacheLoaded;
+    private static boolean hashCacheDirty;
 
     private VttServerAssetSyncService() {}
 
@@ -169,6 +177,7 @@ public final class VttServerAssetSyncService {
             AssetScope scope, boolean includeAllTokens, Path root
     ) {
         checkCancelled();
+        ensureHashCacheLoaded(root);
         Path assetsRoot = root.resolve("assets").normalize();
         Path tokensRoot = root.resolve("created/tokens").normalize();
         Set<String> definitionIds = scope == null ? Set.of() : scope.definitionIds();
@@ -189,6 +198,7 @@ public final class VttServerAssetSyncService {
         }
         if (includeAllTokens) addAllLibraryFiles(assetsRoot, result, totalBytes);
         pruneRemovedHashEntries(root);
+        persistHashCache();
         return new ArrayList<>(result.values());
     }
 
@@ -351,9 +361,13 @@ public final class VttServerAssetSyncService {
         PENDING.clear();
         PREPARING.clear();
         ACTIVE_TRANSFERS.clear();
+        persistHashCache();
         synchronized (HASH_CACHE) {
             HASH_CACHE.clear();
             lastHashCachePruneAt = 0L;
+            hashCacheRoot = null;
+            hashCacheLoaded = false;
+            hashCacheDirty = false;
         }
         HASHES_IN_FLIGHT.clear();
         serverId = null;
@@ -494,13 +508,16 @@ public final class VttServerAssetSyncService {
             if (cached == null) return null;
             if (cached.fingerprint().equals(fingerprint)) return cached;
             HASH_CACHE.remove(file);
+            hashCacheDirty = true;
             return null;
         }
     }
 
     private static void cacheHash(Path file, CachedHash hash) {
         synchronized (HASH_CACHE) {
+            if (!hashCacheLoaded || hashCacheRoot == null || !file.startsWith(hashCacheRoot)) return;
             HASH_CACHE.put(file, hash);
+            hashCacheDirty = true;
             while (HASH_CACHE.size() > MAX_HASH_CACHE_ENTRIES) {
                 var iterator = HASH_CACHE.entrySet().iterator();
                 if (!iterator.hasNext()) break;
@@ -534,7 +551,7 @@ public final class VttServerAssetSyncService {
         BasicFileAttributes attributes = Files.readAttributes(
                 file, BasicFileAttributes.class);
         if (!attributes.isRegularFile()) throw new IOException("Not a regular file: " + file);
-        return new FileFingerprint(attributes.size(), attributes.lastModifiedTime(),
+        return new FileFingerprint(attributes.size(), attributes.lastModifiedTime().toString(),
                 attributes.fileKey() == null ? "" : attributes.fileKey().toString());
     }
 
@@ -568,18 +585,142 @@ public final class VttServerAssetSyncService {
             checkCancelled();
             if (Files.isRegularFile(path)) continue;
             synchronized (HASH_CACHE) {
-                HASH_CACHE.remove(path);
+                if (HASH_CACHE.remove(path) != null) hashCacheDirty = true;
             }
         }
+    }
+
+    private static void ensureHashCacheLoaded(Path storageRoot) {
+        Path normalizedRoot = storageRoot.toAbsolutePath().normalize();
+        synchronized (HASH_CACHE) {
+            if (hashCacheLoaded && normalizedRoot.equals(hashCacheRoot)) return;
+            HASH_CACHE.clear();
+            hashCacheRoot = normalizedRoot;
+            hashCacheLoaded = true;
+            hashCacheDirty = false;
+
+            Path file = hashCacheFile(normalizedRoot);
+            if (!Files.isRegularFile(file)) return;
+            try {
+                PersistentHashCache persisted = GSON.fromJson(
+                        Files.readString(file, StandardCharsets.UTF_8), PersistentHashCache.class);
+                if (persisted == null || persisted.version() != HASH_CACHE_FORMAT_VERSION
+                        || persisted.entries() == null) {
+                    hashCacheDirty = true;
+                    return;
+                }
+                for (PersistentHashEntry entry : persisted.entries()) {
+                    if (HASH_CACHE.size() >= MAX_HASH_CACHE_ENTRIES) {
+                        hashCacheDirty = true;
+                        break;
+                    }
+                    loadPersistentHashEntry(normalizedRoot, entry);
+                }
+                VTT.LOGGER.debug("Loaded {} cached VTT server asset hash(es)", HASH_CACHE.size());
+            } catch (IOException | RuntimeException exception) {
+                HASH_CACHE.clear();
+                hashCacheDirty = true;
+                VTT.LOGGER.warn("Could not load VTT server asset hash cache: {}", file, exception);
+            }
+        }
+    }
+
+    private static void loadPersistentHashEntry(Path storageRoot, PersistentHashEntry entry) {
+        if (entry == null || entry.relativePath() == null || entry.relativePath().isBlank()
+                || entry.size() < 0L || entry.lastModified() == null
+                || entry.lastModified().isBlank() || !validSha256(entry.sha256())) {
+            hashCacheDirty = true;
+            return;
+        }
+        Path file = storageRoot.resolve(entry.relativePath()).toAbsolutePath().normalize();
+        if (!file.startsWith(storageRoot) || !Files.isRegularFile(file)) {
+            hashCacheDirty = true;
+            return;
+        }
+        try {
+            FileFingerprint actual = fingerprint(file);
+            FileFingerprint persisted = new FileFingerprint(entry.size(),
+                    entry.lastModified(), entry.fileKey() == null ? "" : entry.fileKey());
+            if (!actual.equals(persisted)) {
+                hashCacheDirty = true;
+                return;
+            }
+            HASH_CACHE.put(file, new CachedHash(actual, entry.sha256().toLowerCase()));
+        } catch (IOException exception) {
+            hashCacheDirty = true;
+        }
+    }
+
+    private static void persistHashCache() {
+        synchronized (HASH_CACHE) {
+            if (!hashCacheLoaded || !hashCacheDirty || hashCacheRoot == null) return;
+            Path file = hashCacheFile(hashCacheRoot);
+            Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
+            List<PersistentHashEntry> entries = new ArrayList<>(HASH_CACHE.size());
+            for (Map.Entry<Path, CachedHash> entry : HASH_CACHE.entrySet()) {
+                Path path = entry.getKey();
+                if (!path.startsWith(hashCacheRoot)) continue;
+                CachedHash hash = entry.getValue();
+                entries.add(new PersistentHashEntry(
+                        hashCacheRoot.relativize(path).toString().replace('\\', '/'),
+                        hash.fingerprint().size(), hash.fingerprint().lastModified(),
+                        hash.fingerprint().fileKey(), hash.sha256()));
+            }
+            try {
+                Files.createDirectories(file.getParent());
+                Files.writeString(temporary,
+                        GSON.toJson(new PersistentHashCache(HASH_CACHE_FORMAT_VERSION, entries)),
+                        StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                moveReplacing(temporary, file);
+                hashCacheDirty = false;
+            } catch (IOException | RuntimeException exception) {
+                VTT.LOGGER.warn("Could not persist VTT server asset hash cache: {}", file, exception);
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static Path hashCacheFile(Path storageRoot) {
+        return storageRoot.resolve("created/cache/server_asset_hashes.json");
+    }
+
+    private static void moveReplacing(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException | UnsupportedOperationException exception) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static boolean validSha256(String value) {
+        if (value == null || value.length() != 64) return false;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (!((character >= '0' && character <= '9')
+                    || (character >= 'a' && character <= 'f')
+                    || (character >= 'A' && character <= 'F'))) return false;
+        }
+        return true;
     }
 
     private record SyncFile(
             String category, String relativePath, Path absolutePath, long size, String sha256
     ) {}
 
-    private record FileFingerprint(long size, FileTime lastModified, String fileKey) {}
+    private record FileFingerprint(long size, String lastModified, String fileKey) {}
 
     private record CachedHash(FileFingerprint fingerprint, String sha256) {}
+
+    private record PersistentHashCache(int version, List<PersistentHashEntry> entries) {}
+
+    private record PersistentHashEntry(
+            String relativePath, long size, String lastModified, String fileKey, String sha256
+    ) {}
 
     private record AssetScope(String backgroundAssetId, Set<String> definitionIds) {
         private AssetScope {
