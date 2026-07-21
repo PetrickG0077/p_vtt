@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -37,23 +39,33 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 public final class VttServerAssetSyncService {
     private static final long SYNC_TIMEOUT_MS = 120_000L;
     private static final int MAX_CHUNKS_PER_TICK = 4;
+    private static final int MAX_HASH_CACHE_ENTRIES = 8_192;
+    private static final long HASH_CACHE_PRUNE_INTERVAL_MS = 60_000L;
     private static final Map<UUID, PendingSync> PENDING = new HashMap<>();
     private static final Map<UUID, ManifestPreparation> PREPARING = new HashMap<>();
     private static final Deque<UUID> ACTIVE_TRANSFERS = new ArrayDeque<>();
+    private static final Map<Path, CachedHash> HASH_CACHE =
+            new LinkedHashMap<>(256, 0.75F, true);
+    private static final Map<Path, CompletableFuture<CachedHash>> HASHES_IN_FLIGHT =
+            new ConcurrentHashMap<>();
     private static final ExecutorService HASH_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "VTT server asset hashing");
         thread.setDaemon(true);
         return thread;
     });
     private static String serverId;
+    private static long lastHashCachePruneAt;
 
     private VttServerAssetSyncService() {}
 
@@ -176,6 +188,7 @@ public final class VttServerAssetSyncService {
             }
         }
         if (includeAllTokens) addAllLibraryFiles(assetsRoot, result, totalBytes);
+        pruneRemovedHashEntries(root);
         return new ArrayList<>(result.values());
     }
 
@@ -229,7 +242,8 @@ public final class VttServerAssetSyncService {
             Path normalizedRoot = root.toAbsolutePath().normalize();
             Path normalizedFile = file.toAbsolutePath().normalize();
             if (!normalizedFile.startsWith(normalizedRoot) || !Files.isRegularFile(normalizedFile)) return;
-            long size = Files.size(normalizedFile);
+            FileFingerprint fingerprint = fingerprint(normalizedFile);
+            long size = fingerprint.size();
             if (size > VttAssetManifestPayload.MAX_FILE_BYTES
                     || totalBytes[0] + size > VttAssetManifestPayload.MAX_MANIFEST_BYTES
                     || result.size() >= VttAssetManifestPayload.MAX_FILES) {
@@ -243,8 +257,9 @@ public final class VttServerAssetSyncService {
             }
             String key = category + ":" + relative;
             if (!result.containsKey(key)) {
+                CachedHash cachedHash = resolveHash(normalizedFile, fingerprint);
                 result.put(key, new SyncFile(
-                        category, relative, normalizedFile, size, sha256(normalizedFile)));
+                        category, relative, normalizedFile, size, cachedHash.sha256()));
                 totalBytes[0] += size;
             }
         } catch (IOException exception) {
@@ -336,6 +351,11 @@ public final class VttServerAssetSyncService {
         PENDING.clear();
         PREPARING.clear();
         ACTIVE_TRANSFERS.clear();
+        synchronized (HASH_CACHE) {
+            HASH_CACHE.clear();
+            lastHashCachePruneAt = 0L;
+        }
+        HASHES_IN_FLIGHT.clear();
         serverId = null;
     }
 
@@ -427,7 +447,98 @@ public final class VttServerAssetSyncService {
         return value == null || !value.isJsonPrimitive() ? null : value.getAsString();
     }
 
-    private static String sha256(Path file) throws IOException {
+    private static CachedHash resolveHash(
+            Path file, FileFingerprint expectedFingerprint
+    ) throws IOException {
+        CachedHash cached = cachedHash(file, expectedFingerprint);
+        if (cached != null) return cached;
+
+        CompletableFuture<CachedHash> created = new CompletableFuture<>();
+        CompletableFuture<CachedHash> existing = HASHES_IN_FLIGHT.putIfAbsent(file, created);
+        if (existing != null) {
+            CachedHash shared;
+            try {
+                shared = awaitHash(existing);
+            } catch (CancellationException exception) {
+                if (Thread.currentThread().isInterrupted()) throw exception;
+                HASHES_IN_FLIGHT.remove(file, existing);
+                return resolveHash(file, expectedFingerprint);
+            }
+            if (!shared.fingerprint().equals(expectedFingerprint)) {
+                throw new IOException("VTT asset changed during shared hashing: " + file);
+            }
+            return shared;
+        }
+
+        try {
+            String sha256 = calculateSha256(file);
+            FileFingerprint completedFingerprint = fingerprint(file);
+            if (!completedFingerprint.equals(expectedFingerprint)) {
+                throw new IOException("VTT asset changed while hashing: " + file);
+            }
+            CachedHash completed = new CachedHash(completedFingerprint, sha256);
+            cacheHash(file, completed);
+            created.complete(completed);
+            return completed;
+        } catch (Throwable failure) {
+            created.completeExceptionally(failure);
+            return rethrowHashFailure(failure);
+        } finally {
+            HASHES_IN_FLIGHT.remove(file, created);
+        }
+    }
+
+    private static CachedHash cachedHash(Path file, FileFingerprint fingerprint) {
+        synchronized (HASH_CACHE) {
+            CachedHash cached = HASH_CACHE.get(file);
+            if (cached == null) return null;
+            if (cached.fingerprint().equals(fingerprint)) return cached;
+            HASH_CACHE.remove(file);
+            return null;
+        }
+    }
+
+    private static void cacheHash(Path file, CachedHash hash) {
+        synchronized (HASH_CACHE) {
+            HASH_CACHE.put(file, hash);
+            while (HASH_CACHE.size() > MAX_HASH_CACHE_ENTRIES) {
+                var iterator = HASH_CACHE.entrySet().iterator();
+                if (!iterator.hasNext()) break;
+                iterator.next();
+                iterator.remove();
+            }
+        }
+    }
+
+    private static CachedHash awaitHash(
+            CompletableFuture<CachedHash> future
+    ) throws IOException {
+        try {
+            return future.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException();
+        } catch (ExecutionException exception) {
+            return rethrowHashFailure(exception.getCause());
+        }
+    }
+
+    private static CachedHash rethrowHashFailure(Throwable failure) throws IOException {
+        if (failure instanceof IOException exception) throw exception;
+        if (failure instanceof RuntimeException exception) throw exception;
+        if (failure instanceof Error error) throw error;
+        throw new IOException("Failed to hash VTT asset", failure);
+    }
+
+    private static FileFingerprint fingerprint(Path file) throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(
+                file, BasicFileAttributes.class);
+        if (!attributes.isRegularFile()) throw new IOException("Not a regular file: " + file);
+        return new FileFingerprint(attributes.size(), attributes.lastModifiedTime(),
+                attributes.fileKey() == null ? "" : attributes.fileKey().toString());
+    }
+
+    private static String calculateSha256(Path file) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream input = Files.newInputStream(file)) {
@@ -444,9 +555,31 @@ public final class VttServerAssetSyncService {
         }
     }
 
+    private static void pruneRemovedHashEntries(Path storageRoot) {
+        long now = System.currentTimeMillis();
+        List<Path> candidates;
+        synchronized (HASH_CACHE) {
+            if (now - lastHashCachePruneAt < HASH_CACHE_PRUNE_INTERVAL_MS) return;
+            lastHashCachePruneAt = now;
+            candidates = HASH_CACHE.keySet().stream()
+                    .filter(path -> path.startsWith(storageRoot)).toList();
+        }
+        for (Path path : candidates) {
+            checkCancelled();
+            if (Files.isRegularFile(path)) continue;
+            synchronized (HASH_CACHE) {
+                HASH_CACHE.remove(path);
+            }
+        }
+    }
+
     private record SyncFile(
             String category, String relativePath, Path absolutePath, long size, String sha256
     ) {}
+
+    private record FileFingerprint(long size, FileTime lastModified, String fileKey) {}
+
+    private record CachedHash(FileFingerprint fingerprint, String sha256) {}
 
     private record AssetScope(String backgroundAssetId, Set<String> definitionIds) {
         private AssetScope {
