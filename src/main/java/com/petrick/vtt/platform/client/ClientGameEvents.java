@@ -8,6 +8,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
@@ -41,6 +42,11 @@ public final class ClientGameEvents {
         while (ClientKeyMappings.OPEN_VTT_SCREEN.consumeClick()) {
             minecraft.setScreen(new VTTScreen());
         }
+    }
+
+    @SubscribeEvent
+    public static void onRenderGui(RenderGuiEvent.Post event) {
+        VttAssetSyncHudOverlay.render(event.getGuiGraphics());
     }
 
     @SubscribeEvent

@@ -38,20 +38,30 @@ public final class VttClientAssetCache {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type INDEX_TYPE = new TypeToken<Map<String, CacheEntry>>() {}.getType();
     private static final long SYNC_TIMEOUT_MS = 120_000L;
+    private static final long TERMINAL_PROGRESS_MS = 3_000L;
     private static IncomingSync incoming;
     private static String activeServerId;
     private static boolean readyForServerState;
     private static boolean recoveryRequired;
+    private static SyncProgress progress = SyncProgress.hidden();
+    private static long progressHideAt;
 
     private VttClientAssetCache() {}
 
     public static synchronized void begin(VttAssetManifestPayload manifest) {
         if (!validManifest(manifest)) {
             VTT.LOGGER.warn("Rejected invalid VTT asset manifest");
+            discardIncoming();
             readyForServerState = false;
+            showFailure("Manifesto inválido");
             requestRecovery();
             return;
         }
+        long manifestBytes = manifest.entries().stream()
+                .mapToLong(VttAssetManifestPayload.Entry::size).sum();
+        progress = new SyncProgress(SyncStatus.VERIFYING, 0, manifest.entries().size(),
+                0L, manifestBytes, "");
+        progressHideAt = 0L;
         readyForServerState = false;
         recoveryRequired = false;
         activeServerId = manifest.serverId();
@@ -79,6 +89,7 @@ public final class VttClientAssetCache {
         incoming = new IncomingSync(
                 manifest, index, missing, root.resolve(".incoming").resolve(manifest.syncId()),
                 System.currentTimeMillis());
+        updateDownloadProgress("");
         PacketDistributor.sendToServer(new VttAssetRequestPayload(
                 manifest.syncId(), List.copyOf(missing)));
         VTT.LOGGER.info("VTT asset manifest {}: {} total, {} missing, {} cached",
@@ -110,12 +121,16 @@ public final class VttClientAssetCache {
                 file.discard();
                 incoming.files.remove(payload.fileIndex());
                 incoming.failed = true;
+                showFailure("Chunk inválido");
                 return;
             }
+            incoming.receivedBytes += payload.data().length;
+            updateDownloadProgress(entry.relativePath());
         } catch (IOException | RuntimeException exception) {
             if (file != null) file.discard();
             incoming.files.remove(payload.fileIndex());
             incoming.failed = true;
+            showFailure("Falha ao gravar asset");
             VTT.LOGGER.error("Failed to stream VTT server asset: {}",
                     entry.relativePath(), exception);
             return;
@@ -126,12 +141,15 @@ public final class VttClientAssetCache {
         try {
             if (!file.commit()) {
                 incoming.failed = true;
+                showFailure("Hash inválido");
                 return;
             }
             incoming.completed.add(payload.fileIndex());
             incoming.index.put(key(entry), new CacheEntry(entry.sha256(), entry.size()));
+            updateDownloadProgress(entry.relativePath());
         } catch (IOException | IllegalArgumentException exception) {
             incoming.failed = true;
+            showFailure("Falha ao finalizar asset");
             VTT.LOGGER.error("Failed to cache VTT server asset: {}",
                     entry.relativePath(), exception);
         }
@@ -147,6 +165,7 @@ public final class VttClientAssetCache {
                 || !completed.files.isEmpty()) {
             completed.discard();
             VTT.LOGGER.error("Incomplete VTT incremental asset sync: {}", payload.syncId());
+            showFailure("Sincronização incompleta");
             requestRecovery();
             return;
         }
@@ -165,9 +184,11 @@ public final class VttClientAssetCache {
             VTT.getApplication().getActiveSession().reloadSyncedServerAssets();
             readyForServerState = true;
             recoveryRequired = false;
+            showComplete(completed);
         } catch (IOException | RuntimeException exception) {
             completed.discard();
             VTT.LOGGER.error("Failed to finalize VTT incremental asset sync", exception);
+            showFailure("Falha ao atualizar cache");
             requestRecovery();
         }
     }
@@ -179,6 +200,7 @@ public final class VttClientAssetCache {
                     incoming.manifest.syncId());
             discardIncoming();
             readyForServerState = false;
+            showFailure("Tempo de sincronização esgotado");
             requestRecovery();
         }
         if (recoveryRequired && incoming == null) requestRecovery();
@@ -189,6 +211,8 @@ public final class VttClientAssetCache {
         activeServerId = null;
         readyForServerState = false;
         recoveryRequired = false;
+        progress = SyncProgress.hidden();
+        progressHideAt = 0L;
     }
 
     public static synchronized boolean isReadyForServerState() {
@@ -197,7 +221,16 @@ public final class VttClientAssetCache {
 
     public static synchronized void recoverServerState() {
         readyForServerState = false;
+        showFailure("Reconectando sincronização");
         requestRecovery();
+    }
+
+    public static synchronized SyncProgress progressSnapshot() {
+        if (progressHideAt > 0L && System.currentTimeMillis() >= progressHideAt) {
+            progress = SyncProgress.hidden();
+            progressHideAt = 0L;
+        }
+        return progress;
     }
 
     public static synchronized Path activeCacheRoot() {
@@ -344,6 +377,33 @@ public final class VttClientAssetCache {
                 session.getNetworkAuthorityRevision());
     }
 
+    private static void updateDownloadProgress(String currentFile) {
+        if (incoming == null) return;
+        progress = new SyncProgress(SyncStatus.DOWNLOADING,
+                incoming.completed.size(), incoming.requested.size(),
+                incoming.receivedBytes, incoming.totalRequestedBytes,
+                currentFile == null ? "" : currentFile);
+        progressHideAt = 0L;
+    }
+
+    private static void showComplete(IncomingSync completed) {
+        progress = new SyncProgress(SyncStatus.COMPLETE,
+                completed.requested.size(), completed.requested.size(),
+                completed.totalRequestedBytes, completed.totalRequestedBytes, "");
+        progressHideAt = System.currentTimeMillis() + TERMINAL_PROGRESS_MS;
+    }
+
+    private static void showFailure(String message) {
+        int completedFiles = incoming == null ? 0 : incoming.completed.size();
+        int totalFiles = incoming == null ? 0 : incoming.requested.size();
+        long receivedBytes = incoming == null ? 0L : incoming.receivedBytes;
+        long totalBytes = incoming == null ? 0L : incoming.totalRequestedBytes;
+        progress = new SyncProgress(SyncStatus.FAILED, completedFiles, totalFiles,
+                receivedBytes, totalBytes, message == null ? "" : message);
+        progressHideAt = incoming == null
+                ? System.currentTimeMillis() + TERMINAL_PROGRESS_MS : 0L;
+    }
+
     private static void discardIncoming() {
         if (incoming == null) return;
         IncomingSync discarded = incoming;
@@ -371,7 +431,9 @@ public final class VttClientAssetCache {
         private final Set<Integer> completed = new LinkedHashSet<>();
         private final Map<Integer, IncomingFile> files = new HashMap<>();
         private final Path temporaryRoot;
+        private final long totalRequestedBytes;
         private long lastActivityAt;
+        private long receivedBytes;
         private boolean failed;
 
         private IncomingSync(VttAssetManifestPayload manifest, Map<String, CacheEntry> index,
@@ -380,6 +442,8 @@ public final class VttClientAssetCache {
             this.index = new LinkedHashMap<>(index);
             this.requested = Set.copyOf(requested);
             this.temporaryRoot = temporaryRoot;
+            this.totalRequestedBytes = requested.stream()
+                    .mapToLong(fileIndex -> manifest.entries().get(fileIndex).size()).sum();
             this.lastActivityAt = now;
         }
 
@@ -391,6 +455,40 @@ public final class VttClientAssetCache {
 
         private void cleanupTemporaryRoot() {
             deleteTreeQuietly(temporaryRoot);
+        }
+    }
+
+    public enum SyncStatus {
+        IDLE,
+        VERIFYING,
+        DOWNLOADING,
+        COMPLETE,
+        FAILED
+    }
+
+    public record SyncProgress(
+            SyncStatus status,
+            int completedFiles,
+            int totalFiles,
+            long receivedBytes,
+            long totalBytes,
+            String currentFile
+    ) {
+        private static SyncProgress hidden() {
+            return new SyncProgress(SyncStatus.IDLE, 0, 0, 0L, 0L, "");
+        }
+
+        public boolean visible() {
+            return status != SyncStatus.IDLE;
+        }
+
+        public double fraction() {
+            if (status == SyncStatus.COMPLETE) return 1.0;
+            if (totalBytes > 0L) {
+                return Math.max(0.0, Math.min(1.0, receivedBytes / (double) totalBytes));
+            }
+            return totalFiles <= 0 ? 0.0
+                    : Math.max(0.0, Math.min(1.0, completedFiles / (double) totalFiles));
         }
     }
 

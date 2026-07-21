@@ -45,6 +45,7 @@ import com.petrick.vtt.editor.overlay.SceneContextMenuOverlay;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
+import com.petrick.vtt.platform.client.VttAssetSyncHudOverlay;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
@@ -236,6 +237,7 @@ public final class VTTScreen extends Screen {
 
         if (playerViewPreview) {
             renderEditorNotice(context);
+            VttAssetSyncHudOverlay.render(graphics);
             return;
         }
 
@@ -334,6 +336,7 @@ public final class VTTScreen extends Screen {
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
         renderEditorNotice(context);
+        VttAssetSyncHudOverlay.render(graphics);
     }
 
     private void renderEditorNotice(VRenderContext context) {
