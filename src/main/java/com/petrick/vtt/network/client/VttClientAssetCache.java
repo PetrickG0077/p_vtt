@@ -231,6 +231,7 @@ public final class VttClientAssetCache {
             VTT.LOGGER.info("Finished VTT incremental asset sync: {} downloaded, {} retained",
                     completed.completed.size(),
                     completed.manifest.entries().size() - completed.completed.size());
+            scheduleCacheMaintenance(completed.manifest.serverId(), finalIndex.keySet());
             VTT.getApplication().getActiveSession().reloadSyncedServerAssets();
             readyForServerState = true;
             recoveryRequired = false;
@@ -434,6 +435,17 @@ public final class VttClientAssetCache {
         var session = VTT.getApplication().getActiveSession();
         VttClientSceneSnapshotReceiver.recoverAfterAssetFailure(
                 session.getNetworkAuthorityRevision());
+    }
+
+    private static void scheduleCacheMaintenance(String serverId, Set<String> retainedKeys) {
+        Path base = cacheBase();
+        Set<String> safeRetainedKeys = new LinkedHashSet<>();
+        if (retainedKeys != null) {
+            retainedKeys.stream().filter(key -> key != null && !key.isBlank())
+                    .forEach(safeRetainedKeys::add);
+        }
+        HASH_EXECUTOR.submit(() -> VttClientAssetCacheMaintenance.maintain(
+                base, serverId, Set.copyOf(safeRetainedKeys)));
     }
 
     private static void updateDownloadProgress(String currentFile) {
