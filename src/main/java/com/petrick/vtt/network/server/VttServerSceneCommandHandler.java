@@ -1,6 +1,7 @@
 package com.petrick.vtt.network.server;
 
 import com.petrick.vtt.VTT;
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -26,6 +27,15 @@ public final class VttServerSceneCommandHandler {
                 || request.operation() == null || request.targetId() == null || request.value() == null) {
             reject(requester, "invalid request");
             return;
+        }
+
+        if (VttSceneCommandPayload.CREATE.equals(request.operation())) {
+            var violation = VttSceneLimits.sceneCreation(state.activeTabletop());
+            if (violation != null) {
+                reject(requester, violation.code());
+                VttServerFeedback.showLimit(requester, violation.message());
+                return;
+            }
         }
 
         String previousSceneId = state.activeScene().getId();

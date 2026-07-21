@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
@@ -13,6 +14,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -120,23 +122,45 @@ public final class VttServerVisionSourceSync {
     private static VisionState resolveVision(ServerPlayer player, VttServerTabletopState state) {
         VttScene scene = state.activeScene();
         String ownerId = player.getUUID().toString();
-        List<AuthoritativeVisionRegion> regions = scene.getObjects().stream()
-                .filter(object -> object != null && object.getId() != null
-                        && object.getState() != null && object.getState().isVisible()
-                        && ownerId.equals(object.getOwnerId()) && object.isVisionEnabled())
-                .map(object -> {
-                    double outerRadius = object.getVisionOuterRadius() > 0.0
-                            ? object.getVisionOuterRadius() : DEFAULT_OUTER_RADIUS;
-                    double innerRadius = Math.min(Math.max(0.0, object.getVisionInnerRadius()), outerRadius);
-                    Vec2d origin = new Vec2d(object.getTransform().getX(), object.getTransform().getY());
-                    var nearbySegments = state.queryVisionSegments(origin, outerRadius);
-                    return new AuthoritativeVisionRegion(object.getId(), origin, innerRadius, outerRadius,
-                            RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments));
-                }).toList();
+        List<AuthoritativeVisionRegion> regions = new ArrayList<>();
+        int remainingPoints = VttSceneLimits.MAX_TOTAL_VISION_POINTS;
+        for (VttSceneObject object : scene.getObjects()) {
+            if (object == null || object.getId() == null || object.getState() == null
+                    || !object.getState().isVisible() || !ownerId.equals(object.getOwnerId())
+                    || !object.isVisionEnabled()) continue;
+            if (regions.size() >= VttSceneLimits.MAX_VISION_SOURCES || remainingPoints < 3) break;
+            double outerRadius = object.getVisionOuterRadius() > 0.0
+                    ? object.getVisionOuterRadius() : DEFAULT_OUTER_RADIUS;
+            double innerRadius = Math.min(
+                    Math.max(0.0, object.getVisionInnerRadius()), outerRadius);
+            Vec2d origin = new Vec2d(
+                    object.getTransform().getX(), object.getTransform().getY());
+            var nearbySegments = state.queryVisionSegments(origin, outerRadius);
+            List<Vec2d> polygon = boundedPolygon(
+                    RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments),
+                    Math.min(VttSceneLimits.MAX_POINTS_PER_VISION_REGION, remainingPoints));
+            if (polygon.size() < 3) continue;
+            regions.add(new AuthoritativeVisionRegion(
+                    object.getId(), origin, innerRadius, outerRadius, polygon));
+            remainingPoints -= polygon.size();
+        }
         boolean ownsDisabledToken = scene.getObjects().stream()
                 .anyMatch(object -> object != null && ownerId.equals(object.getOwnerId())
                         && !object.isVisionEnabled());
         return new VisionState(!ownsDisabledToken, regions);
+    }
+
+    private static List<Vec2d> boundedPolygon(List<Vec2d> polygon, int maximumPoints) {
+        if (polygon == null || polygon.size() <= maximumPoints) {
+            return polygon == null ? List.of() : List.copyOf(polygon);
+        }
+        if (maximumPoints < 3) return List.of();
+        List<Vec2d> result = new ArrayList<>(maximumPoints);
+        for (int index = 0; index < maximumPoints; index++) {
+            int sourceIndex = (int) ((long) index * polygon.size() / maximumPoints);
+            result.add(polygon.get(sourceIndex));
+        }
+        return List.copyOf(result);
     }
 
     private static List<VttSceneObject> resolveVisibleObjects(

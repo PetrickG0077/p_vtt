@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -94,8 +95,10 @@ public final class TabletopStorage {
 
     public synchronized VttTabletop loadTabletop(String tabletopId) {
         Path file = paths.tabletopFile(tabletopId);
-        return loadWithRecovery(file, VttTabletop.class,
+        VttTabletop tabletop = loadWithRecovery(file, VttTabletop.class,
                 this::validTabletop, "tabletop");
+        if (tabletop != null) warnComplexity(tabletop.getId(), VttSceneLimits.inspect(tabletop));
+        return tabletop;
     }
 
     public synchronized VttScene loadScene(String tabletopId, String sceneId) {
@@ -123,9 +126,19 @@ public final class TabletopStorage {
                     area.getSize();
                 }
             });
-
+            warnComplexity(scene.getId(), VttSceneLimits.inspect(scene));
         }
         return scene;
+    }
+
+    private void warnComplexity(
+            String id, java.util.List<VttSceneLimits.Violation> violations
+    ) {
+        for (VttSceneLimits.Violation violation : violations) {
+            VTT.LOGGER.warn("Loaded VTT {} above the supported complexity budget; "
+                            + "existing data was preserved but additions are blocked: {}",
+                    id, violation.message());
+        }
     }
 
     public synchronized boolean saveTabletop(VttTabletop tabletop) {

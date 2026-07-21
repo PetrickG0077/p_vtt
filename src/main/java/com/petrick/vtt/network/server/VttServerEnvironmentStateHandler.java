@@ -19,6 +19,12 @@ public final class VttServerEnvironmentStateHandler {
                     "permission denied");
             return;
         }
+        if (request == null) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "null request");
+            return;
+        }
         var state = VttServerTabletopState.get();
         var update = state.applyEnvironmentState(request);
         if (update == null) {
@@ -43,7 +49,25 @@ public final class VttServerEnvironmentStateHandler {
                     "permission denied");
             return;
         }
+        if (request == null) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    "null request");
+            return;
+        }
         var state = VttServerTabletopState.get();
+        if (VttEnvironmentCommandPayload.UPSERT.equals(request.operation())) {
+            var violation = state.environmentLimitViolation(request);
+            if (violation != null) {
+                VttServerRequestRateLimiter.reject(
+                        player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                        violation.code());
+                VttServerFeedback.showLimit(player, violation.message());
+                var correction = state.environmentCorrection(request);
+                if (correction != null) PacketDistributor.sendToPlayer(player, correction);
+                return;
+            }
+        }
         var update = state.applyEnvironmentCommand(request, player.getUUID().toString());
         if (update == null) {
             VttServerRequestRateLimiter.reject(

@@ -45,6 +45,7 @@ import com.petrick.vtt.editor.overlay.SceneContextMenuOverlay;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.viewport.Viewport;
 import com.petrick.vtt.platform.client.CursorManager;
+import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
 import net.minecraft.client.gui.GuiGraphics;
@@ -233,7 +234,10 @@ public final class VTTScreen extends Screen {
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
-        if (playerViewPreview) return;
+        if (playerViewPreview) {
+            renderEditorNotice(context);
+            return;
+        }
 
         if (panelVisibility.isHelpVisible()) {
             helpOverlay.render(context, this.font);
@@ -329,6 +333,18 @@ public final class VTTScreen extends Screen {
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
+        renderEditorNotice(context);
+    }
+
+    private void renderEditorNotice(VRenderContext context) {
+        String message = VttClientEditorNotice.current();
+        if (message == null) return;
+        int textWidth = this.font.width(message);
+        int x = Math.max(4, (this.width - textWidth) / 2 - 6);
+        int width = Math.min(this.width - x - 4, textWidth + 12);
+        context.graphics().fill(x, 24, x + width, 40, 0xDD220000);
+        context.graphics().drawCenteredString(
+                this.font, message, this.width / 2, 28, 0xFFFF7777);
     }
 
     private void renderAssetCatalog(VRenderContext context) {

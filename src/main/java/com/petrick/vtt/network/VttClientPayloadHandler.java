@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
+import com.petrick.vtt.network.payload.VttEditorNoticePayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotCompletePayload;
@@ -16,6 +17,7 @@ import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
 import com.petrick.vtt.network.client.VttClientAssetCache;
+import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
@@ -51,6 +53,10 @@ public final class VttClientPayloadHandler {
         }
 
         VTT.LOGGER.info("Received VTT identity: player={}, role={}", payload.playerId(), session.getLocalRole());
+    }
+
+    public static void handleEditorNotice(VttEditorNoticePayload payload, IPayloadContext context) {
+        if (payload != null) VttClientEditorNotice.show(payload.message());
     }
 
     public static void handleSceneSnapshotStart(

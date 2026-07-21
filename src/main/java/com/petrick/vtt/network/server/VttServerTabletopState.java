@@ -18,6 +18,7 @@ import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.SceneObjectSpatialIndex;
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometrySpatialIndex;
 import com.petrick.vtt.feature.tabletop.vision.VisionSegment;
 import com.petrick.vtt.feature.asset.DebugAssets;
@@ -123,6 +124,10 @@ public final class VttServerTabletopState {
 
     public VttScene activeScene() {
         return activeScene;
+    }
+
+    public VttTabletop activeTabletop() {
+        return tabletop;
     }
 
     public synchronized List<VttSceneObject> querySceneObjects(
@@ -249,7 +254,7 @@ public final class VttServerTabletopState {
 
     public synchronized boolean createAndActivateScene(String displayName) {
         if (displayName == null || displayName.isBlank() || displayName.length() > 48
-                || tabletop.getSceneIds().size() >= 1_000) return false;
+                || VttSceneLimits.sceneCreation(tabletop) != null) return false;
         String trimmedName = displayName.trim();
         String baseId = trimmedName.toLowerCase()
                 .replaceAll("[^a-z0-9_-]", "_").replaceAll("_+", "_")
@@ -497,10 +502,24 @@ public final class VttServerTabletopState {
         return null;
     }
 
+    public synchronized VttTokenLifecycleUpdatePayload tokenLifecycleCorrection(String objectId) {
+        if (activeScene == null || objectId == null || objectId.isBlank()) return null;
+        VttSceneObject object = activeScene.getObjects().stream()
+                .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (object == null) {
+            return new VttTokenLifecycleUpdatePayload(
+                    "DELETE", objectId, objectId, "", "server");
+        }
+        return new VttTokenLifecycleUpdatePayload(
+                "CREATE", objectId, objectId, GSON.toJson(object), "server");
+    }
+
     private VttTokenLifecycleUpdatePayload createSceneToken(
             VttTokenLifecycleRequestPayload request, String playerId
     ) {
-        if (request.objectJson() == null || request.objectJson().length() > 1_000_000) return null;
+        if (request.objectJson() == null || request.objectJson().length() > 1_000_000
+                || VttSceneLimits.tokenCreation(activeScene) != null) return null;
         try {
             VttSceneObject object = GSON.fromJson(request.objectJson(), VttSceneObject.class);
             if (!validSceneObject(object)) return null;
@@ -596,9 +615,23 @@ public final class VttServerTabletopState {
             List<VttDoor> doors = GSON.fromJson(request.doorsJson(), DOOR_LIST_TYPE);
             VttFogOfWar fog = GSON.fromJson(request.fogJson(), VttFogOfWar.class);
             List<VisionState> visionStates = GSON.fromJson(request.visionJson(), VISION_LIST_TYPE);
-            if (walls == null || doors == null || fog == null || visionStates == null
-                    || walls.size() > 10_000 || doors.size() > 10_000 || visionStates.size() > 10_000
-                    || fog.getHiddenAreas().size() + fog.getRevealedAreas().size() > 10_000) return null;
+            if (walls == null || doors == null || fog == null || visionStates == null) return null;
+            int requestedFogAreas = fog.getHiddenAreas().size() + fog.getRevealedAreas().size();
+            int requestedVisionSources = (int) visionStates.stream()
+                    .filter(vision -> vision != null && vision.enabled()).count();
+            if (!VttSceneLimits.replacementAllowed(
+                    activeScene.getWalls().size(), walls.size(), VttSceneLimits.MAX_WALLS)
+                    || !VttSceneLimits.replacementAllowed(
+                    activeScene.getDoors().size(), doors.size(), VttSceneLimits.MAX_DOORS)
+                    || !VttSceneLimits.replacementAllowed(
+                    VttSceneLimits.fogAreaCount(activeScene), requestedFogAreas,
+                    VttSceneLimits.MAX_FOG_AREAS)
+                    || !VttSceneLimits.replacementAllowed(
+                    activeScene.getObjects().size(), visionStates.size(),
+                    VttSceneLimits.MAX_TOKENS)
+                    || !VttSceneLimits.replacementAllowed(
+                    VttSceneLimits.enabledVisionSourceCount(activeScene), requestedVisionSources,
+                    VttSceneLimits.MAX_VISION_SOURCES)) return null;
             activeScene.clearWalls();
             walls.stream().filter(wall -> wall != null && wall.getId() != null && !wall.getId().isBlank())
                     .forEach(activeScene::addWall);
@@ -681,6 +714,47 @@ public final class VttServerTabletopState {
         }
     }
 
+    public synchronized VttEnvironmentCommandUpdatePayload environmentCorrection(
+            VttEnvironmentCommandPayload command
+    ) {
+        if (command == null || activeScene == null || command.entityType() == null
+                || command.entityId() == null || command.entityId().isBlank()
+                || !activeScene.getId().equals(command.sceneId())) return null;
+        String revisionKey = command.entityType() + "\u0000" + command.entityId();
+        String authoritativeJson = authoritativeEnvironmentJsonOrNull(
+                command.entityType(), command.entityId());
+        String operation = authoritativeJson == null
+                ? VttEnvironmentCommandPayload.DELETE : VttEnvironmentCommandPayload.UPSERT;
+        return new VttEnvironmentCommandUpdatePayload(
+                authorityRevision, nextRevision(environmentRevisions, revisionKey),
+                Math.max(0L, command.clientSequence()), operation, activeScene.getId(),
+                command.entityType(), command.entityId(),
+                authoritativeJson == null ? "" : authoritativeJson, "server");
+    }
+
+    public synchronized VttSceneLimits.Violation environmentLimitViolation(
+            VttEnvironmentCommandPayload command
+    ) {
+        if (command == null || !VttEnvironmentCommandPayload.UPSERT.equals(command.operation())) {
+            return null;
+        }
+        if (activeScene == null || command.authorityRevision() != authorityRevision
+                || command.sceneId() == null || !activeScene.getId().equals(command.sceneId())) {
+            return null;
+        }
+        if (VttEnvironmentCommandPayload.VISION.equals(command.entityType())) {
+            try {
+                VisionState vision = GSON.fromJson(command.entityJson(), VisionState.class);
+                return vision == null ? null : VttSceneLimits.visionEnable(
+                        activeScene, command.entityId(), vision.enabled());
+            } catch (RuntimeException exception) {
+                return null;
+            }
+        }
+        return VttSceneLimits.environmentUpsert(
+                activeScene, command.entityType(), command.entityId());
+    }
+
     private boolean validEnvironmentCommand(VttEnvironmentCommandPayload command) {
         if (command == null || command.authorityRevision() != authorityRevision
                 || command.clientSequence() <= 0L
@@ -699,7 +773,9 @@ public final class VttServerTabletopState {
         boolean exists = activeScene.getWalls().stream().anyMatch(
                 value -> value != null && id.equals(value.getId()));
         if (wall == null || !id.equals(wall.getId()) || !validGeometry(
-                wall.getTransform(), wall.getSize()) || activeScene.getWalls().size() >= 10_000 && !exists) return false;
+                wall.getTransform(), wall.getSize())
+                || !exists && VttSceneLimits.environmentUpsert(
+                activeScene, VttEnvironmentCommandPayload.WALL, id) != null) return false;
         activeScene.getWalls().removeIf(value -> value != null && id.equals(value.getId()));
         activeScene.addWall(wall);
         return true;
@@ -710,7 +786,9 @@ public final class VttServerTabletopState {
         boolean exists = activeScene.getDoors().stream().anyMatch(
                 value -> value != null && id.equals(value.getId()));
         if (door == null || !id.equals(door.getId()) || !validGeometry(
-                door.getTransform(), door.getSize()) || activeScene.getDoors().size() >= 10_000 && !exists) return false;
+                door.getTransform(), door.getSize())
+                || !exists && VttSceneLimits.environmentUpsert(
+                activeScene, VttEnvironmentCommandPayload.DOOR, id) != null) return false;
         if (door.getWallId() != null && activeScene.getWalls().stream().noneMatch(
                 wall -> wall != null && door.getWallId().equals(wall.getId()))) return false;
         activeScene.getDoors().removeIf(value -> value != null && id.equals(value.getId()));
@@ -720,14 +798,15 @@ public final class VttServerTabletopState {
 
     private boolean upsertFogArea(String id, String json, boolean revealed) {
         VttFogArea area = GSON.fromJson(json, VttFogArea.class);
-        int areaCount = activeScene.getFogOfWar().getHiddenAreas().size()
-                + activeScene.getFogOfWar().getRevealedAreas().size();
         boolean exists = activeScene.getFogOfWar().getHiddenAreas().stream().anyMatch(
                 value -> value != null && id.equals(value.getId()))
                 || activeScene.getFogOfWar().getRevealedAreas().stream().anyMatch(
                 value -> value != null && id.equals(value.getId()));
         if (area == null || !id.equals(area.getId()) || !validGeometry(
-                area.getTransform(), area.getSize()) || areaCount >= 10_000 && !exists) return false;
+                area.getTransform(), area.getSize())
+                || !exists && VttSceneLimits.environmentUpsert(activeScene,
+                revealed ? VttEnvironmentCommandPayload.FOG_REVEALED
+                        : VttEnvironmentCommandPayload.FOG_HIDDEN, id) != null) return false;
         activeScene.getFogOfWar().removeArea(id);
         if (revealed) activeScene.getFogOfWar().addRevealedArea(area);
         else activeScene.getFogOfWar().addHiddenArea(area);
@@ -751,7 +830,8 @@ public final class VttServerTabletopState {
                 || !validCollisionBox(vision.collisionBox(), true)) return false;
         VttSceneObject object = activeScene.getObjects().stream()
                 .filter(value -> value != null && id.equals(value.getId())).findFirst().orElse(null);
-        if (object == null) return false;
+        if (object == null || VttSceneLimits.visionEnable(
+                activeScene, id, vision.enabled()) != null) return false;
         object.setVisionInnerRadius(vision.innerRadius());
         object.setVisionOuterRadius(vision.outerRadius());
         object.setVisionEnabled(vision.enabled());
@@ -781,6 +861,14 @@ public final class VttServerTabletopState {
             }
             default -> throw new IllegalArgumentException("Unknown environment entity type");
         };
+    }
+
+    private String authoritativeEnvironmentJsonOrNull(String type, String id) {
+        try {
+            return authoritativeEnvironmentJson(type, id);
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     private boolean validGeometry(com.petrick.vtt.feature.tabletop.VttSceneTransform transform,

@@ -1,5 +1,6 @@
 package com.petrick.vtt.network.server;
 
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -18,7 +19,25 @@ public final class VttServerTokenLifecycleHandler {
                     "permission denied");
             return;
         }
+        if (request == null) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
+                    "null request");
+            return;
+        }
         var state = VttServerTabletopState.get();
+        if ("CREATE".equals(request.operation())) {
+            var violation = VttSceneLimits.tokenCreation(state.activeScene());
+            if (violation != null) {
+                VttServerRequestRateLimiter.reject(
+                        player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
+                        violation.code());
+                VttServerFeedback.showLimit(player, violation.message());
+                var correction = state.tokenLifecycleCorrection(request.objectId());
+                if (correction != null) PacketDistributor.sendToPlayer(player, correction);
+                return;
+            }
+        }
         var update = state.applyTokenLifecycle(
                 request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player));
         if (update == null) {
