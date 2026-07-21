@@ -11,9 +11,9 @@ import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -37,7 +37,7 @@ import java.util.UUID;
 public final class VttClientAssetCache {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type INDEX_TYPE = new TypeToken<Map<String, CacheEntry>>() {}.getType();
-    private static final long SYNC_TIMEOUT_MS = 30_000L;
+    private static final long SYNC_TIMEOUT_MS = 120_000L;
     private static IncomingSync incoming;
     private static String activeServerId;
     private static boolean readyForServerState;
@@ -56,6 +56,8 @@ public final class VttClientAssetCache {
         recoveryRequired = false;
         activeServerId = manifest.serverId();
         Path root = activeCacheRoot();
+        discardIncoming();
+        deleteTreeQuietly(root.resolve(".incoming"));
         Map<String, CacheEntry> index = loadIndex(root);
         LinkedHashSet<Integer> missing = new LinkedHashSet<>();
         for (int fileIndex = 0; fileIndex < manifest.entries().size(); fileIndex++) {
@@ -74,7 +76,9 @@ public final class VttClientAssetCache {
                 missing.add(fileIndex);
             }
         }
-        incoming = new IncomingSync(manifest, index, missing, System.currentTimeMillis());
+        incoming = new IncomingSync(
+                manifest, index, missing, root.resolve(".incoming").resolve(manifest.syncId()),
+                System.currentTimeMillis());
         PacketDistributor.sendToServer(new VttAssetRequestPayload(
                 manifest.syncId(), List.copyOf(missing)));
         VTT.LOGGER.info("VTT asset manifest {}: {} total, {} missing, {} cached",
@@ -83,7 +87,7 @@ public final class VttClientAssetCache {
     }
 
     public static synchronized void accept(VttAssetChunkPayload payload) {
-        if (incoming == null || payload == null || payload.data() == null
+        if (incoming == null || incoming.failed || payload == null || payload.data() == null
                 || !incoming.manifest.syncId().equals(payload.syncId())
                 || !incoming.requested.contains(payload.fileIndex())
                 || payload.fileIndex() < 0
@@ -93,23 +97,37 @@ public final class VttClientAssetCache {
         int expectedChunks = Math.max(1, (int) ((entry.size()
                 + VttAssetChunkPayload.MAX_CHUNK_BYTES - 1L)
                 / VttAssetChunkPayload.MAX_CHUNK_BYTES));
-        IncomingFile file = incoming.files.computeIfAbsent(payload.fileIndex(),
-                ignored -> new IncomingFile(entry, expectedChunks));
-        if (!file.accept(payload)) {
+        IncomingFile file = incoming.files.get(payload.fileIndex());
+        try {
+            if (file == null) {
+                Path target = safeTarget(activeCacheRoot(), entry.category(), entry.relativePath());
+                Path temporary = safeTarget(
+                        incoming.temporaryRoot, entry.category(), entry.relativePath());
+                file = new IncomingFile(entry, expectedChunks, temporary, target);
+                incoming.files.put(payload.fileIndex(), file);
+            }
+            if (!file.accept(payload)) {
+                file.discard();
+                incoming.files.remove(payload.fileIndex());
+                incoming.failed = true;
+                return;
+            }
+        } catch (IOException | RuntimeException exception) {
+            if (file != null) file.discard();
             incoming.files.remove(payload.fileIndex());
             incoming.failed = true;
+            VTT.LOGGER.error("Failed to stream VTT server asset: {}",
+                    entry.relativePath(), exception);
             return;
         }
         if (!file.complete()) return;
 
         incoming.files.remove(payload.fileIndex());
-        byte[] bytes = file.bytes();
-        if (bytes.length != entry.size() || !sha256(bytes).equalsIgnoreCase(entry.sha256())) {
-            incoming.failed = true;
-            return;
-        }
         try {
-            writeAtomically(safeTarget(activeCacheRoot(), entry.category(), entry.relativePath()), bytes);
+            if (!file.commit()) {
+                incoming.failed = true;
+                return;
+            }
             incoming.completed.add(payload.fileIndex());
             incoming.index.put(key(entry), new CacheEntry(entry.sha256(), entry.size()));
         } catch (IOException | IllegalArgumentException exception) {
@@ -127,6 +145,7 @@ public final class VttClientAssetCache {
         if (completed.failed || payload.transferredFiles() != completed.requested.size()
                 || completed.completed.size() != completed.requested.size()
                 || !completed.files.isEmpty()) {
+            completed.discard();
             VTT.LOGGER.error("Incomplete VTT incremental asset sync: {}", payload.syncId());
             requestRecovery();
             return;
@@ -139,6 +158,7 @@ public final class VttClientAssetCache {
                 removeStaleFiles(activeCacheRoot(), finalIndex.keySet());
             }
             saveIndex(activeCacheRoot(), finalIndex);
+            completed.cleanupTemporaryRoot();
             VTT.LOGGER.info("Finished VTT incremental asset sync: {} downloaded, {} retained",
                     completed.completed.size(),
                     completed.manifest.entries().size() - completed.completed.size());
@@ -146,6 +166,7 @@ public final class VttClientAssetCache {
             readyForServerState = true;
             recoveryRequired = false;
         } catch (IOException | RuntimeException exception) {
+            completed.discard();
             VTT.LOGGER.error("Failed to finalize VTT incremental asset sync", exception);
             requestRecovery();
         }
@@ -156,7 +177,7 @@ public final class VttClientAssetCache {
                 && System.currentTimeMillis() - incoming.lastActivityAt > SYNC_TIMEOUT_MS) {
             VTT.LOGGER.warn("Discarded timed-out VTT asset sync: {}",
                     incoming.manifest.syncId());
-            incoming = null;
+            discardIncoming();
             readyForServerState = false;
             requestRecovery();
         }
@@ -164,7 +185,7 @@ public final class VttClientAssetCache {
     }
 
     public static synchronized void reset() {
-        incoming = null;
+        discardIncoming();
         activeServerId = null;
         readyForServerState = false;
         recoveryRequired = false;
@@ -287,14 +308,6 @@ public final class VttClientAssetCache {
         }
     }
 
-    private static void writeAtomically(Path target, byte[] bytes) throws IOException {
-        Files.createDirectories(target.getParent());
-        Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
-        Files.write(temporary, bytes, StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-        moveReplacing(temporary, target);
-    }
-
     private static void moveReplacing(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE,
@@ -306,14 +319,6 @@ public final class VttClientAssetCache {
 
     private static String key(VttAssetManifestPayload.Entry entry) {
         return entry.category() + ":" + entry.relativePath().replace('\\', '/');
-    }
-
-    private static String sha256(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
     }
 
     private static String sha256(Path file) throws IOException {
@@ -339,6 +344,24 @@ public final class VttClientAssetCache {
                 session.getNetworkAuthorityRevision());
     }
 
+    private static void discardIncoming() {
+        if (incoming == null) return;
+        IncomingSync discarded = incoming;
+        incoming = null;
+        discarded.discard();
+    }
+
+    private static void deleteTreeQuietly(Path root) {
+        if (root == null || !Files.exists(root)) return;
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Failed to clean temporary VTT asset files: {}", root, exception);
+        }
+    }
+
     private record CacheEntry(String sha256, long size) {}
 
     private static final class IncomingSync {
@@ -347,49 +370,99 @@ public final class VttClientAssetCache {
         private final Set<Integer> requested;
         private final Set<Integer> completed = new LinkedHashSet<>();
         private final Map<Integer, IncomingFile> files = new HashMap<>();
+        private final Path temporaryRoot;
         private long lastActivityAt;
         private boolean failed;
 
         private IncomingSync(VttAssetManifestPayload manifest, Map<String, CacheEntry> index,
-                             Set<Integer> requested, long now) {
+                             Set<Integer> requested, Path temporaryRoot, long now) {
             this.manifest = manifest;
             this.index = new LinkedHashMap<>(index);
             this.requested = Set.copyOf(requested);
+            this.temporaryRoot = temporaryRoot;
             this.lastActivityAt = now;
+        }
+
+        private void discard() {
+            files.values().forEach(IncomingFile::discard);
+            files.clear();
+            deleteTreeQuietly(temporaryRoot);
+        }
+
+        private void cleanupTemporaryRoot() {
+            deleteTreeQuietly(temporaryRoot);
         }
     }
 
     private static final class IncomingFile {
         private final VttAssetManifestPayload.Entry entry;
         private final int chunkCount;
-        private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+        private final Path temporary;
+        private final Path target;
+        private final MessageDigest digest;
+        private OutputStream output;
         private int nextChunk;
+        private long bytesWritten;
 
-        private IncomingFile(VttAssetManifestPayload.Entry entry, int chunkCount) {
+        private IncomingFile(VttAssetManifestPayload.Entry entry, int chunkCount,
+                             Path temporary, Path target) throws IOException {
             this.entry = entry;
             this.chunkCount = chunkCount;
+            this.temporary = temporary;
+            this.target = target;
+            try {
+                this.digest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException exception) {
+                throw new IllegalStateException("SHA-256 is unavailable", exception);
+            }
+            Files.createDirectories(temporary.getParent());
+            this.output = Files.newOutputStream(temporary, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
         }
 
-        private boolean accept(VttAssetChunkPayload payload) {
-            return payload.chunkCount() == chunkCount && payload.chunkIndex() == nextChunk
-                    && payload.chunkIndex() >= 0 && payload.chunkIndex() < chunkCount
-                    && payload.data().length <= VttAssetChunkPayload.MAX_CHUNK_BYTES
-                    && (long) output.size() + payload.data().length <= entry.size()
-                    && write(payload.data());
-        }
-
-        private boolean write(byte[] bytes) {
-            output.writeBytes(bytes);
+        private boolean accept(VttAssetChunkPayload payload) throws IOException {
+            int expectedBytes = (int) Math.min(
+                    VttAssetChunkPayload.MAX_CHUNK_BYTES, entry.size() - bytesWritten);
+            if (payload.chunkCount() != chunkCount || payload.chunkIndex() != nextChunk
+                    || payload.chunkIndex() < 0 || payload.chunkIndex() >= chunkCount
+                    || payload.data().length != expectedBytes) return false;
+            output.write(payload.data());
+            digest.update(payload.data());
+            bytesWritten += payload.data().length;
             nextChunk++;
             return true;
         }
 
         private boolean complete() {
-            return nextChunk == chunkCount && output.size() == entry.size();
+            return nextChunk == chunkCount && bytesWritten == entry.size();
         }
 
-        private byte[] bytes() {
-            return output.toByteArray();
+        private boolean commit() throws IOException {
+            closeOutput();
+            String actualHash = HexFormat.of().formatHex(digest.digest());
+            if (bytesWritten != entry.size()
+                    || !actualHash.equalsIgnoreCase(entry.sha256())) {
+                Files.deleteIfExists(temporary);
+                return false;
+            }
+            Files.createDirectories(target.getParent());
+            moveReplacing(temporary, target);
+            return true;
+        }
+
+        private void discard() {
+            try {
+                closeOutput();
+                Files.deleteIfExists(temporary);
+            } catch (IOException exception) {
+                VTT.LOGGER.warn("Failed to discard partial VTT asset: {}", temporary, exception);
+            }
+        }
+
+        private void closeOutput() throws IOException {
+            if (output == null) return;
+            output.close();
+            output = null;
         }
     }
 }
