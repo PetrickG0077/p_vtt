@@ -168,12 +168,13 @@ public final class VttServerTokenDefinitionHandler {
 
     private static void broadcastReload(ServerPlayer requester, VttServerTabletopState state) {
         for (ServerPlayer connected : requester.getServer().getPlayerList().getPlayers()) {
-            VttServerAssetSyncService.sendActiveSceneAssets(
-                    connected, state.replicatedSceneFor(connected), VttServerPlayerEvents.isMaster(connected)
-            );
             VttServerVisionSourceSync.markCurrentAssetsSent(connected, state);
-            VttServerSceneSnapshotSync.sendToPlayer(connected, state);
-            VttServerVisionSourceSync.sendToPlayer(connected, state);
+            VttServerAssetSyncService.sendActiveSceneAssets(
+                    connected, state.replicatedSceneFor(connected),
+                    VttServerPlayerEvents.isMaster(connected), () -> {
+                        VttServerSceneSnapshotSync.sendToPlayer(connected, state);
+                        VttServerVisionSourceSync.sendToPlayer(connected, state);
+                    });
         }
     }
 

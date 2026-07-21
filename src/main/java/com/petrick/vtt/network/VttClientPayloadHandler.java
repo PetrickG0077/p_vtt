@@ -14,8 +14,8 @@ import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
+import com.petrick.vtt.network.payload.VttAssetManifestPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
-import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
 import com.petrick.vtt.network.client.VttClientAssetCache;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
@@ -76,6 +76,10 @@ public final class VttClientPayloadHandler {
     ) {
         var snapshot = VttClientSceneSnapshotReceiver.finish(payload);
         if (snapshot == null) return;
+        if (!VttClientAssetCache.isReadyForServerState()) {
+            VttClientAssetCache.recoverServerState();
+            return;
+        }
         try {
             VttTabletop tabletop = GSON.fromJson(snapshot.tabletopJson(), VttTabletop.class);
             VttScene scene = GSON.fromJson(snapshot.sceneJson(), VttScene.class);
@@ -92,6 +96,7 @@ public final class VttClientPayloadHandler {
     }
 
     public static void handleVisionSources(VttVisionSourcesPayload payload, IPayloadContext context) {
+        if (!VttClientAssetCache.isReadyForServerState()) return;
         VTT.getApplication().getActiveSession().applyNetworkVisionSources(
                 payload.authorityRevision(), payload.visionRevision(), payload.sceneId(),
                 payload.maskWhenEmpty(), payload.regions());
@@ -100,6 +105,7 @@ public final class VttClientPayloadHandler {
     public static void handlePlayerReplication(
             VttPlayerReplicationPayload payload, IPayloadContext context
     ) {
+        if (!VttClientAssetCache.isReadyForServerState()) return;
         try {
             List<VttSceneObject> objects = GSON.fromJson(
                     payload.spawnedObjectsJson(), SCENE_OBJECT_LIST_TYPE);
@@ -111,8 +117,8 @@ public final class VttClientPayloadHandler {
         }
     }
 
-    public static void handleAssetSyncStart(VttAssetSyncStartPayload payload, IPayloadContext context) {
-        VttClientAssetCache.begin(payload.fileCount(), payload.clearExisting());
+    public static void handleAssetManifest(VttAssetManifestPayload payload, IPayloadContext context) {
+        VttClientAssetCache.begin(payload);
     }
 
     public static void handleAssetChunk(VttAssetChunkPayload payload, IPayloadContext context) {
@@ -120,7 +126,7 @@ public final class VttClientPayloadHandler {
     }
 
     public static void handleAssetSyncComplete(VttAssetSyncCompletePayload payload, IPayloadContext context) {
-        VttClientAssetCache.finish();
+        VttClientAssetCache.finish(payload);
     }
 
     public static void handleTokenTransformUpdate(VttTokenTransformUpdatePayload payload, IPayloadContext context) {

@@ -33,11 +33,12 @@ public final class VttServerPlayerEvents {
 
         sendRole(player);
         VttServerTabletopState state = VttServerTabletopState.get();
-        VttServerAssetSyncService.sendActiveSceneAssets(
-                player, state.replicatedSceneFor(player), isMaster(player));
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-        VttServerSceneSnapshotSync.sendToPlayer(player, state);
-        VttServerVisionSourceSync.sendToPlayer(player, state);
+        VttServerAssetSyncService.sendActiveSceneAssets(
+                player, state.replicatedSceneFor(player), isMaster(player), () -> {
+                    VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                    VttServerVisionSourceSync.sendToPlayer(player, state);
+                });
     }
 
     @SubscribeEvent
@@ -47,11 +48,12 @@ public final class VttServerPlayerEvents {
         VttServerTabletopState state = VttServerTabletopState.get();
         if (LAST_ROLES.get(player.getUUID()) != current) {
             sendRole(player);
-            VttServerAssetSyncService.sendActiveSceneAssets(
-                    player, state.replicatedSceneFor(player), current == VttRole.MASTER);
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-            VttServerSceneSnapshotSync.sendToPlayer(player, state);
-            VttServerVisionSourceSync.sendToPlayer(player, state);
+            VttServerAssetSyncService.sendActiveSceneAssets(
+                    player, state.replicatedSceneFor(player), current == VttRole.MASTER, () -> {
+                        VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                        VttServerVisionSourceSync.sendToPlayer(player, state);
+                    });
             return;
         }
         VttServerVisionSourceSync.heartbeat(player, state);
@@ -61,6 +63,7 @@ public final class VttServerPlayerEvents {
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         LAST_ROLES.remove(event.getEntity().getUUID());
         VttServerVisionSourceSync.forget(event.getEntity().getUUID());
+        VttServerAssetSyncService.forget(event.getEntity().getUUID());
         VttServerRequestRateLimiter.forget(event.getEntity().getUUID());
     }
 

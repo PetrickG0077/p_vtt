@@ -62,12 +62,19 @@ public final class VttServerSceneCommandHandler {
                 || VttSceneCommandPayload.SET_BACKGROUND.equals(request.operation());
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (assetsChanged) {
-                VttServerAssetSyncService.sendActiveSceneAssets(
-                        player, state.replicatedSceneFor(player), VttServerPlayerEvents.isMaster(player));
                 VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
+                VttServerAssetSyncService.sendActiveSceneAssets(
+                        player, state.replicatedSceneFor(player),
+                        VttServerPlayerEvents.isMaster(player), () -> {
+                            VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                            VttServerVisionSourceSync.sendToPlayer(player, state);
+                        });
+            } else {
+                VttServerAssetSyncService.runAfterPending(player, () -> {
+                    VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                    VttServerVisionSourceSync.sendToPlayer(player, state);
+                });
             }
-            VttServerSceneSnapshotSync.sendToPlayer(player, state);
-            VttServerVisionSourceSync.sendToPlayer(player, state);
         }
         VTT.LOGGER.info("Applied VTT scene command {} from {}: active scene is {}",
                 request.operation(), requester.getGameProfile().getName(), state.activeScene().getId());

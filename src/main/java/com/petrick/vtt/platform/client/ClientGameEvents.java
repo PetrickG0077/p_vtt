@@ -13,6 +13,7 @@ import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
+import com.petrick.vtt.network.client.VttClientAssetCache;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -33,6 +34,7 @@ public final class ClientGameEvents {
         VttClientEnvironmentCommandSync.tick(VTT.getApplication().getActiveSession());
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
         VttClientSceneSnapshotReceiver.tick();
+        VttClientAssetCache.tick();
 
         Minecraft minecraft = Minecraft.getInstance();
 
@@ -45,6 +47,7 @@ public final class ClientGameEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         VttClientSceneSnapshotReceiver.reset();
         VttClientEditorNotice.reset();
+        VttClientAssetCache.reset();
         var session = VTT.getApplication().getActiveSession();
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();

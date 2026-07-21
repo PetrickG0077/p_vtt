@@ -17,6 +17,7 @@ public final class AnimatedTextureService {
 
     private final AnimatedTextureLoader loader;
     private boolean useServerCache;
+    private Path serverCacheRoot;
 
     public AnimatedTextureService() {
         this.registry = new AnimatedTextureRegistry();
@@ -50,6 +51,14 @@ public final class AnimatedTextureService {
 
     public void setUseServerCache(boolean useServerCache) {
         this.useServerCache = useServerCache;
+        if (!useServerCache) this.serverCacheRoot = null;
+        clear();
+    }
+
+    public void setServerCacheRoot(Path serverCacheRoot) {
+        this.serverCacheRoot = serverCacheRoot == null
+                ? null : serverCacheRoot.toAbsolutePath().normalize();
+        this.useServerCache = this.serverCacheRoot != null;
         clear();
     }
 
@@ -69,8 +78,10 @@ public final class AnimatedTextureService {
                 .gameDirectory
                 .toPath();
         String relativePath = normalizeLibraryRelativePath(libraryTexture.sourceRelativePath());
-        Path syncedFile = gameDirectory
-                .resolve("config/vtt_assets/cache/server/assets")
+        Path syncedRoot = serverCacheRoot == null
+                ? gameDirectory.resolve("config/vtt_assets/cache/server")
+                : serverCacheRoot;
+        Path syncedFile = syncedRoot.resolve("assets")
                 .resolve(relativePath);
         Path localFile = gameDirectory
                 .resolve("config")

@@ -82,6 +82,7 @@ public final class VttServerVisionSourceSync {
     ) {
         if (player == null || state == null || state.activeScene() == null
                 || VttServerPlayerEvents.isMaster(player)) return;
+        if (VttServerAssetSyncService.hasPending(player)) return;
         UUID playerId = player.getUUID();
         PlayerScope previous = PLAYER_SCOPES.get(playerId);
         boolean sameScope = sameScope(previous, state);
@@ -104,12 +105,15 @@ public final class VttServerVisionSourceSync {
         if (!spawnedIds.isEmpty() || !despawnedIds.isEmpty()) {
             List<VttSceneObject> spawnedObjects = visibleObjects.stream()
                     .filter(object -> spawnedIds.contains(object.getId())).toList();
-            syncNewAssets(player, state, spawnedObjects);
             String json = GSON.toJson(spawnedObjects);
             if (json.length() <= VttPlayerReplicationPayload.MAX_OBJECTS_JSON_LENGTH) {
-                PacketDistributor.sendToPlayer(player, new VttPlayerReplicationPayload(
+                VttPlayerReplicationPayload payload = new VttPlayerReplicationPayload(
                         state.authorityRevision(), nextRevision(REPLICATION_REVISIONS, playerId),
-                        state.activeScene().getId(), json, List.copyOf(despawnedIds)));
+                        state.activeScene().getId(), json, List.copyOf(despawnedIds));
+                Runnable sendDelta = () -> PacketDistributor.sendToPlayer(player, payload);
+                if (!syncNewAssets(player, state, spawnedObjects, sendDelta)) {
+                    sendDelta.run();
+                }
                 com.petrick.vtt.VTT.LOGGER.debug(
                         "Sent VTT replication delta to {}: {} spawn(s), {} despawn(s)",
                         player.getGameProfile().getName(), spawnedObjects.size(), despawnedIds.size());
@@ -229,8 +233,9 @@ public final class VttServerVisionSourceSync {
                 state.activeScene().getId(), definitionIds(visibleObjectsFor(player, state))));
     }
 
-    private static void syncNewAssets(
-            ServerPlayer player, VttServerTabletopState state, List<VttSceneObject> visibleObjects
+    private static boolean syncNewAssets(
+            ServerPlayer player, VttServerTabletopState state,
+            List<VttSceneObject> visibleObjects, Runnable completion
     ) {
         KnownAssets known = KNOWN_ASSETS.get(player.getUUID());
         boolean sameScope = known != null && known.authorityRevision() == state.authorityRevision()
@@ -241,11 +246,13 @@ public final class VttServerVisionSourceSync {
                 .filter(object -> object.getSourceTokenDefinitionId() != null
                         && !knownDefinitions.contains(object.getSourceTokenDefinitionId())).toList();
         if (!newlyVisibleDefinitions.isEmpty()) {
-            VttServerAssetSyncService.sendVisibleTokenAssets(player, newlyVisibleDefinitions);
+            VttServerAssetSyncService.sendVisibleTokenAssets(
+                    player, newlyVisibleDefinitions, completion);
         }
         knownDefinitions.addAll(definitionIds(visibleObjects));
         KNOWN_ASSETS.put(player.getUUID(), new KnownAssets(state.authorityRevision(),
                 state.activeScene().getId(), Set.copyOf(knownDefinitions)));
+        return !newlyVisibleDefinitions.isEmpty();
     }
 
     private static boolean sameScope(PlayerScope scope, VttServerTabletopState state) {

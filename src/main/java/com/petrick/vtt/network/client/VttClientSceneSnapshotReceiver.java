@@ -91,6 +91,10 @@ public final class VttClientSceneSnapshotReceiver {
         requestRecovery(authorityRevision, "SNAPSHOT_APPLY_FAILED");
     }
 
+    public static synchronized void recoverAfterAssetFailure(long authorityRevision) {
+        requestRecovery(authorityRevision, "ASSET_SYNC_FAILED");
+    }
+
     private static boolean validStart(VttSceneSnapshotStartPayload payload) {
         if (payload == null || payload.transferId() == null
                 || payload.authorityRevision() <= 0L
