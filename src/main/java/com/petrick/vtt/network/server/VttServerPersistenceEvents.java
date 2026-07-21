@@ -14,11 +14,13 @@ public final class VttServerPersistenceEvents {
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         VttServerTabletopState.tickPersistenceIfInitialized();
+        VttServerAssetSyncService.tick();
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         VttServerTabletopState.shutdown();
+        VttServerAssetSyncService.clear();
         VttServerRequestRateLimiter.clear();
     }
 }

@@ -6,59 +6,89 @@ import com.google.gson.JsonParser;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.network.payload.VttAssetManifestPayload;
+import com.petrick.vtt.network.payload.VttAssetRequestPayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
-import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 public final class VttServerAssetSyncService {
-    private static final long MAX_FILE_BYTES = 256L * 1024L * 1024L;
-    private static final long MAX_SCENE_BYTES = 512L * 1024L * 1024L;
+    private static final long SYNC_TIMEOUT_MS = 30_000L;
+    private static final Map<UUID, PendingSync> PENDING = new HashMap<>();
+    private static String serverId;
 
     private VttServerAssetSyncService() {}
 
     public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene) {
-        sendActiveSceneAssets(player, scene, false);
+        sendActiveSceneAssets(player, scene, false, null);
     }
 
     public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene, boolean includeAllTokens) {
+        sendActiveSceneAssets(player, scene, includeAllTokens, null);
+    }
+
+    public static void sendActiveSceneAssets(
+            ServerPlayer player, VttScene scene, boolean includeAllTokens,
+            Runnable completion
+    ) {
         List<SyncFile> files = collectFiles(scene, includeAllTokens);
-        sendFiles(player, files, true);
+        beginSync(player, files, true, completion);
     }
 
     public static void sendVisibleTokenAssets(
-            ServerPlayer player, List<VttSceneObject> visibleObjects
+            ServerPlayer player, List<VttSceneObject> visibleObjects, Runnable completion
     ) {
-        if (player == null || visibleObjects == null || visibleObjects.isEmpty()) return;
+        if (player == null || visibleObjects == null || visibleObjects.isEmpty()) {
+            if (completion != null) completion.run();
+            return;
+        }
         VttScene subset = new VttScene("asset_sync", "Asset Sync");
         visibleObjects.forEach(subset::addObject);
-        sendFiles(player, collectFiles(subset, false), false);
+        beginSync(player, collectFiles(subset, false), false, completion);
     }
 
-    private static void sendFiles(ServerPlayer player, List<SyncFile> files, boolean clearExisting) {
-        PacketDistributor.sendToPlayer(player,
-                new VttAssetSyncStartPayload(files.size(), clearExisting));
-        for (SyncFile file : files) sendFile(player, file);
-        PacketDistributor.sendToPlayer(player, new VttAssetSyncCompletePayload());
-        VTT.LOGGER.info("Sent {} VTT scene asset files to {}", files.size(), player.getGameProfile().getName());
+    private static synchronized void beginSync(
+            ServerPlayer player, List<SyncFile> files, boolean replaceScope,
+            Runnable completion
+    ) {
+        if (player == null) return;
+        expirePending();
+        String syncId = UUID.randomUUID().toString();
+        List<SyncFile> safeFiles = files == null ? List.of() : List.copyOf(files);
+        PendingSync pending = new PendingSync(
+                syncId, safeFiles, completion, System.currentTimeMillis());
+        PENDING.put(player.getUUID(), pending);
+        List<VttAssetManifestPayload.Entry> entries = safeFiles.stream()
+                .map(file -> new VttAssetManifestPayload.Entry(
+                        file.category(), file.relativePath(), file.sha256(), file.size()))
+                .toList();
+        PacketDistributor.sendToPlayer(player, new VttAssetManifestPayload(
+                syncId, serverId(), replaceScope, entries));
+        VTT.LOGGER.debug("Offered {} VTT asset(s) to {} in manifest {}",
+                entries.size(), player.getGameProfile().getName(), syncId);
     }
 
     private static List<SyncFile> collectFiles(VttScene scene, boolean includeAllTokens) {
@@ -138,14 +168,21 @@ public final class VttServerAssetSyncService {
             Path normalizedFile = file.toAbsolutePath().normalize();
             if (!normalizedFile.startsWith(normalizedRoot) || !Files.isRegularFile(normalizedFile)) return;
             long size = Files.size(normalizedFile);
-            if (size > MAX_FILE_BYTES || totalBytes[0] + size > MAX_SCENE_BYTES) {
+            if (size > VttAssetManifestPayload.MAX_FILE_BYTES
+                    || totalBytes[0] + size > VttAssetManifestPayload.MAX_MANIFEST_BYTES
+                    || result.size() >= VttAssetManifestPayload.MAX_FILES) {
                 VTT.LOGGER.warn("Skipped oversized VTT server asset: {}", normalizedFile);
                 return;
             }
             String relative = normalizedRoot.relativize(normalizedFile).toString().replace('\\', '/');
+            if (relative.length() > VttAssetManifestPayload.MAX_PATH_LENGTH) {
+                VTT.LOGGER.warn("Skipped VTT server asset with an oversized path: {}", normalizedFile);
+                return;
+            }
             String key = category + ":" + relative;
             if (!result.containsKey(key)) {
-                result.put(key, new SyncFile(category, relative, normalizedFile));
+                result.put(key, new SyncFile(
+                        category, relative, normalizedFile, size, sha256(normalizedFile)));
                 totalBytes[0] += size;
             }
         } catch (IOException exception) {
@@ -153,22 +190,136 @@ public final class VttServerAssetSyncService {
         }
     }
 
-    private static void sendFile(ServerPlayer player, SyncFile file) {
+    private static boolean sendFile(
+            ServerPlayer player, String syncId, int fileIndex, SyncFile file
+    ) {
         try {
             byte[] bytes = Files.readAllBytes(file.absolutePath());
-            String hash = sha256(bytes);
+            if (bytes.length != file.size() || !sha256(bytes).equals(file.sha256())) {
+                VTT.LOGGER.warn("VTT asset changed after manifest creation: {}", file.absolutePath());
+                return false;
+            }
             int chunks = Math.max(1, (bytes.length + VttAssetChunkPayload.MAX_CHUNK_BYTES - 1)
                     / VttAssetChunkPayload.MAX_CHUNK_BYTES);
             for (int index = 0; index < chunks; index++) {
                 int from = index * VttAssetChunkPayload.MAX_CHUNK_BYTES;
                 int to = Math.min(bytes.length, from + VttAssetChunkPayload.MAX_CHUNK_BYTES);
                 PacketDistributor.sendToPlayer(player, new VttAssetChunkPayload(
-                        file.category(), file.relativePath(), hash, index, chunks, Arrays.copyOfRange(bytes, from, to)
+                        syncId, fileIndex, index, chunks, Arrays.copyOfRange(bytes, from, to)
                 ));
             }
+            return true;
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to send VTT server asset: {}", file.absolutePath(), exception);
+            return false;
         }
+    }
+
+    public static synchronized void handleRequest(
+            ServerPlayer player, VttAssetRequestPayload request
+    ) {
+        if (player == null || request == null) return;
+        expirePending();
+        PendingSync pending = PENDING.get(player.getUUID());
+        if (pending == null || !pending.syncId().equals(request.syncId())) return;
+
+        LinkedHashSet<Integer> requested = new LinkedHashSet<>();
+        for (Integer index : request.missingIndices()) {
+            if (index == null || index < 0 || index >= pending.files().size()
+                    || !requested.add(index)) {
+                VTT.LOGGER.warn("Rejected invalid VTT asset request from {}",
+                        player.getGameProfile().getName());
+                return;
+            }
+        }
+
+        int transferred = 0;
+        for (int index : requested) {
+            if (sendFile(player, pending.syncId(), index, pending.files().get(index))) {
+                transferred++;
+            }
+        }
+        PacketDistributor.sendToPlayer(player, new VttAssetSyncCompletePayload(
+                pending.syncId(), transferred));
+        PENDING.remove(player.getUUID());
+        VTT.LOGGER.info("Incremental VTT asset sync for {}: {}/{} transferred, {} cached",
+                player.getGameProfile().getName(), transferred, pending.files().size(),
+                pending.files().size() - requested.size());
+        if (transferred == requested.size() && pending.completion() != null) {
+            try {
+                pending.completion().run();
+            } catch (RuntimeException exception) {
+                VTT.LOGGER.error("Failed to finish VTT asset sync {}", pending.syncId(), exception);
+            }
+        }
+    }
+
+    public static synchronized boolean hasPending(ServerPlayer player) {
+        expirePending();
+        return player != null && PENDING.containsKey(player.getUUID());
+    }
+
+    public static synchronized void runAfterPending(ServerPlayer player, Runnable action) {
+        if (player == null || action == null) return;
+        expirePending();
+        PendingSync pending = PENDING.get(player.getUUID());
+        if (pending == null) {
+            action.run();
+            return;
+        }
+        Runnable previous = pending.completion();
+        Runnable chained = previous == null ? action : () -> {
+            try {
+                previous.run();
+            } finally {
+                action.run();
+            }
+        };
+        PENDING.put(player.getUUID(), new PendingSync(
+                pending.syncId(), pending.files(), chained, pending.createdAt()));
+    }
+
+    public static synchronized void tick() {
+        expirePending();
+    }
+
+    public static synchronized void forget(UUID playerId) {
+        if (playerId != null) PENDING.remove(playerId);
+    }
+
+    public static synchronized void clear() {
+        PENDING.clear();
+        serverId = null;
+    }
+
+    private static void expirePending() {
+        long now = System.currentTimeMillis();
+        PENDING.entrySet().removeIf(entry -> now - entry.getValue().createdAt() > SYNC_TIMEOUT_MS);
+    }
+
+    private static String serverId() {
+        if (serverId != null) return serverId;
+        Path file = FMLPaths.GAMEDIR.get()
+                .resolve("config/vtt_assets/created/server_id.txt");
+        try {
+            if (Files.isRegularFile(file)) {
+                String loaded = Files.readString(file, StandardCharsets.UTF_8).trim();
+                serverId = UUID.fromString(loaded).toString();
+                return serverId;
+            }
+        } catch (IOException | IllegalArgumentException exception) {
+            VTT.LOGGER.warn("Could not load VTT server cache identity", exception);
+        }
+        serverId = UUID.randomUUID().toString();
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, serverId, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not persist VTT server cache identity", exception);
+        }
+        return serverId;
     }
 
     private static String string(JsonObject object, String name) {
@@ -184,5 +335,27 @@ public final class VttServerAssetSyncService {
         }
     }
 
-    private record SyncFile(String category, String relativePath, Path absolutePath) {}
+    private static String sha256(Path file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) >= 0) {
+                    if (read > 0) digest.update(buffer, 0, read);
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private record SyncFile(
+            String category, String relativePath, Path absolutePath, long size, String sha256
+    ) {}
+
+    private record PendingSync(
+            String syncId, List<SyncFile> files, Runnable completion, long createdAt
+    ) {}
 }

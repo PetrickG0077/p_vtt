@@ -7,8 +7,10 @@ import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotCompletePayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
+import com.petrick.vtt.network.payload.VttAssetManifestPayload;
+import com.petrick.vtt.network.payload.VttAssetRequestPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
-import com.petrick.vtt.network.payload.VttAssetSyncStartPayload;
+import com.petrick.vtt.network.server.VttServerAssetRequestHandler;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.server.VttServerTokenTransformHandler;
@@ -36,7 +38,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "25";
+    private static final String PROTOCOL_VERSION = "26";
 
     private VttNetwork() {
     }
@@ -70,8 +72,10 @@ public final class VttNetwork {
         registrar.playToServer(VttReplicationResyncRequestPayload.TYPE,
                 VttReplicationResyncRequestPayload.STREAM_CODEC,
                 VttServerReplicationResyncHandler::handle);
-        registrar.playToClient(VttAssetSyncStartPayload.TYPE, VttAssetSyncStartPayload.STREAM_CODEC,
-                VttClientPayloadHandler::handleAssetSyncStart);
+        registrar.playToClient(VttAssetManifestPayload.TYPE, VttAssetManifestPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleAssetManifest);
+        registrar.playToServer(VttAssetRequestPayload.TYPE, VttAssetRequestPayload.STREAM_CODEC,
+                VttServerAssetRequestHandler::handle);
         registrar.playToClient(VttAssetChunkPayload.TYPE, VttAssetChunkPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleAssetChunk);
         registrar.playToClient(VttAssetSyncCompletePayload.TYPE, VttAssetSyncCompletePayload.STREAM_CODEC,

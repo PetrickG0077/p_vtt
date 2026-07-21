@@ -24,6 +24,7 @@ import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import net.minecraft.client.Minecraft;
+import com.petrick.vtt.network.client.VttClientAssetCache;
 
 import java.nio.file.Path;
 import com.petrick.vtt.core.math.Vec2d;
@@ -170,8 +171,7 @@ public final class VTTSession {
     }
 
     public Path getSyncedServerTokensFolder() {
-        return Minecraft.getInstance().gameDirectory.toPath()
-                .resolve("config/vtt_assets/cache/server/tokens");
+        return VttClientAssetCache.activeCacheRoot().resolve("tokens");
     }
 
     public void applyNetworkSnapshot(VttTabletop tabletop, VttScene scene, long authorityRevision) {
@@ -578,8 +578,7 @@ public final class VTTSession {
     }
 
     public void reloadSyncedServerAssets() {
-        Path cacheRoot = Minecraft.getInstance().gameDirectory.toPath()
-                .resolve("config/vtt_assets/cache/server");
+        Path cacheRoot = VttClientAssetCache.activeCacheRoot();
         AssetLibraryScanResult synced = new AssetLibraryScanner(
                 new AssetLibraryPath(cacheRoot.resolve("assets"))
         ).scan();
@@ -590,7 +589,7 @@ public final class VTTSession {
         tokenDefinitionRegistry.clear();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
         assetThumbnailRegistry.clear();
-        animatedTextureService.setUseServerCache(true);
+        animatedTextureService.setServerCacheRoot(cacheRoot);
         loadAssetThumbnails();
         CreatedTokenStorage.loadCreatedTokensFromFolder(
                 cacheRoot.resolve("tokens"), tokenDefinitionRegistry, assetRegistry

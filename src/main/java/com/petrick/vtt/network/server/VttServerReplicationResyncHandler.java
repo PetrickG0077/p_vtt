@@ -19,11 +19,12 @@ public final class VttServerReplicationResyncHandler {
         VttServerTabletopState state = VttServerTabletopState.get();
         VttServerVisionSourceSync.resetPlayerScope(player.getUUID());
         var replicatedScene = state.replicatedSceneFor(player);
-        VttServerAssetSyncService.sendActiveSceneAssets(
-                player, replicatedScene, VttServerPlayerEvents.isMaster(player));
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-        VttServerSceneSnapshotSync.sendToPlayer(player, state);
-        VttServerVisionSourceSync.sendToPlayer(player, state);
+        VttServerAssetSyncService.sendActiveSceneAssets(
+                player, replicatedScene, VttServerPlayerEvents.isMaster(player), () -> {
+                    VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                    VttServerVisionSourceSync.sendToPlayer(player, state);
+                });
         VTT.LOGGER.warn(
                 "Recovered VTT replication for {} after {} (client A={}, V={}, R={})",
                 player.getGameProfile().getName(), request.reason(), request.authorityRevision(),
