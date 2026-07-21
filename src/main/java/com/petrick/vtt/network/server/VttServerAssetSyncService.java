@@ -11,6 +11,7 @@ import com.petrick.vtt.network.payload.VttAssetRequestPayload;
 import com.petrick.vtt.network.payload.VttAssetChunkPayload;
 import com.petrick.vtt.network.payload.VttAssetSyncCompletePayload;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -35,13 +36,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 public final class VttServerAssetSyncService {
     private static final long SYNC_TIMEOUT_MS = 120_000L;
     private static final int MAX_CHUNKS_PER_TICK = 4;
     private static final Map<UUID, PendingSync> PENDING = new HashMap<>();
+    private static final Map<UUID, ManifestPreparation> PREPARING = new HashMap<>();
     private static final Deque<UUID> ACTIVE_TRANSFERS = new ArrayDeque<>();
+    private static final ExecutorService HASH_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "VTT server asset hashing");
+        thread.setDaemon(true);
+        return thread;
+    });
     private static String serverId;
 
     private VttServerAssetSyncService() {}
@@ -58,8 +69,7 @@ public final class VttServerAssetSyncService {
             ServerPlayer player, VttScene scene, boolean includeAllTokens,
             Runnable completion
     ) {
-        List<SyncFile> files = collectFiles(scene, includeAllTokens);
-        beginSync(player, files, true, completion);
+        prepareSync(player, AssetScope.fromScene(scene), includeAllTokens, true, completion);
     }
 
     public static void sendVisibleTokenAssets(
@@ -69,18 +79,63 @@ public final class VttServerAssetSyncService {
             if (completion != null) completion.run();
             return;
         }
-        VttScene subset = new VttScene("asset_sync", "Asset Sync");
-        visibleObjects.forEach(subset::addObject);
-        beginSync(player, collectFiles(subset, false), false, completion);
+        prepareSync(player, AssetScope.fromObjects(visibleObjects), false, false, completion);
+    }
+
+    private static synchronized void prepareSync(
+            ServerPlayer player, AssetScope scope, boolean includeAllTokens,
+            boolean replaceScope, Runnable completion
+    ) {
+        if (player == null) return;
+        expirePending();
+        UUID playerId = player.getUUID();
+        cancelPlayerWork(playerId);
+        ManifestPreparation preparation = new ManifestPreparation(
+                player, UUID.randomUUID().toString(), replaceScope, completion,
+                System.currentTimeMillis());
+        PREPARING.put(playerId, preparation);
+        MinecraftServer server = player.getServer();
+        Path storageRoot = FMLPaths.GAMEDIR.get()
+                .resolve("config/vtt_assets").toAbsolutePath().normalize();
+        preparation.future = HASH_EXECUTOR.submit(() -> {
+            if (server == null) return;
+            try {
+                List<SyncFile> files = collectFiles(scope, includeAllTokens, storageRoot);
+                server.execute(() -> finishPreparation(
+                        playerId, preparation, files, null));
+            } catch (Throwable failure) {
+                server.execute(() -> finishPreparation(
+                        playerId, preparation, null, failure));
+            }
+        });
+    }
+
+    private static synchronized void finishPreparation(
+            UUID playerId, ManifestPreparation preparation,
+            List<SyncFile> files, Throwable failure
+    ) {
+        if (PREPARING.get(playerId) != preparation) return;
+        PREPARING.remove(playerId);
+        if (failure != null) {
+            if (!(unwrap(failure) instanceof CancellationException)) {
+                VTT.LOGGER.error("Failed to prepare VTT asset manifest for {}",
+                        preparation.player.getGameProfile().getName(), unwrap(failure));
+                beginFallbackSync(preparation);
+            }
+            return;
+        }
+        var server = preparation.player.getServer();
+        if (server == null || server.getPlayerList().getPlayer(playerId) != preparation.player) return;
+        beginSync(preparation.player, files, preparation.replaceScope,
+                preparation.completion, preparation.syncId);
     }
 
     private static synchronized void beginSync(
             ServerPlayer player, List<SyncFile> files, boolean replaceScope,
-            Runnable completion
+            Runnable completion, String syncId
     ) {
         if (player == null) return;
         expirePending();
-        String syncId = UUID.randomUUID().toString();
         List<SyncFile> safeFiles = files == null ? List.of() : List.copyOf(files);
         PendingSync previous = PENDING.remove(player.getUUID());
         if (previous != null) previous.close();
@@ -98,26 +153,22 @@ public final class VttServerAssetSyncService {
                 entries.size(), player.getGameProfile().getName(), syncId);
     }
 
-    private static List<SyncFile> collectFiles(VttScene scene, boolean includeAllTokens) {
-        Path root = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets");
+    private static List<SyncFile> collectFiles(
+            AssetScope scope, boolean includeAllTokens, Path root
+    ) {
+        checkCancelled();
         Path assetsRoot = root.resolve("assets").normalize();
         Path tokensRoot = root.resolve("created/tokens").normalize();
-        Set<String> definitionIds = new HashSet<>();
-        if (scene != null) {
-            scene.getObjects().forEach(object -> {
-                if (object != null && object.getSourceTokenDefinitionId() != null) {
-                    definitionIds.add(object.getSourceTokenDefinitionId());
-                }
-            });
-        }
+        Set<String> definitionIds = scope == null ? Set.of() : scope.definitionIds();
 
         Map<String, SyncFile> result = new LinkedHashMap<>();
         long[] totalBytes = {0L};
-        addAsset(scene == null ? null : scene.getBackgroundAssetId(), assetsRoot, result, totalBytes);
+        addAsset(scope == null ? null : scope.backgroundAssetId(), assetsRoot, result, totalBytes);
 
         if (Files.isDirectory(tokensRoot)) {
             try (Stream<Path> stream = Files.list(tokensRoot)) {
                 stream.filter(Files::isRegularFile).filter(path -> path.toString().toLowerCase().endsWith(".json"))
+                        .peek(path -> checkCancelled())
                         .forEach(path -> collectToken(path, definitionIds, includeAllTokens,
                                 tokensRoot, assetsRoot, result, totalBytes));
             } catch (IOException exception) {
@@ -133,6 +184,7 @@ public final class VttServerAssetSyncService {
         if (!Files.isDirectory(assetsRoot)) return;
         try (Stream<Path> stream = Files.walk(assetsRoot)) {
             stream.filter(Files::isRegularFile).sorted()
+                    .peek(path -> checkCancelled())
                     .forEach(path -> addFile("assets", assetsRoot, path, result, totalBytes));
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to scan full VTT asset library for master sync", exception);
@@ -157,6 +209,8 @@ public final class VttServerAssetSyncService {
                 addAsset(string(json, "selectedImageId"), assetsRoot, result, totalBytes);
             }
         } catch (Exception exception) {
+            if (exception instanceof CancellationException
+                    || Thread.currentThread().isInterrupted()) throw new CancellationException();
             VTT.LOGGER.warn("Skipped invalid server VTT token definition: {}", jsonFile, exception);
         }
     }
@@ -170,6 +224,7 @@ public final class VttServerAssetSyncService {
     }
 
     private static void addFile(String category, Path root, Path file, Map<String, SyncFile> result, long[] totalBytes) {
+        checkCancelled();
         try {
             Path normalizedRoot = root.toAbsolutePath().normalize();
             Path normalizedFile = file.toAbsolutePath().normalize();
@@ -225,12 +280,18 @@ public final class VttServerAssetSyncService {
 
     public static synchronized boolean hasPending(ServerPlayer player) {
         expirePending();
-        return player != null && PENDING.containsKey(player.getUUID());
+        return player != null && (PENDING.containsKey(player.getUUID())
+                || PREPARING.containsKey(player.getUUID()));
     }
 
     public static synchronized void runAfterPending(ServerPlayer player, Runnable action) {
         if (player == null || action == null) return;
         expirePending();
+        ManifestPreparation preparation = PREPARING.get(player.getUUID());
+        if (preparation != null) {
+            preparation.appendCompletion(action);
+            return;
+        }
         PendingSync pending = PENDING.get(player.getUUID());
         if (pending == null) {
             action.run();
@@ -264,18 +325,33 @@ public final class VttServerAssetSyncService {
         if (playerId == null) return;
         PendingSync pending = PENDING.remove(playerId);
         if (pending != null) pending.close();
+        ManifestPreparation preparation = PREPARING.remove(playerId);
+        if (preparation != null) preparation.cancel();
         ACTIVE_TRANSFERS.remove(playerId);
     }
 
     public static synchronized void clear() {
         PENDING.values().forEach(PendingSync::close);
+        PREPARING.values().forEach(ManifestPreparation::cancel);
         PENDING.clear();
+        PREPARING.clear();
         ACTIVE_TRANSFERS.clear();
         serverId = null;
     }
 
     private static void expirePending() {
         long now = System.currentTimeMillis();
+        List<UUID> expiredPreparations = PREPARING.entrySet().stream()
+                .filter(entry -> now - entry.getValue().createdAt > SYNC_TIMEOUT_MS)
+                .map(Map.Entry::getKey).toList();
+        for (UUID playerId : expiredPreparations) {
+            ManifestPreparation preparation = PREPARING.remove(playerId);
+            if (preparation != null) {
+                preparation.cancel();
+                VTT.LOGGER.warn("Expired VTT asset manifest preparation {}", preparation.syncId);
+                beginFallbackSync(preparation);
+            }
+        }
         List<UUID> expired = PENDING.entrySet().stream()
                 .filter(entry -> now - entry.getValue().lastActivityAt > SYNC_TIMEOUT_MS)
                 .map(Map.Entry::getKey).toList();
@@ -308,6 +384,17 @@ public final class VttServerAssetSyncService {
                 VTT.LOGGER.error("Failed to finish VTT asset sync {}", pending.syncId, exception);
             }
         }
+    }
+
+    private static void beginFallbackSync(ManifestPreparation preparation) {
+        if (preparation == null) return;
+        var server = preparation.player.getServer();
+        if (server == null || server.getPlayerList().getPlayer(
+                preparation.player.getUUID()) != preparation.player) return;
+        VTT.LOGGER.warn("Using existing client VTT cache after manifest preparation failure for {}",
+                preparation.player.getGameProfile().getName());
+        beginSync(preparation.player, List.of(), false,
+                preparation.completion, preparation.syncId);
     }
 
     private static String serverId() {
@@ -347,6 +434,7 @@ public final class VttServerAssetSyncService {
                 byte[] buffer = new byte[8192];
                 int read;
                 while ((read = input.read(buffer)) >= 0) {
+                    checkCancelled();
                     if (read > 0) digest.update(buffer, 0, read);
                 }
             }
@@ -359,6 +447,58 @@ public final class VttServerAssetSyncService {
     private record SyncFile(
             String category, String relativePath, Path absolutePath, long size, String sha256
     ) {}
+
+    private record AssetScope(String backgroundAssetId, Set<String> definitionIds) {
+        private AssetScope {
+            definitionIds = definitionIds == null ? Set.of() : Set.copyOf(definitionIds);
+        }
+
+        private static AssetScope fromScene(VttScene scene) {
+            return new AssetScope(scene == null ? null : scene.getBackgroundAssetId(),
+                    scene == null ? Set.of() : definitionIds(scene.getObjects()));
+        }
+
+        private static AssetScope fromObjects(List<VttSceneObject> objects) {
+            return new AssetScope(null, definitionIds(objects));
+        }
+
+        private static Set<String> definitionIds(List<VttSceneObject> objects) {
+            if (objects == null || objects.isEmpty()) return Set.of();
+            Set<String> result = new HashSet<>();
+            for (VttSceneObject object : objects) {
+                if (object != null && object.getSourceTokenDefinitionId() != null) {
+                    result.add(object.getSourceTokenDefinitionId());
+                }
+            }
+            return Set.copyOf(result);
+        }
+    }
+
+    private static final class ManifestPreparation {
+        private final ServerPlayer player;
+        private final String syncId;
+        private final boolean replaceScope;
+        private final long createdAt;
+        private Runnable completion;
+        private Future<?> future;
+
+        private ManifestPreparation(ServerPlayer player, String syncId, boolean replaceScope,
+                                    Runnable completion, long createdAt) {
+            this.player = player;
+            this.syncId = syncId;
+            this.replaceScope = replaceScope;
+            this.completion = completion;
+            this.createdAt = createdAt;
+        }
+
+        private void appendCompletion(Runnable action) {
+            completion = chain(completion, action);
+        }
+
+        private void cancel() {
+            if (future != null) future.cancel(true);
+        }
+    }
 
     private static final class PendingSync {
         private final ServerPlayer player;
@@ -445,14 +585,7 @@ public final class VttServerAssetSyncService {
         }
 
         private void appendCompletion(Runnable action) {
-            Runnable previous = completion;
-            completion = previous == null ? action : () -> {
-                try {
-                    previous.run();
-                } finally {
-                    action.run();
-                }
-            };
+            completion = chain(completion, action);
         }
 
         private void close() {
@@ -466,5 +599,38 @@ public final class VttServerAssetSyncService {
                 digest = null;
             }
         }
+    }
+
+    private static void cancelPlayerWork(UUID playerId) {
+        PendingSync pending = PENDING.remove(playerId);
+        if (pending != null) pending.close();
+        ManifestPreparation preparation = PREPARING.remove(playerId);
+        if (preparation != null) preparation.cancel();
+        ACTIVE_TRANSFERS.remove(playerId);
+    }
+
+    private static Runnable chain(Runnable previous, Runnable action) {
+        if (previous == null) return action;
+        return () -> {
+            try {
+                previous.run();
+            } finally {
+                action.run();
+            }
+        };
+    }
+
+    private static void checkCancelled() {
+        if (Thread.currentThread().isInterrupted()) throw new CancellationException();
+    }
+
+    private static Throwable unwrap(Throwable failure) {
+        Throwable current = failure;
+        while (current.getCause() != null
+                && (current instanceof java.util.concurrent.CompletionException
+                || current instanceof java.util.concurrent.ExecutionException)) {
+            current = current.getCause();
+        }
+        return current;
     }
 }

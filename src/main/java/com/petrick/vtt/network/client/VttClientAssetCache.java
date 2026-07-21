@@ -32,6 +32,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /** Incremental, per-server cache for synchronized VTT assets and token definitions. */
 public final class VttClientAssetCache {
@@ -39,7 +43,13 @@ public final class VttClientAssetCache {
     private static final Type INDEX_TYPE = new TypeToken<Map<String, CacheEntry>>() {}.getType();
     private static final long SYNC_TIMEOUT_MS = 120_000L;
     private static final long TERMINAL_PROGRESS_MS = 3_000L;
+    private static final ExecutorService HASH_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "VTT client cache hashing");
+        thread.setDaemon(true);
+        return thread;
+    });
     private static IncomingSync incoming;
+    private static CacheVerification verification;
     private static String activeServerId;
     private static boolean readyForServerState;
     private static boolean recoveryRequired;
@@ -52,6 +62,7 @@ public final class VttClientAssetCache {
         if (!validManifest(manifest)) {
             VTT.LOGGER.warn("Rejected invalid VTT asset manifest");
             discardIncoming();
+            cancelVerification();
             readyForServerState = false;
             showFailure("Manifesto inválido");
             requestRecovery();
@@ -67,10 +78,57 @@ public final class VttClientAssetCache {
         activeServerId = manifest.serverId();
         Path root = activeCacheRoot();
         discardIncoming();
+        cancelVerification();
         deleteTreeQuietly(root.resolve(".incoming"));
+        CacheVerification pendingVerification = new CacheVerification(
+                manifest, root, System.currentTimeMillis());
+        verification = pendingVerification;
+        Minecraft minecraft = Minecraft.getInstance();
+        pendingVerification.future = HASH_EXECUTOR.submit(() -> {
+            try {
+                VerificationResult result = verifyCache(manifest, root);
+                minecraft.execute(() -> finishVerification(
+                        pendingVerification, result, null));
+            } catch (Throwable failure) {
+                minecraft.execute(() -> finishVerification(
+                        pendingVerification, null, failure));
+            }
+        });
+    }
+
+    private static synchronized void finishVerification(
+            CacheVerification completed, VerificationResult result, Throwable failure
+    ) {
+        if (verification != completed) return;
+        verification = null;
+        if (failure != null) {
+            if (!(failure instanceof CancellationException)) {
+                VTT.LOGGER.error("Failed to verify VTT asset cache", failure);
+                readyForServerState = false;
+                showFailure("Falha ao verificar cache");
+                requestRecovery();
+            }
+            return;
+        }
+        VttAssetManifestPayload manifest = completed.manifest;
+        incoming = new IncomingSync(manifest, result.index, result.missing,
+                completed.root.resolve(".incoming").resolve(manifest.syncId()),
+                System.currentTimeMillis());
+        updateDownloadProgress("");
+        PacketDistributor.sendToServer(new VttAssetRequestPayload(
+                manifest.syncId(), List.copyOf(result.missing)));
+        VTT.LOGGER.info("VTT asset manifest {}: {} total, {} missing, {} cached",
+                manifest.syncId(), manifest.entries().size(), result.missing.size(),
+                manifest.entries().size() - result.missing.size());
+    }
+
+    private static VerificationResult verifyCache(
+            VttAssetManifestPayload manifest, Path root
+    ) {
         Map<String, CacheEntry> index = loadIndex(root);
         LinkedHashSet<Integer> missing = new LinkedHashSet<>();
         for (int fileIndex = 0; fileIndex < manifest.entries().size(); fileIndex++) {
+            checkCancelled();
             VttAssetManifestPayload.Entry entry = manifest.entries().get(fileIndex);
             String key = key(entry);
             CacheEntry cached = index.get(key);
@@ -86,15 +144,7 @@ public final class VttClientAssetCache {
                 missing.add(fileIndex);
             }
         }
-        incoming = new IncomingSync(
-                manifest, index, missing, root.resolve(".incoming").resolve(manifest.syncId()),
-                System.currentTimeMillis());
-        updateDownloadProgress("");
-        PacketDistributor.sendToServer(new VttAssetRequestPayload(
-                manifest.syncId(), List.copyOf(missing)));
-        VTT.LOGGER.info("VTT asset manifest {}: {} total, {} missing, {} cached",
-                manifest.syncId(), manifest.entries().size(), missing.size(),
-                manifest.entries().size() - missing.size());
+        return new VerificationResult(index, Set.copyOf(missing));
     }
 
     public static synchronized void accept(VttAssetChunkPayload payload) {
@@ -194,6 +244,13 @@ public final class VttClientAssetCache {
     }
 
     public static synchronized void tick() {
+        if (verification != null
+                && System.currentTimeMillis() - verification.startedAt > SYNC_TIMEOUT_MS) {
+            cancelVerification();
+            readyForServerState = false;
+            showFailure("Tempo de verificação esgotado");
+            requestRecovery();
+        }
         if (incoming != null
                 && System.currentTimeMillis() - incoming.lastActivityAt > SYNC_TIMEOUT_MS) {
             VTT.LOGGER.warn("Discarded timed-out VTT asset sync: {}",
@@ -203,11 +260,12 @@ public final class VttClientAssetCache {
             showFailure("Tempo de sincronização esgotado");
             requestRecovery();
         }
-        if (recoveryRequired && incoming == null) requestRecovery();
+        if (recoveryRequired && incoming == null && verification == null) requestRecovery();
     }
 
     public static synchronized void reset() {
         discardIncoming();
+        cancelVerification();
         activeServerId = null;
         readyForServerState = false;
         recoveryRequired = false;
@@ -216,7 +274,7 @@ public final class VttClientAssetCache {
     }
 
     public static synchronized boolean isReadyForServerState() {
-        return readyForServerState && incoming == null;
+        return readyForServerState && incoming == null && verification == null;
     }
 
     public static synchronized void recoverServerState() {
@@ -361,6 +419,7 @@ public final class VttClientAssetCache {
                 byte[] buffer = new byte[8192];
                 int read;
                 while ((read = input.read(buffer)) >= 0) {
+                    checkCancelled();
                     if (read > 0) digest.update(buffer, 0, read);
                 }
             }
@@ -411,6 +470,16 @@ public final class VttClientAssetCache {
         discarded.discard();
     }
 
+    private static void cancelVerification() {
+        CacheVerification cancelled = verification;
+        verification = null;
+        if (cancelled != null && cancelled.future != null) cancelled.future.cancel(true);
+    }
+
+    private static void checkCancelled() {
+        if (Thread.currentThread().isInterrupted()) throw new CancellationException();
+    }
+
     private static void deleteTreeQuietly(Path root) {
         if (root == null || !Files.exists(root)) return;
         try (var paths = Files.walk(root)) {
@@ -423,6 +492,25 @@ public final class VttClientAssetCache {
     }
 
     private record CacheEntry(String sha256, long size) {}
+
+    private record VerificationResult(
+            Map<String, CacheEntry> index, Set<Integer> missing
+    ) {}
+
+    private static final class CacheVerification {
+        private final VttAssetManifestPayload manifest;
+        private final Path root;
+        private final long startedAt;
+        private Future<?> future;
+
+        private CacheVerification(
+                VttAssetManifestPayload manifest, Path root, long startedAt
+        ) {
+            this.manifest = manifest;
+            this.root = root;
+            this.startedAt = startedAt;
+        }
+    }
 
     private static final class IncomingSync {
         private final VttAssetManifestPayload manifest;
