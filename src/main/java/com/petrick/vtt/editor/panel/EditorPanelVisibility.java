@@ -64,12 +64,21 @@ public final class EditorPanelVisibility {
 
     public void toggleTokenCatalog() {
         tokenCatalogVisible = !tokenCatalogVisible;
+        if (tokenCatalogVisible) sceneListVisible = false;
     }
 
     public void toggleSceneOutliner() {
         sceneOutlinerVisible = !sceneOutlinerVisible;
     }
-    public void toggleSceneList() { sceneListVisible = !sceneListVisible; }
+    public void toggleSceneList() {
+        sceneListVisible = !sceneListVisible;
+        if (sceneListVisible) tokenCatalogVisible = false;
+    }
+
+    public void hideBottomCatalogs() {
+        tokenCatalogVisible = false;
+        sceneListVisible = false;
+    }
 
     public void hideMasterPanels() {
         assetCatalogVisible = false;
@@ -94,6 +103,6 @@ public final class EditorPanelVisibility {
         assetCatalogVisible = true;
         tokenCatalogVisible = true;
         sceneOutlinerVisible = true;
-        sceneListVisible = true;
+        sceneListVisible = false;
     }
 }

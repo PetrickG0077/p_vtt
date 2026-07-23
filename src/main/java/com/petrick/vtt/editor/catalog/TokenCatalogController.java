@@ -56,6 +56,7 @@ public final class TokenCatalogController {
             TokenCatalogOverlay overlay,
             TokenDefinitionRegistry registry,
             boolean catalogVisible,
+            int screenWidth,
             int screenHeight,
             double mouseX,
             double mouseY
@@ -68,7 +69,7 @@ public final class TokenCatalogController {
         }
 
         scrollOffset = overlay.clampScrollOffset(registry, scrollOffset);
-        if (overlay.isScrollbarAt(registry, screenHeight, mouseX, mouseY)) {
+        if (overlay.isScrollbarAt(registry, screenWidth, screenHeight, mouseX, mouseY)) {
             draggingScrollbar = true;
             scrollOffset = overlay.scrollOffsetFromMouse(registry, screenHeight, mouseY);
             clearDrag();
@@ -77,6 +78,7 @@ public final class TokenCatalogController {
 
         Optional<TokenDefinition> clickedDefinition = overlay.findTokenDefinitionAt(
                 registry,
+                screenWidth,
                 screenHeight,
                 mouseX,
                 mouseY,
@@ -84,7 +86,7 @@ public final class TokenCatalogController {
         );
 
         if (clickedDefinition.isEmpty()) {
-            if (!overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+            if (!overlay.containsPoint(registry, screenWidth, screenHeight, mouseX, mouseY)) {
                 selection.clear();
             }
 
@@ -128,9 +130,11 @@ public final class TokenCatalogController {
     }
 
     public boolean mouseScrolled(TokenCatalogOverlay overlay, TokenDefinitionRegistry registry,
-                                 boolean catalogVisible, int screenHeight,
+                                 boolean catalogVisible, int screenWidth, int screenHeight,
                                  double mouseX, double mouseY, double scrollY) {
-        if (!catalogVisible || !overlay.containsPoint(registry, screenHeight, mouseX, mouseY)) {
+        if (!catalogVisible
+                || !overlay.containsPoint(
+                registry, screenWidth, screenHeight, mouseX, mouseY)) {
             return false;
         }
         scrollOffset = overlay.clampScrollOffset(registry,

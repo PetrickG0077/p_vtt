@@ -30,7 +30,7 @@ import java.util.Optional;
  */
 public final class TokenCatalogOverlay {
 
-    private static final int PANEL_WIDTH = 240;
+    private static final int PANEL_WIDTH = 210;
 
     private static final int PADDING = 8;
 
@@ -40,11 +40,10 @@ public final class TokenCatalogOverlay {
 
     private static final int THUMBNAIL_SIZE = 24;
 
-    private static final int PANEL_X = 240;
+    /** Leaves the catalog immediately above the centered bottom HUD bar. */
+    private static final int PANEL_Y_OFFSET_FROM_BOTTOM = 40;
 
-    private static final int PANEL_Y_OFFSET_FROM_BOTTOM = 10;
-
-    private static final int MAX_VISIBLE_TOKENS = 8;
+    private static final int MAX_VISIBLE_TOKENS = 2;
 
     private static final int MAX_VISIBLE_STATES = 5;
 
@@ -91,6 +90,7 @@ public final class TokenCatalogOverlay {
 
         Optional<TokenDefinition> hoveredDefinition = findTokenDefinitionAt(
                 tokenDefinitionRegistry,
+                context.screenWidth(),
                 context.screenHeight(),
                 context.mouseX(),
                 context.mouseY(),
@@ -101,7 +101,7 @@ public final class TokenCatalogOverlay {
 
         int panelHeight = calculatePanelHeight(definitions.size());
 
-        int x = PANEL_X;
+        int x = getPanelX(context.screenWidth());
         int y = getPanelY(context.screenHeight(), panelHeight);
 
         renderPanelBackground(context, x, y, PANEL_WIDTH, panelHeight);
@@ -206,6 +206,7 @@ public final class TokenCatalogOverlay {
 
     public boolean containsPoint(
             TokenDefinitionRegistry tokenDefinitionRegistry,
+            int screenWidth,
             int screenHeight,
             double mouseX,
             double mouseY
@@ -216,7 +217,7 @@ public final class TokenCatalogOverlay {
 
         int panelHeight = calculatePanelHeight(tokenCount);
 
-        int panelX = PANEL_X;
+        int panelX = getPanelX(screenWidth);
         int panelY = getPanelY(screenHeight, panelHeight);
 
         return mouseX >= panelX
@@ -368,6 +369,7 @@ public final class TokenCatalogOverlay {
 
     public TokenDefinition findTokenAt(
             TokenDefinitionRegistry tokenDefinitionRegistry,
+            int screenWidth,
             int screenHeight,
             double mouseX,
             double mouseY,
@@ -375,6 +377,7 @@ public final class TokenCatalogOverlay {
     ) {
         return findTokenDefinitionAt(
                 tokenDefinitionRegistry,
+                screenWidth,
                 screenHeight,
                 mouseX,
                 mouseY,
@@ -384,6 +387,7 @@ public final class TokenCatalogOverlay {
 
     public Optional<TokenDefinition> findTokenDefinitionAt(
             TokenDefinitionRegistry tokenDefinitionRegistry,
+            int screenWidth,
             int screenHeight,
             double mouseX,
             double mouseY,
@@ -397,7 +401,7 @@ public final class TokenCatalogOverlay {
 
         int panelHeight = calculatePanelHeight(definitions.size());
 
-        int panelX = PANEL_X;
+        int panelX = getPanelX(screenWidth);
         int panelY = getPanelY(screenHeight, panelHeight);
 
         if (mouseX < panelX || mouseX > panelX + PANEL_WIDTH) {
@@ -425,13 +429,13 @@ public final class TokenCatalogOverlay {
         return Optional.empty();
     }
 
-    public boolean isScrollbarAt(TokenDefinitionRegistry registry, int screenHeight,
+    public boolean isScrollbarAt(TokenDefinitionRegistry registry, int screenWidth, int screenHeight,
                                  double mouseX, double mouseY) {
         int tokenCount = registry == null ? 0 : registry.size();
         if (tokenCount <= MAX_VISIBLE_TOKENS) return false;
         int panelY = getPanelY(screenHeight, calculatePanelHeight(tokenCount));
         return EditorScrollbar.contains(mouseX, mouseY,
-                PANEL_X + PANEL_WIDTH - PADDING - 7, getFirstTokenY(panelY),
+                getPanelX(screenWidth) + PANEL_WIDTH - PADDING - 7, getFirstTokenY(panelY),
                 10, MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT);
     }
 
@@ -647,6 +651,10 @@ public final class TokenCatalogOverlay {
 
     private int getPanelY(int screenHeight, int panelHeight) {
         return screenHeight - panelHeight - PANEL_Y_OFFSET_FROM_BOTTOM;
+    }
+
+    private int getPanelX(int screenWidth) {
+        return (screenWidth - PANEL_WIDTH) / 2;
     }
 
     private void renderPanelBackground(

@@ -316,19 +316,6 @@ public final class VTTScreen extends Screen {
             );
         }
 
-        if (tokenCreationDraft != null) {
-            tokenCreationDialog.render(
-                    context,
-                    this.font,
-                    tokenCreationDraft,
-                    getConnectedPlayerOptions()
-            );
-
-            if (tokenImagePickerActive) {
-                renderAssetCatalog(context);
-            }
-        }
-
         if (backgroundImagePickerActive) {
             renderAssetCatalog(context);
         }
@@ -341,6 +328,19 @@ public final class VTTScreen extends Screen {
         sceneContextMenuOverlay.render(context, this.font, sceneContextMenu);
         renderEditorNotice(context);
         renderEditorHud(context);
+
+        if (tokenCreationDraft != null) {
+            tokenCreationDialog.render(
+                    context,
+                    this.font,
+                    tokenCreationDraft,
+                    getConnectedPlayerOptions()
+            );
+
+            if (tokenImagePickerActive) {
+                renderAssetCatalog(context);
+            }
+        }
 
         if (renamingObjectId != null) {
             renderRenameDialog(context);
@@ -512,6 +512,7 @@ public final class VTTScreen extends Screen {
             case CREATION -> {
                 if (master) {
                     hudCreationOpen = !hudCreationOpen;
+                    if (hudCreationOpen) panelVisibility.hideBottomCatalogs();
                     hudPlayersOpen = false;
                     hudSettingsOpen = false;
                 }
@@ -747,7 +748,7 @@ public final class VTTScreen extends Screen {
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && panelVisibility.isSceneListVisible()) {
             Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
-                    session.getActiveTabletop(), mouseX, mouseY);
+                    session.getActiveTabletop(), this.width, this.height, mouseX, mouseY);
             if (clickedSceneId.isPresent()) {
                 tokenCatalogContextMenu.close();
                 sceneContextMenu.open((int) mouseX + 8, (int) mouseY, clickedSceneId.get());
@@ -759,6 +760,7 @@ public final class VTTScreen extends Screen {
                 && panelVisibility.isTokenCatalogVisible()) {
             TokenDefinition clickedToken = tokenCatalogOverlay.findTokenAt(
                     tokenDefinitionRegistry,
+                    this.width,
                     this.height,
                     mouseX,
                     mouseY,
@@ -786,6 +788,7 @@ public final class VTTScreen extends Screen {
                             tokenCatalogOverlay,
                             tokenDefinitionRegistry,
                             panelVisibility.isTokenCatalogVisible(),
+                            this.width,
                             this.height,
                             mouseX,
                             mouseY
@@ -844,7 +847,7 @@ public final class VTTScreen extends Screen {
 
             if (panelVisibility.isSceneListVisible()) {
                 Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
-                        session.getActiveTabletop(), mouseX, mouseY);
+                        session.getActiveTabletop(), this.width, this.height, mouseX, mouseY);
                 if (clickedSceneId.isPresent()) {
                     if (session.switchToScene(clickedSceneId.get())) {
                         selectionManager.clearSelection();
@@ -1362,7 +1365,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (tokenCatalogController.mouseScrolled(tokenCatalogOverlay, tokenDefinitionRegistry,
-                panelVisibility.isTokenCatalogVisible(), this.height,
+                panelVisibility.isTokenCatalogVisible(), this.width, this.height,
                 mouseX, mouseY, scrollY)) {
             return true;
         }
@@ -1515,6 +1518,7 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_F2) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             panelVisibility.toggleSceneList();
+            hudCreationOpen = false;
             return true;
         }
 
@@ -1543,6 +1547,7 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_F6) {
             if (!session.getLocalRole().canUseCatalogs()) return true;
             panelVisibility.toggleTokenCatalog();
+            hudCreationOpen = false;
             return true;
         }
 
