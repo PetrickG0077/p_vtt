@@ -392,6 +392,8 @@ public final class VTTScreen extends Screen {
                 && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
                 session.isLocalMaster(), inputController.getActiveToolId(),
+                inputController.canUndoTokenTransform(),
+                inputController.canRedoTokenTransform(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
@@ -499,8 +501,8 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
-            case UNDO -> VttClientEditorNotice.show("Undo history will be added later");
-            case REDO -> VttClientEditorNotice.show("Redo history will be added later");
+            case UNDO -> inputController.undoTokenTransform();
+            case REDO -> inputController.redoTokenTransform();
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
                 closeHudPopups();
@@ -1567,6 +1569,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             session.loadActiveSceneToCanvasScene();
             selectionManager.clearSelection();
+            inputController.clearTokenTransformHistory();
             return true;
         }
 
@@ -1619,9 +1622,25 @@ public final class VTTScreen extends Screen {
             if (tokenCreationDialog.keyPressed(tokenCreationDraft, keyCode)) {
                 return true;
             }
+            return true;
         }
 
         if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) {
+            return true;
+        }
+
+        boolean controlDown = (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
+        if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
+            if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+                inputController.redoTokenTransform();
+            } else {
+                inputController.undoTokenTransform();
+            }
+            return true;
+        }
+
+        if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
+            inputController.redoTokenTransform();
             return true;
         }
 
@@ -1661,11 +1680,13 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F
-                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) == 0) {
-            if (!session.getLocalRole().canEditTabletop()) return true;
-            selectionManager.clearSelection();
-            inputController.selectFogTool();
+        if (keyCode == GLFW.GLFW_KEY_F) {
+            if (hasFlippableSelectedTokens()) {
+                inputController.flipSelectedObjectsHorizontally();
+            } else if (session.getLocalRole().canEditTabletop()) {
+                selectionManager.clearSelection();
+                inputController.selectFogTool();
+            }
             return true;
         }
 
@@ -1737,13 +1758,6 @@ public final class VTTScreen extends Screen {
             if (inputController.rotateSelectedDoor(15.0)) return true;
             if (inputController.rotateSelectedFogArea(15.0)) return true;
             inputController.rotateSelectedObjectsRight();
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_F
-                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-            if (!canTransformSelectedTokens()) return true;
-            inputController.flipSelectedObjectsHorizontally();
             return true;
         }
 
@@ -1877,6 +1891,15 @@ public final class VTTScreen extends Screen {
             if (!owned) return false;
         }
         return true;
+    }
+
+    private boolean hasFlippableSelectedTokens() {
+        if (selectionManager.getSelectedObjectIds().isEmpty()) return false;
+        for (String selectedId : selectionManager.getSelectedObjectIds()) {
+            CanvasObject selected = scene.findObjectById(selectedId);
+            if (selected == null || !selected.hasSourceTokenDefinition()) return false;
+        }
+        return canTransformSelectedTokens();
     }
 
     private void adjustTokenVisionOuterRadius(double delta) {
@@ -2330,6 +2353,7 @@ public final class VTTScreen extends Screen {
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
+        inputController.clearTokenTransformHistory();
         inputController.selectHandTool();
         tokenCatalogContextMenu.close();
         sceneContextMenu.close();

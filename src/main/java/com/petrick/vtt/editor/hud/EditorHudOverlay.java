@@ -103,9 +103,11 @@ public final class EditorHudOverlay {
             rightY += size + GAP;
         }
         rightY += separator;
-        result.add(button(Action.UNDO, rightX, rightY, size, "", "Undo", false, false));
+        result.add(button(Action.UNDO, rightX, rightY, size, "", "Undo",
+                state.canUndo(), false));
         rightY += size + GAP;
-        result.add(button(Action.REDO, rightX, rightY, size, "", "Redo", false, false));
+        result.add(button(Action.REDO, rightX, rightY, size, "", "Redo",
+                state.canRedo(), false));
 
         if (state.master()) {
             int bottomWidth = PADDING * 2 + size * 3 + GAP * 2;
@@ -292,7 +294,10 @@ public final class EditorHudOverlay {
     }
 
     private void renderTooltip(VRenderContext context, Font font, Button button) {
-        String suffix = button.enabled() ? shortcut(button.action()) : " (coming later)";
+        boolean unavailableHistory = !button.enabled()
+                && (button.action() == Action.UNDO || button.action() == Action.REDO);
+        String suffix = button.enabled() || unavailableHistory
+                ? shortcut(button.action()) : " (coming later)";
         String text = button.tooltip() + suffix;
         int width = font.width(text) + 8;
         int x = Math.max(3, Math.min(context.screenWidth() - width - 3, context.mouseX() + 10));
@@ -311,6 +316,8 @@ public final class EditorHudOverlay {
             case WALL -> " [W]";
             case DOOR -> " [D]";
             case MEASURE -> " [M]";
+            case UNDO -> " [Ctrl+Z]";
+            case REDO -> " [Ctrl+Y]";
             default -> "";
         };
     }
@@ -412,6 +419,8 @@ public final class EditorHudOverlay {
     public record State(
             boolean master,
             String activeToolId,
+            boolean canUndo,
+            boolean canRedo,
             boolean playersOpen,
             boolean settingsOpen,
             boolean creationOpen,

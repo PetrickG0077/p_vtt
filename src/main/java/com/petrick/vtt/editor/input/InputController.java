@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.core.session.VttRole;
+import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 
 /**
  * Controla os inputs principais do VTT.
@@ -35,6 +36,9 @@ public final class InputController {
     private final Supplier<VttScene> tabletopSceneSupplier;
 
     private final Runnable saveTabletopAction;
+
+    private final EditorTokenTransformHistory transformHistory =
+            new EditorTokenTransformHistory();
 
     private boolean globalPanning;
 
@@ -71,6 +75,9 @@ public final class InputController {
             return true;
         }
 
+        if (button == 0 && "select".equals(toolController.getActiveToolId())) {
+            transformHistory.beginGesture(activeSceneId(), scene);
+        }
         ToolContext context = createToolContext(renderState);
         return toolController.mouseClicked(context, mouseX, mouseY, button, modifiers);
     }
@@ -89,7 +96,12 @@ public final class InputController {
         }
 
         ToolContext context = createToolContext(renderState);
-        return toolController.mouseReleased(context, mouseX, mouseY, button, modifiers);
+        boolean handled = toolController.mouseReleased(
+                context, mouseX, mouseY, button, modifiers);
+        if (button == 0 && transformHistory.endGesture(activeSceneId(), scene)) {
+            saveTabletopAction.run();
+        }
+        return handled;
     }
 
     public boolean mouseDragged(
@@ -152,31 +164,31 @@ public final class InputController {
     }
 
     public void scaleSelectedObjectsUp() {
-        scene.scaleObjects(
+        performTransform(() -> scene.scaleObjects(
                 selectionManager.getSelectedObjectIds(),
                 1.1
-        );
+        ));
     }
 
     public void scaleSelectedObjectsDown() {
-        scene.scaleObjects(
+        performTransform(() -> scene.scaleObjects(
                 selectionManager.getSelectedObjectIds(),
                 0.9
-        );
+        ));
     }
 
     public void rotateSelectedObjectsLeft() {
-        scene.rotateObjects(
+        performTransform(() -> scene.rotateObjects(
                 selectionManager.getSelectedObjectIds(),
                 -15.0
-        );
+        ));
     }
 
     public void rotateSelectedObjectsRight() {
-        scene.rotateObjects(
+        performTransform(() -> scene.rotateObjects(
                 selectionManager.getSelectedObjectIds(),
                 15.0
-        );
+        ));
     }
 
     public void duplicateSelectedObjects() {
@@ -195,19 +207,23 @@ public final class InputController {
     }
 
     public void bringSelectedObjectsForward() {
-        scene.bringObjectsForward(selectionManager.getSelectedObjectIds());
+        performTransform(() ->
+                scene.bringObjectsForward(selectionManager.getSelectedObjectIds()));
     }
 
     public void sendSelectedObjectsBackward() {
-        scene.sendObjectsBackward(selectionManager.getSelectedObjectIds());
+        performTransform(() ->
+                scene.sendObjectsBackward(selectionManager.getSelectedObjectIds()));
     }
 
     public void bringSelectedObjectsToFront() {
-        scene.bringObjectsToFront(selectionManager.getSelectedObjectIds());
+        performTransform(() ->
+                scene.bringObjectsToFront(selectionManager.getSelectedObjectIds()));
     }
 
     public void sendSelectedObjectsToBack() {
-        scene.sendObjectsToBack(selectionManager.getSelectedObjectIds());
+        performTransform(() ->
+                scene.sendObjectsToBack(selectionManager.getSelectedObjectIds()));
     }
 
     public void deleteSelectedObjects() {
@@ -295,7 +311,8 @@ public final class InputController {
     }
 
     public void resetSelectedObjectsScaleAndRotation() {
-        scene.resetObjectsScaleAndRotation(selectionManager.getSelectedObjectIds());
+        performTransform(() ->
+                scene.resetObjectsScaleAndRotation(selectionManager.getSelectedObjectIds()));
     }
 
     public void setSelectedObjectsActiveState(String stateId) {
@@ -306,9 +323,47 @@ public final class InputController {
     }
 
     public void flipSelectedObjectsHorizontally() {
-        scene.flipObjectsHorizontally(
+        performTransform(() -> scene.flipObjectsHorizontally(
                 selectionManager.getSelectedObjectIds()
-        );
+        ));
+    }
+
+    public boolean canUndoTokenTransform() {
+        return transformHistory.canUndo(activeSceneId());
+    }
+
+    public boolean canRedoTokenTransform() {
+        return transformHistory.canRedo(activeSceneId());
+    }
+
+    public boolean undoTokenTransform() {
+        return applyHistoryResult(transformHistory.undo(activeSceneId(), scene));
+    }
+
+    public boolean redoTokenTransform() {
+        return applyHistoryResult(transformHistory.redo(activeSceneId(), scene));
+    }
+
+    public void clearTokenTransformHistory() {
+        transformHistory.clear();
+    }
+
+    private void performTransform(Runnable mutation) {
+        if (transformHistory.perform(activeSceneId(), scene, mutation)) {
+            saveTabletopAction.run();
+        }
+    }
+
+    private boolean applyHistoryResult(EditorTokenTransformHistory.Result result) {
+        if (!result.changed()) return false;
+        VttClientTokenTransformSync.markCollisionBypass(result.affectedObjectIds());
+        saveTabletopAction.run();
+        return true;
+    }
+
+    private String activeSceneId() {
+        VttScene activeScene = tabletopSceneSupplier.get();
+        return activeScene == null ? "" : activeScene.getId();
     }
 
     private ToolContext createToolContext(RenderState renderState) {
