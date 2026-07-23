@@ -395,6 +395,8 @@ public final class VTTScreen extends Screen {
                 session.isLocalMaster(), inputController.getActiveToolId(),
                 inputController.canUndoEditorAction(),
                 inputController.canRedoEditorAction(),
+                inputController.nextUndoDescription(),
+                inputController.nextRedoDescription(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),

@@ -103,10 +103,12 @@ public final class EditorHudOverlay {
             rightY += size + GAP;
         }
         rightY += separator;
-        result.add(button(Action.UNDO, rightX, rightY, size, "", "Undo",
+        result.add(button(Action.UNDO, rightX, rightY, size, "",
+                historyTooltip("Undo", state.undoDescription()),
                 state.canUndo(), false));
         rightY += size + GAP;
-        result.add(button(Action.REDO, rightX, rightY, size, "", "Redo",
+        result.add(button(Action.REDO, rightX, rightY, size, "",
+                historyTooltip("Redo", state.redoDescription()),
                 state.canRedo(), false));
 
         if (state.master()) {
@@ -346,6 +348,11 @@ public final class EditorHudOverlay {
         };
     }
 
+    private String historyTooltip(String action, String description) {
+        return description == null || description.isBlank()
+                ? action : action + ": " + description;
+    }
+
     private String toolId(Action action) {
         return switch (action) {
             case HAND -> "hand";
@@ -421,6 +428,8 @@ public final class EditorHudOverlay {
             String activeToolId,
             boolean canUndo,
             boolean canRedo,
+            String undoDescription,
+            String redoDescription,
             boolean playersOpen,
             boolean settingsOpen,
             boolean creationOpen,
@@ -436,6 +445,8 @@ public final class EditorHudOverlay {
     ) {
         public State {
             activeToolId = activeToolId == null ? "" : activeToolId;
+            undoDescription = undoDescription == null ? "" : undoDescription;
+            redoDescription = redoDescription == null ? "" : redoDescription;
             players = players == null ? List.of() : List.copyOf(players);
             localPlayerId = localPlayerId == null ? "" : localPlayerId;
             activeSceneName = activeSceneName == null ? "" : activeSceneName;

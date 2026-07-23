@@ -398,6 +398,14 @@ public final class InputController {
         return sceneHistory.canRedo(activeSceneId());
     }
 
+    public String nextUndoDescription() {
+        return sceneHistory.nextUndoDescription(activeSceneId());
+    }
+
+    public String nextRedoDescription() {
+        return sceneHistory.nextRedoDescription(activeSceneId());
+    }
+
     public boolean undoEditorAction() {
         return applyHistoryResult(sceneHistory.undo(
                 activeSceneId(), scene, tabletopSceneSupplier.get()));

@@ -78,6 +78,16 @@ public final class EditorSceneHistory {
         return !redoStack.isEmpty();
     }
 
+    public String nextUndoDescription(String sceneId) {
+        ensureScene(sceneId);
+        return undoStack.isEmpty() ? "" : undoStack.getLast().description();
+    }
+
+    public String nextRedoDescription(String sceneId) {
+        ensureScene(sceneId);
+        return redoStack.isEmpty() ? "" : redoStack.getLast().description();
+    }
+
     public void clear() {
         undoStack.clear();
         redoStack.clear();
@@ -125,7 +135,8 @@ public final class EditorSceneHistory {
             Set<String> affectedObjectIds,
             boolean layerOrderChanged,
             boolean environmentChanged,
-            boolean backgroundChanged
+            boolean backgroundChanged,
+            String description
     ) {
         private static Change between(Snapshot before, Snapshot after) {
             Map<String, CanvasObject> beforeById = before.canvasById();
@@ -174,9 +185,140 @@ public final class EditorSceneHistory {
                     before.environment().backgroundAssetId(),
                     after.environment().backgroundAssetId());
             if (affected.isEmpty() && !environmentChanged) return null;
+            String description = describe(before, after, fieldsById, structural,
+                    persistentChanged, layerChanged);
             return new Change(before, after, Map.copyOf(fieldsById), Set.copyOf(structural),
                     Set.copyOf(persistentChanged), Set.copyOf(affected),
-                    layerChanged, environmentChanged, backgroundChanged);
+                    layerChanged, environmentChanged, backgroundChanged, description);
+        }
+
+        private static String describe(
+                Snapshot before,
+                Snapshot after,
+                Map<String, Fields> fieldsById,
+                Set<String> structural,
+                Set<String> persistentChanged,
+                boolean layerChanged
+        ) {
+            if (!structural.isEmpty()) {
+                long added = structural.stream().filter(id -> !before.canvasById().containsKey(id)).count();
+                long removed = structural.size() - added;
+                if (added > 0 && removed == 0) {
+                    boolean duplicate = structural.stream().anyMatch(id -> id.contains("_copy"));
+                    return duplicate ? "Duplicate token" : "Create token";
+                }
+                if (removed > 0 && added == 0) return "Delete token";
+                return "Change tokens";
+            }
+
+            Environment oldEnvironment = before.environment();
+            Environment newEnvironment = after.environment();
+            String wall = describeCollectionChange(oldEnvironment.walls(), newEnvironment.walls(),
+                    Wall::id, "wall");
+            if (wall != null) return wall;
+            String door = describeDoorChange(oldEnvironment.doors(), newEnvironment.doors());
+            if (door != null) return door;
+            String fog = describeFogChange(oldEnvironment, newEnvironment);
+            if (fog != null) return fog;
+            if (!java.util.Objects.equals(oldEnvironment.backgroundAssetId(),
+                    newEnvironment.backgroundAssetId())) return "Change background";
+            if (!oldEnvironment.grid().equals(newEnvironment.grid())) return "Change grid";
+
+            if (layerChanged) return "Change token layer";
+            for (Map.Entry<String, Fields> entry : fieldsById.entrySet()) {
+                CanvasObject oldObject = before.canvasById().get(entry.getKey());
+                CanvasObject newObject = after.canvasById().get(entry.getKey());
+                Fields fields = entry.getValue();
+                if (fields.displayName()) return "Rename token";
+                if (fields.activeState()) return "Change token state";
+                if (fields.visible()) return "Toggle token visibility";
+                if (fields.flipped()) return "Flip token";
+                if (fields.transform() && oldObject != null && newObject != null) {
+                    if (!oldObject.transform().position().equals(
+                            newObject.transform().position())) return "Move token";
+                    if (!oldObject.transform().scale().equals(
+                            newObject.transform().scale())) return "Resize token";
+                    if (Double.compare(oldObject.transform().rotationDegrees(),
+                            newObject.transform().rotationDegrees()) != 0) return "Rotate token";
+                    return "Transform token";
+                }
+            }
+
+            for (String id : persistentChanged) {
+                PersistentObject oldObject = before.persistentById().get(id);
+                PersistentObject newObject = after.persistentById().get(id);
+                if (oldObject == null || newObject == null) continue;
+                if (!java.util.Objects.equals(oldObject.collisionBox(),
+                        newObject.collisionBox())) return "Edit collision box";
+                if (!java.util.Objects.equals(oldObject.ownerId(),
+                        newObject.ownerId())) return "Change token owner";
+                if (oldObject.visionSource() != newObject.visionSource()) {
+                    return "Change vision source";
+                }
+                if (Double.compare(oldObject.visionOuterRadius(),
+                        newObject.visionOuterRadius()) != 0
+                        || Double.compare(oldObject.visionInnerRadius(),
+                        newObject.visionInnerRadius()) != 0
+                        || oldObject.visionEnabled() != newObject.visionEnabled()) {
+                    return "Change token vision";
+                }
+            }
+            return "Edit scene";
+        }
+
+        private static <T> String describeCollectionChange(
+                List<T> before,
+                List<T> after,
+                java.util.function.Function<T, String> id,
+                String name
+        ) {
+            Set<String> oldIds = before.stream().map(id).collect(
+                    java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            Set<String> newIds = after.stream().map(id).collect(
+                    java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            if (!oldIds.equals(newIds)) {
+                if (newIds.containsAll(oldIds)) return "Create " + name;
+                if (oldIds.containsAll(newIds)) return "Delete " + name;
+                return "Change " + name;
+            }
+            return before.equals(after) ? null : "Edit " + name;
+        }
+
+        private static String describeDoorChange(List<Door> before, List<Door> after) {
+            String structural = describeCollectionChange(before, after, Door::id, "door");
+            if (structural == null || !structural.equals("Edit door")) return structural;
+            Map<String, Door> oldById = new LinkedHashMap<>();
+            before.forEach(door -> oldById.put(door.id(), door));
+            for (Door door : after) {
+                Door oldDoor = oldById.get(door.id());
+                if (oldDoor == null) continue;
+                if (oldDoor.open() != door.open()) return door.open() ? "Open door" : "Close door";
+                if (oldDoor.locked() != door.locked()) return door.locked() ? "Lock door" : "Unlock door";
+            }
+            return "Edit door";
+        }
+
+        private static String describeFogChange(Environment before, Environment after) {
+            List<FogArea> oldAreas = new ArrayList<>(before.revealedFog());
+            oldAreas.addAll(before.hiddenFog());
+            List<FogArea> newAreas = new ArrayList<>(after.revealedFog());
+            newAreas.addAll(after.hiddenFog());
+            String areas = describeCollectionChange(oldAreas, newAreas, FogArea::id, "fog area");
+            if (areas != null && !areas.equals("Edit fog area")) return areas;
+            if (areas != null) {
+                Map<String, FogArea> oldById = new LinkedHashMap<>();
+                oldAreas.forEach(area -> oldById.put(area.id(), area));
+                for (FogArea area : newAreas) {
+                    FogArea oldArea = oldById.get(area.id());
+                    if (oldArea != null && oldArea.visible() != area.visible()) {
+                        return "Toggle fog area";
+                    }
+                }
+                return areas;
+            }
+            if (before.fogEnabled() != after.fogEnabled()) return "Toggle fog";
+            if (before.fogDefaultHidden() != after.fogDefaultHidden()) return "Change fog";
+            return null;
         }
 
         private void apply(Snapshot target, CanvasScene canvasScene, VttScene tabletopScene) {
