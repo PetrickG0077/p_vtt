@@ -483,6 +483,20 @@ public final class VTTSession {
         return true;
     }
 
+    public boolean setActiveSceneTokenOwner(String objectId, String ownerId) {
+        if (activeScene == null || !isLocalMaster()
+                || objectId == null || objectId.isBlank()) return false;
+        String normalizedOwner = ownerId == null || ownerId.isBlank() ? null : ownerId.trim();
+        VttSceneObject object = activeScene.getObjects().stream()
+                .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (object == null || java.util.Objects.equals(
+                object.getOwnerId(), normalizedOwner)) return false;
+        object.setOwnerId(normalizedOwner);
+        if (!networkAuthorityActive) saveActiveTabletopAndScene();
+        return true;
+    }
+
     public boolean renameScene(String sceneId, String displayName) {
         if (!isLocalMaster() || sceneId == null || sceneId.isBlank() || displayName == null
                 || displayName.isBlank() || displayName.length() > 48

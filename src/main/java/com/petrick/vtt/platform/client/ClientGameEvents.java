@@ -12,6 +12,7 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import com.petrick.vtt.network.client.VttClientTokenTransformSync;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
+import com.petrick.vtt.network.client.VttClientTokenOwnershipSync;
 import com.petrick.vtt.network.client.VttClientSceneSnapshotReceiver;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.network.client.VttClientAssetCache;
@@ -32,6 +33,7 @@ public final class ClientGameEvents {
     public static void onClientTick(ClientTickEvent.Post event) {
         VTT.getApplication().initialize();
         VttClientTokenLifecycleSync.tick(VTT.getApplication().getActiveSession());
+        VttClientTokenOwnershipSync.tick(VTT.getApplication().getActiveSession());
         VttClientEnvironmentCommandSync.tick(VTT.getApplication().getActiveSession());
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
         VttClientSceneSnapshotReceiver.tick();
@@ -58,6 +60,7 @@ public final class ClientGameEvents {
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();
         VttClientTokenLifecycleSync.reset();
+        VttClientTokenOwnershipSync.reset();
         VttClientEnvironmentCommandSync.reset();
         session.restoreLocalSessionAfterDisconnect();
     }

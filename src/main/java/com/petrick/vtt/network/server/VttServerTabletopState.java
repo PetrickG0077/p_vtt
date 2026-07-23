@@ -379,6 +379,20 @@ public final class VttServerTabletopState {
         flushActiveSceneNow("token ownership change");
     }
 
+    public synchronized boolean setTokenOwner(String objectId, String ownerId) {
+        if (activeScene == null || objectId == null || objectId.isBlank()) return false;
+        VttSceneObject object = activeScene.getObjects().stream()
+                .filter(candidate -> candidate != null && objectId.equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (object == null || object.getSourceTokenDefinitionId() == null
+                || object.getSourceTokenDefinitionId().isBlank()
+                || Objects.equals(object.getOwnerId(), ownerId)) return false;
+        object.setOwnerId(ownerId);
+        markActiveSceneDirty();
+        flushActiveSceneNow("placed token ownership change");
+        return true;
+    }
+
     public synchronized int removeObjectsUsingTokenDefinition(String definitionId) {
         if (definitionId == null || definitionId.isBlank()) return 0;
         int removedCount = 0;

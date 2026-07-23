@@ -47,6 +47,10 @@ public final class EditorHudOverlay {
     }
 
     public Action actionAt(double mouseX, double mouseY, int screenWidth, int screenHeight, State state) {
+        if (state.playersOpen() && state.master()) {
+            Action playerAction = playerActionAt(mouseX, mouseY, screenHeight, state);
+            if (playerAction != Action.NONE) return playerAction;
+        }
         if (state.playersOpen() && selectPlayerAt(
                 mouseX, mouseY, screenHeight, state)) return Action.NONE;
         if (state.creationOpen() && state.master()) {
@@ -218,7 +222,11 @@ public final class EditorHudOverlay {
                             row.y() + row.height(),
                             selectedRow ? BUTTON_ACTIVE : BUTTON_HOVER);
                 }
-                String name = trim(player.displayName(), 22) + (local ? " (you)" : "");
+                boolean ownsSelectedToken = player.id().equals(state.selectedSceneTokenOwnerId());
+                String markers = (local ? " (you)" : "")
+                        + (ownsSelectedToken ? " [owner]" : "");
+                String name = trim(player.displayName(),
+                        Math.max(8, 22 - markers.length())) + markers;
                 context.graphics().drawString(font, name, row.x() + 3, y,
                         local ? ACTIVE_BORDER : TEXT, false);
                 String role = player.role().name();
@@ -236,14 +244,39 @@ public final class EditorHudOverlay {
             if (selected != null) {
                 String tokenLabel = selected.ownedTokenCount() == 1 ? " token" : " tokens";
                 context.graphics().hLine(bounds.x() + 6, bounds.x() + bounds.width() - 6,
-                        bounds.y() + bounds.height() - 24, 0xFF55555A);
+                        playerDetailsTop(bounds, state), 0xFF55555A);
                 context.graphics().drawString(font,
                         selected.role().name() + "  |  " + selected.ownedTokenCount() + tokenLabel,
-                        bounds.x() + 7, bounds.y() + bounds.height() - 16,
+                        bounds.x() + 7, playerDetailsTop(bounds, state) + 7,
                         selected.role() == com.petrick.vtt.core.session.VttRole.MASTER
                                 ? 0xFFFFCC55 : MUTED, false);
+                if (state.master()) {
+                    String token = state.selectedSceneTokenName().isBlank()
+                            ? "Token: none selected"
+                            : "Token: " + trim(state.selectedSceneTokenName(), 25);
+                    context.graphics().drawString(font, token, bounds.x() + 7,
+                            playerDetailsTop(bounds, state) + 19,
+                            state.selectedSceneTokenName().isBlank() ? MUTED : TEXT, false);
+                    renderPlayerActionRow(context, font, assignOwnerRow(bounds, state),
+                            "Assign to " + trim(selected.displayName(), 18),
+                            canAssignOwner(state, selected));
+                    renderPlayerActionRow(context, font, clearOwnerRow(bounds, state),
+                            "Clear token owner", canClearOwner(state));
+                }
             }
         }
+    }
+
+    private void renderPlayerActionRow(
+            VRenderContext context, Font font, Bounds row, String label, boolean enabled
+    ) {
+        boolean hovered = enabled && row.contains(context.mouseX(), context.mouseY());
+        context.graphics().fill(row.x(), row.y(), row.x() + row.width(), row.y() + row.height(),
+                hovered ? BUTTON_HOVER : BUTTON_BACKGROUND);
+        border(context, row.x(), row.y(), row.width(), row.height(),
+                enabled ? PANEL_BORDER : DISABLED_BORDER);
+        context.graphics().drawString(font, label, row.x() + 5, row.y() + 4,
+                enabled ? TEXT : MUTED, false);
     }
 
     private VttPlayerOption resolveSelectedPlayer(State state) {
@@ -274,9 +307,56 @@ public final class EditorHudOverlay {
         return false;
     }
 
+    private Action playerActionAt(
+            double mouseX, double mouseY, int screenHeight, State state
+    ) {
+        VttPlayerOption selected = state.players().stream()
+                .filter(player -> player.id().equals(selectedPlayerId))
+                .findFirst().orElse(null);
+        if (selected == null) return Action.NONE;
+        Bounds bounds = playersBounds(screenHeight, state);
+        if (assignOwnerRow(bounds, state).contains(mouseX, mouseY)
+                && canAssignOwner(state, selected)) {
+            return Action.ASSIGN_SELECTED_TOKEN_OWNER;
+        }
+        if (clearOwnerRow(bounds, state).contains(mouseX, mouseY)
+                && canClearOwner(state)) {
+            return Action.CLEAR_SELECTED_TOKEN_OWNER;
+        }
+        return Action.NONE;
+    }
+
+    private boolean canAssignOwner(State state, VttPlayerOption player) {
+        return !state.selectedSceneTokenId().isBlank()
+                && !player.id().equals(state.selectedSceneTokenOwnerId());
+    }
+
+    private boolean canClearOwner(State state) {
+        return !state.selectedSceneTokenId().isBlank()
+                && !state.selectedSceneTokenOwnerId().isBlank();
+    }
+
+    public String getSelectedPlayerId() {
+        return selectedPlayerId;
+    }
+
     private Bounds playerRow(Bounds bounds, int index) {
         return new Bounds(bounds.x() + 4, bounds.y() + 20 + index * 12,
                 bounds.width() - 8, 12);
+    }
+
+    private int playerDetailsTop(Bounds bounds, State state) {
+        return bounds.y() + bounds.height() - (state.master() ? 72 : 25);
+    }
+
+    private Bounds assignOwnerRow(Bounds bounds, State state) {
+        return new Bounds(bounds.x() + 6, playerDetailsTop(bounds, state) + 31,
+                bounds.width() - 12, 16);
+    }
+
+    private Bounds clearOwnerRow(Bounds bounds, State state) {
+        return new Bounds(bounds.x() + 6, playerDetailsTop(bounds, state) + 50,
+                bounds.width() - 12, 16);
     }
 
     private void renderCreation(VRenderContext context, Font font, State state) {
@@ -338,7 +418,7 @@ public final class EditorHudOverlay {
     private Bounds playersBounds(int screenHeight, State state) {
         int rows = Math.max(1, Math.min(MAX_VISIBLE_PLAYERS, state.players().size()));
         if (state.players().size() > MAX_VISIBLE_PLAYERS) rows++;
-        int footer = state.players().isEmpty() ? 5 : 30;
+        int footer = state.players().isEmpty() ? 5 : state.master() ? 78 : 32;
         return new Bounds(MARGIN, topPopupY(screenHeight),
                 240, 29 + rows * 12 + footer);
     }
@@ -460,6 +540,8 @@ public final class EditorHudOverlay {
         NONE,
         CLOSE,
         PLAYERS,
+        ASSIGN_SELECTED_TOKEN_OWNER,
+        CLEAR_SELECTED_TOKEN_OWNER,
         OUTLINER,
         SETTINGS,
         HAND,
@@ -498,6 +580,9 @@ public final class EditorHudOverlay {
             boolean outlinerOpen,
             List<VttPlayerOption> players,
             String localPlayerId,
+            String selectedSceneTokenId,
+            String selectedSceneTokenName,
+            String selectedSceneTokenOwnerId,
             String activeSceneName,
             boolean canDeleteActiveScene,
             String selectedTokenName,
@@ -509,6 +594,10 @@ public final class EditorHudOverlay {
             redoDescription = redoDescription == null ? "" : redoDescription;
             players = players == null ? List.of() : List.copyOf(players);
             localPlayerId = localPlayerId == null ? "" : localPlayerId;
+            selectedSceneTokenId = selectedSceneTokenId == null ? "" : selectedSceneTokenId;
+            selectedSceneTokenName = selectedSceneTokenName == null ? "" : selectedSceneTokenName;
+            selectedSceneTokenOwnerId =
+                    selectedSceneTokenOwnerId == null ? "" : selectedSceneTokenOwnerId;
             activeSceneName = activeSceneName == null ? "" : activeSceneName;
             selectedTokenName = selectedTokenName == null ? "" : selectedTokenName;
         }

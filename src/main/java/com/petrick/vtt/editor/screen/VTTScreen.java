@@ -387,6 +387,21 @@ public final class VTTScreen extends Screen {
 
     private EditorHudOverlay.State editorHudState() {
         TokenDefinition selectedToken = selectedTokenDefinition();
+        CanvasObject selectedSceneToken = selectionManager.getSelectedObjectIds().size() == 1
+                ? scene.findObjectById(selectionManager.getSelectedObjectIds().iterator().next())
+                : null;
+        if (selectedSceneToken != null && !selectedSceneToken.hasSourceTokenDefinition()) {
+            selectedSceneToken = null;
+        }
+        String selectedSceneTokenOwnerId = "";
+        if (selectedSceneToken != null && session.getActiveScene() != null) {
+            String selectedSceneTokenId = selectedSceneToken.id();
+            selectedSceneTokenOwnerId = session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null
+                            && selectedSceneTokenId.equals(object.getId()))
+                    .map(object -> object.getOwnerId() == null ? "" : object.getOwnerId())
+                    .findFirst().orElse("");
+        }
         boolean canDeleteToken = CreatedTokenStorage.isUserCreatedToken(selectedToken);
         String activeSceneName = session.getActiveScene() == null
                 ? "" : session.getActiveScene().getDisplayName();
@@ -402,7 +417,11 @@ public final class VTTScreen extends Screen {
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
-                session.getLocalPlayerId(), activeSceneName, canDeleteScene,
+                session.getLocalPlayerId(),
+                selectedSceneToken == null ? "" : selectedSceneToken.id(),
+                selectedSceneToken == null ? "" : selectedSceneToken.displayName(),
+                selectedSceneTokenOwnerId,
+                activeSceneName, canDeleteScene,
                 selectedToken == null ? "" : selectedToken.displayName(), canDeleteToken);
     }
 
@@ -463,6 +482,9 @@ public final class VTTScreen extends Screen {
                 hudSettingsOpen = false;
                 hudCreationOpen = false;
             }
+            case ASSIGN_SELECTED_TOKEN_OWNER ->
+                    setSelectedSceneTokenOwner(editorHudOverlay.getSelectedPlayerId());
+            case CLEAR_SELECTED_TOKEN_OWNER -> setSelectedSceneTokenOwner(null);
             case SETTINGS -> {
                 boolean closing = hudSettingsOpen;
                 if (closing) finishGridSettingsDrag();
@@ -580,6 +602,20 @@ public final class VTTScreen extends Screen {
             return;
         }
         deleteTokenDefinition(tokenDefinition);
+    }
+
+    private void setSelectedSceneTokenOwner(String ownerId) {
+        if (!session.isLocalMaster()
+                || selectionManager.getSelectedObjectIds().size() != 1) return;
+        String objectId = selectionManager.getSelectedObjectIds().iterator().next();
+        CanvasObject selected = scene.findObjectById(objectId);
+        if (selected == null || !selected.hasSourceTokenDefinition()) return;
+        inputController.beginEditorAction();
+        try {
+            session.setActiveSceneTokenOwner(objectId, ownerId);
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private void closeHudPopups() {
