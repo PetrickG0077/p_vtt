@@ -1,17 +1,20 @@
 package com.petrick.vtt.editor.hud;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** Responsive editor HUD shell rendered above the tabletop and legacy panels. */
 public final class EditorHudOverlay {
-    private static final int MARGIN = 8;
-    private static final int GAP = 3;
-    private static final int PADDING = 4;
+    private static final int MARGIN = 6;
+    private static final int GAP = 2;
+    private static final int PADDING = 3;
     private static final int PANEL_BACKGROUND = 0xD8101014;
     private static final int PANEL_BORDER = 0xFFE8E8E8;
     private static final int BUTTON_BACKGROUND = 0xE018181E;
@@ -25,6 +28,8 @@ public final class EditorHudOverlay {
     private static final int MUTED = 0xFF99999F;
     private static final int DANGER = 0xFFFF7777;
     private static final int MAX_VISIBLE_PLAYERS = 12;
+    private static final int ICON_TEXTURE_SIZE = 32;
+    private static final int ICON_RENDER_SIZE = 16;
 
     public void render(VRenderContext context, Font font, State state) {
         List<Button> buttons = buttons(context.screenWidth(), context.screenHeight(), state);
@@ -58,8 +63,10 @@ public final class EditorHudOverlay {
         for (Button button : buttons(screenWidth, screenHeight, state)) {
             if (button.contains(mouseX, mouseY)) return true;
         }
-        return state.playersOpen() && playersBounds(state).contains(mouseX, mouseY)
-                || state.settingsOpen() && settingsBounds(screenWidth).contains(mouseX, mouseY)
+        return state.playersOpen()
+                && playersBounds(screenHeight, state).contains(mouseX, mouseY)
+                || state.settingsOpen()
+                && settingsBounds(screenWidth, screenHeight).contains(mouseX, mouseY)
                 || state.creationOpen() && state.master()
                 && creationBounds(screenWidth, screenHeight).contains(mouseX, mouseY);
     }
@@ -70,51 +77,51 @@ public final class EditorHudOverlay {
 
         int topX = MARGIN + PADDING;
         int topY = MARGIN + PADDING;
-        result.add(button(Action.CLOSE, topX, topY, size, "X", "Close VTT", true, false));
+        result.add(button(Action.CLOSE, topX, topY, size, "", "Close VTT", true, false));
         topX += size + GAP;
-        result.add(button(Action.PLAYERS, topX, topY, size, "P", "Players", true,
+        result.add(button(Action.PLAYERS, topX, topY, size, "", "Players", true,
                 state.playersOpen()));
         if (state.master()) {
             topX += size + GAP;
-            result.add(button(Action.OUTLINER, topX, topY, size, "O", "Scene Outliner", true,
+            result.add(button(Action.OUTLINER, topX, topY, size, "", "Scene Outliner", true,
                     state.outlinerOpen()));
         }
 
         int settingsX = screenWidth / 2 - size / 2;
-        result.add(button(Action.SETTINGS, settingsX, topY, size, "*", "Settings", true,
+        result.add(button(Action.SETTINGS, settingsX, topY, size, "", "Settings", true,
                 state.settingsOpen()));
 
         List<Action> tools = new ArrayList<>(List.of(Action.HAND, Action.SELECT));
         if (state.master()) tools.addAll(List.of(
                 Action.FOG, Action.WALL, Action.DOOR, Action.MEASURE));
         int rightCount = tools.size() + 2;
-        int separator = 7;
+        int separator = 5;
         int rightHeight = PADDING * 2 + rightCount * size
                 + (rightCount - 1) * GAP + separator;
         int rightX = screenWidth - MARGIN - PADDING - size;
         int rightY = Math.max(MARGIN + PADDING, (screenHeight - rightHeight) / 2 + PADDING);
         for (Action tool : tools) {
             boolean enabled = tool != Action.MEASURE;
-            result.add(button(tool, rightX, rightY, size, toolLabel(tool), toolTooltip(tool),
+            result.add(button(tool, rightX, rightY, size, toolShortcut(tool), toolTooltip(tool),
                     enabled, toolId(tool).equals(state.activeToolId())));
             rightY += size + GAP;
         }
         rightY += separator;
-        result.add(button(Action.UNDO, rightX, rightY, size, "UN", "Undo", false, false));
+        result.add(button(Action.UNDO, rightX, rightY, size, "", "Undo", false, false));
         rightY += size + GAP;
-        result.add(button(Action.REDO, rightX, rightY, size, "RE", "Redo", false, false));
+        result.add(button(Action.REDO, rightX, rightY, size, "", "Redo", false, false));
 
         if (state.master()) {
             int bottomWidth = PADDING * 2 + size * 3 + GAP * 2;
             int bottomX = (screenWidth - bottomWidth) / 2 + PADDING;
             int bottomY = screenHeight - MARGIN - PADDING - size;
-            result.add(button(Action.SCENES, bottomX, bottomY, size, "SC", "Scenes", true,
+            result.add(button(Action.SCENES, bottomX, bottomY, size, "", "Scenes", true,
                     state.scenesOpen()));
             bottomX += size + GAP;
-            result.add(button(Action.TOKENS, bottomX, bottomY, size, "TK", "Tokens", true,
+            result.add(button(Action.TOKENS, bottomX, bottomY, size, "", "Tokens", true,
                     state.tokensOpen()));
             bottomX += size + GAP;
-            result.add(button(Action.CREATION, bottomX, bottomY, size, "+", "Create & Manage",
+            result.add(button(Action.CREATION, bottomX, bottomY, size, "", "Create & Manage",
                     true, state.creationOpen()));
         }
         return result;
@@ -132,7 +139,7 @@ public final class EditorHudOverlay {
 
         int toolCount = state.master() ? 6 : 2;
         int rightCount = toolCount + 2;
-        int rightHeight = PADDING * 2 + rightCount * size + (rightCount - 1) * GAP + 7;
+        int rightHeight = PADDING * 2 + rightCount * size + (rightCount - 1) * GAP + 5;
         renderPanel(context, screenWidth - MARGIN - PADDING * 2 - size,
                 Math.max(MARGIN, (screenHeight - rightHeight) / 2),
                 size + PADDING * 2, rightHeight);
@@ -160,14 +167,30 @@ public final class EditorHudOverlay {
         context.graphics().fill(button.x(), button.y(), button.x() + button.size(),
                 button.y() + button.size(), background);
         border(context, button.x(), button.y(), button.size(), button.size(), border);
-        int color = button.enabled() ? TEXT : MUTED;
-        context.graphics().drawCenteredString(font, button.label(),
-                button.x() + button.size() / 2,
-                button.y() + (button.size() - 8) / 2, color);
+        int iconSize = Math.min(ICON_RENDER_SIZE, button.size() - 4);
+        int iconX = button.x() + (button.size() - iconSize) / 2;
+        int iconY = button.y() + (button.size() - iconSize) / 2;
+        context.graphics().blit(
+                button.icon(), iconX, iconY, iconSize, iconSize,
+                0.0F, 0.0F, ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE,
+                ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE);
+        if (!button.enabled()) {
+            context.graphics().fill(button.x() + 1, button.y() + 1,
+                    button.x() + button.size(), button.y() + button.size(), 0x88000000);
+        }
+        if (!button.shortcutLabel().isBlank()) {
+            int shortcutX = button.x() + button.size()
+                    - font.width(button.shortcutLabel()) - 2;
+            int shortcutY = button.y() + button.size() - 9;
+            context.graphics().drawString(font, button.shortcutLabel(),
+                    shortcutX + 1, shortcutY + 1, 0xFF000000, false);
+            context.graphics().drawString(font, button.shortcutLabel(),
+                    shortcutX, shortcutY, button.enabled() ? TEXT : MUTED, false);
+        }
     }
 
     private void renderPlayers(VRenderContext context, Font font, State state) {
-        Bounds bounds = playersBounds(state);
+        Bounds bounds = playersBounds(context.screenHeight(), state);
         renderPanel(context, bounds.x(), bounds.y(), bounds.width(), bounds.height());
         context.graphics().drawString(font, "Players (" + state.players().size() + ")",
                 bounds.x() + 7, bounds.y() + 7, TEXT, false);
@@ -197,7 +220,7 @@ public final class EditorHudOverlay {
     }
 
     private void renderSettings(VRenderContext context, Font font, State state) {
-        Bounds bounds = settingsBounds(context.screenWidth());
+        Bounds bounds = settingsBounds(context.screenWidth(), context.screenHeight());
         renderPanel(context, bounds.x(), bounds.y(), bounds.width(), bounds.height());
         context.graphics().drawString(font, "VTT Settings", bounds.x() + 8, bounds.y() + 8,
                 TEXT, false);
@@ -264,22 +287,28 @@ public final class EditorHudOverlay {
                 bounds.width() - 14, 19);
     }
 
-    private Bounds playersBounds(State state) {
+    private Bounds playersBounds(int screenHeight, State state) {
         int rows = Math.max(1, Math.min(MAX_VISIBLE_PLAYERS, state.players().size()));
         if (state.players().size() > MAX_VISIBLE_PLAYERS) rows++;
         int footer = state.master() ? 20 : 5;
-        return new Bounds(MARGIN, MARGIN + 45, 210, 29 + rows * 12 + footer);
+        return new Bounds(MARGIN, topPopupY(screenHeight),
+                210, 29 + rows * 12 + footer);
     }
 
-    private Bounds settingsBounds(int screenWidth) {
-        return new Bounds(screenWidth / 2 - 120, MARGIN + 45, 240, 58);
+    private Bounds settingsBounds(int screenWidth, int screenHeight) {
+        return new Bounds(screenWidth / 2 - 120, topPopupY(screenHeight), 240, 58);
     }
 
     private Bounds creationBounds(int screenWidth, int screenHeight) {
         int width = 230;
-        int y = Math.max(MARGIN + 52, screenHeight - MARGIN - 32 - 126);
+        int bottomPanelY = screenHeight - MARGIN - PADDING * 2 - buttonSize(screenHeight);
+        int y = Math.max(topPopupY(screenHeight), bottomPanelY - GAP - 116);
         return new Bounds((screenWidth - width) / 2, y,
                 width, 116);
+    }
+
+    private int topPopupY(int screenHeight) {
+        return MARGIN + PADDING * 2 + buttonSize(screenHeight) + GAP;
     }
 
     private void renderTooltip(VRenderContext context, Font font, Button button) {
@@ -305,7 +334,7 @@ public final class EditorHudOverlay {
         };
     }
 
-    private String toolLabel(Action action) {
+    private String toolShortcut(Action action) {
         return switch (action) {
             case HAND -> "H";
             case SELECT -> "S";
@@ -341,14 +370,21 @@ public final class EditorHudOverlay {
     }
 
     private Button button(
-            Action action, int x, int y, int size, String label, String tooltip,
+            Action action, int x, int y, int size, String shortcutLabel, String tooltip,
             boolean enabled, boolean active
     ) {
-        return new Button(action, x, y, size, label, tooltip, enabled, active);
+        return new Button(action, icon(action), x, y, size, shortcutLabel, tooltip,
+                enabled, active);
     }
 
     private int buttonSize(int screenHeight) {
-        return screenHeight < 400 ? 24 : 28;
+        return screenHeight < 400 ? 22 : 26;
+    }
+
+    private ResourceLocation icon(Action action) {
+        String fileName = action.name().toLowerCase(Locale.ROOT) + ".png";
+        return ResourceLocation.fromNamespaceAndPath(
+                VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
     }
 
     private void border(VRenderContext context, int x, int y, int width, int height, int color) {
@@ -417,8 +453,8 @@ public final class EditorHudOverlay {
     }
 
     private record Button(
-            Action action, int x, int y, int size, String label, String tooltip,
-            boolean enabled, boolean active
+            Action action, ResourceLocation icon, int x, int y, int size,
+            String shortcutLabel, String tooltip, boolean enabled, boolean active
     ) {
         private boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX <= x + size && mouseY >= y && mouseY <= y + size;
