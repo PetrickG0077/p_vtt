@@ -7,6 +7,7 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
@@ -31,6 +32,9 @@ public final class VttClientEnvironmentCommandSync {
     private static long snapshotVersion = -1L;
     private static long authorityRevision = -1L;
     private static String lastFogConfigJson;
+    private static String lastGridConfigJson;
+    private static String observedGridConfigJson;
+    private static int stableGridConfigTicks;
     private static String activeSceneId;
 
     private VttClientEnvironmentCommandSync() {}
@@ -46,6 +50,7 @@ public final class VttClientEnvironmentCommandSync {
                 session.getActiveScene().getFogOfWar().getRevealedAreas(), VttFogArea::getId);
         Map<String, String> vision = visionById(session);
         String fogConfigJson = fogConfigJson(session);
+        String gridConfigJson = GSON.toJson(session.getActiveScene().getGrid());
 
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
@@ -60,6 +65,9 @@ public final class VttClientEnvironmentCommandSync {
             replace(lastRevealedFog, revealedFog);
             replace(lastVision, vision);
             lastFogConfigJson = fogConfigJson;
+            lastGridConfigJson = gridConfigJson;
+            observedGridConfigJson = gridConfigJson;
+            stableGridConfigTicks = 0;
             return;
         }
 
@@ -72,6 +80,18 @@ public final class VttClientEnvironmentCommandSync {
             send(VttEnvironmentCommandPayload.UPSERT, VttEnvironmentCommandPayload.FOG_CONFIG,
                     "fog", fogConfigJson);
             lastFogConfigJson = fogConfigJson;
+        }
+        if (!Objects.equals(gridConfigJson, observedGridConfigJson)) {
+            observedGridConfigJson = gridConfigJson;
+            stableGridConfigTicks = 0;
+        } else if (stableGridConfigTicks < 3) {
+            stableGridConfigTicks++;
+        }
+        if (stableGridConfigTicks >= 3
+                && !Objects.equals(gridConfigJson, lastGridConfigJson)) {
+            send(VttEnvironmentCommandPayload.UPSERT, VttEnvironmentCommandPayload.GRID_CONFIG,
+                    "grid", gridConfigJson);
+            lastGridConfigJson = gridConfigJson;
         }
     }
 
@@ -123,6 +143,13 @@ public final class VttClientEnvironmentCommandSync {
                     session.getActiveScene().getFogOfWar().setDefaultHidden(config.defaultHidden());
                     lastFogConfigJson = update.entityJson();
                 }
+                case VttEnvironmentCommandPayload.GRID_CONFIG -> {
+                    VttSceneGrid grid = GSON.fromJson(update.entityJson(), VttSceneGrid.class);
+                    session.getActiveScene().setGrid(grid);
+                    lastGridConfigJson = GSON.toJson(session.getActiveScene().getGrid());
+                    observedGridConfigJson = lastGridConfigJson;
+                    stableGridConfigTicks = 0;
+                }
                 case VttEnvironmentCommandPayload.VISION -> {
                     if (!delete) applyVision(session,
                             GSON.fromJson(update.entityJson(), VisionState.class));
@@ -145,6 +172,9 @@ public final class VttClientEnvironmentCommandSync {
         nextSequences.clear();
         latestRevisions.clear();
         lastFogConfigJson = null;
+        lastGridConfigJson = null;
+        observedGridConfigJson = null;
+        stableGridConfigTicks = 0;
         activeSceneId = null;
         authorityRevision = -1L;
     }

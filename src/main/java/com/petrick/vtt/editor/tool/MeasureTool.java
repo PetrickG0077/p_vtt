@@ -21,7 +21,7 @@ public final class MeasureTool implements Tool {
 
     private static final int LEFT_MOUSE_BUTTON = 0;
     private static final int RIGHT_MOUSE_BUTTON = 1;
-    private static final double GRID_SIZE = 64.0;
+    private static final double DEFAULT_GRID_SIZE = 64.0;
     private static final double SNAP_TOLERANCE_PIXELS = 8.0;
     private static final int LINE_COLOR = 0xFFFFD45A;
     private static final int ENDPOINT_COLOR = 0xFFFFFFFF;
@@ -136,13 +136,15 @@ public final class MeasureTool implements Tool {
         double tolerance = SNAP_TOLERANCE_PIXELS
                 / Math.max(0.0001, context.camera().getZoom());
         SnapCandidate best = SnapCandidate.none(point);
+        VttScene scene = sceneSupplier.get();
+        double gridSize = scene == null
+                ? DEFAULT_GRID_SIZE : scene.getGrid().getGridSize();
 
         Vec2d gridPoint = new Vec2d(
-                Math.round(point.x() / GRID_SIZE) * GRID_SIZE,
-                Math.round(point.y() / GRID_SIZE) * GRID_SIZE);
+                Math.round(point.x() / gridSize) * gridSize,
+                Math.round(point.y() / gridSize) * gridSize);
         best = chooseCloser(point, gridPoint, tolerance, best);
 
-        VttScene scene = sceneSupplier.get();
         if (scene != null) {
             for (VttWall wall : scene.getWalls()) {
                 if (wall != null && wall.isVisible()) {
@@ -238,8 +240,10 @@ public final class MeasureTool implements Tool {
             Vec2d screenEnd
     ) {
         double distance = start.distance(end);
-        String label = String.format(
-                Locale.ROOT, "%.1f u | %.2f grid", distance, distance / GRID_SIZE);
+        VttScene scene = sceneSupplier.get();
+        double gridSize = scene == null
+                ? DEFAULT_GRID_SIZE : scene.getGrid().getGridSize();
+        String label = String.format(Locale.ROOT, "%.2f m", distance / gridSize);
         Font font = Minecraft.getInstance().font;
         int centerX = (int) Math.round((screenStart.x() + screenEnd.x()) / 2.0);
         int centerY = (int) Math.round((screenStart.y() + screenEnd.y()) / 2.0) - 15;

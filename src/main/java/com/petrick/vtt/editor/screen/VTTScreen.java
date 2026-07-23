@@ -15,6 +15,7 @@ import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.hud.EditorHudOverlay;
+import com.petrick.vtt.editor.hud.EditorSettingsOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
@@ -88,6 +89,8 @@ public final class VTTScreen extends Screen {
     private final InputController inputController;
 
     private final EditorHudOverlay editorHudOverlay;
+
+    private final EditorSettingsOverlay editorSettingsOverlay;
 
     private final EditorPanelVisibility panelVisibility;
 
@@ -184,6 +187,7 @@ public final class VTTScreen extends Screen {
                 session::getActiveScene, session::saveCanvasSceneToActiveScene,
                 session::getLocalRole, session::getLocalPlayerId);
         this.editorHudOverlay = new EditorHudOverlay();
+        this.editorSettingsOverlay = new EditorSettingsOverlay();
 
         this.panelVisibility = new EditorPanelVisibility();
 
@@ -372,6 +376,10 @@ public final class VTTScreen extends Screen {
             }
         }
         editorHudOverlay.render(context, this.font, editorHudState());
+        if (hudSettingsOpen && session.getActiveScene() != null) {
+            editorSettingsOverlay.render(
+                    context, this.font, session.getActiveScene().getGrid(), master);
+        }
     }
 
     private EditorHudOverlay.State editorHudState() {
@@ -413,6 +421,25 @@ public final class VTTScreen extends Screen {
         return true;
     }
 
+    private boolean handleEditorSettingsMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (!hudSettingsOpen || session.getActiveScene() == null) return false;
+        EditorSettingsOverlay.Interaction interaction = editorSettingsOverlay.mouseClicked(
+                mouseX, mouseY, button, width, height,
+                session.getActiveScene().getGrid(), session.isLocalMaster());
+        if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
+            persistGridSettings();
+        }
+        return interaction != EditorSettingsOverlay.Interaction.NONE;
+    }
+
+    private void persistGridSettings() {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        session.getActiveScene().getGrid().normalize();
+        session.saveActiveTabletopAndScene();
+    }
+
     private void handleEditorHudAction(EditorHudOverlay.Action action) {
         boolean master = session.isLocalMaster();
         tokenCatalogContextMenu.close();
@@ -426,9 +453,11 @@ public final class VTTScreen extends Screen {
                 hudCreationOpen = false;
             }
             case SETTINGS -> {
+                boolean closing = hudSettingsOpen;
                 hudSettingsOpen = !hudSettingsOpen;
                 hudPlayersOpen = false;
                 hudCreationOpen = false;
+                if (closing) persistGridSettings();
             }
             case OUTLINER -> {
                 if (master) panelVisibility.toggleSceneOutliner();
@@ -544,6 +573,7 @@ public final class VTTScreen extends Screen {
         hudPlayersOpen = false;
         hudSettingsOpen = false;
         hudCreationOpen = false;
+        editorSettingsOverlay.cancelDrag();
     }
 
     private void renderAssetCatalog(VRenderContext context) {
@@ -612,6 +642,11 @@ public final class VTTScreen extends Screen {
             CursorManager.reset();
             return;
         }
+        if (hudSettingsOpen && editorSettingsOverlay.contains(
+                mouseX, mouseY, this.width, this.height)) {
+            CursorManager.reset();
+            return;
+        }
 
         CursorManager.apply(inputController.getCursor(mouseX, mouseY, renderState));
     }
@@ -646,6 +681,7 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (playerViewPreview) {
+            if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
             if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
             return renderState == null || inputController.mouseClicked(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
@@ -660,6 +696,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
         if (!session.getLocalRole().canEditTabletop()) {
@@ -1167,6 +1204,13 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (hudSettingsOpen && session.getActiveScene() != null
+                && editorSettingsOverlay.mouseReleased(
+                mouseX, button, this.width, this.height,
+                session.getActiveScene().getGrid(), session.isLocalMaster())) {
+            persistGridSettings();
+            return true;
+        }
         if (playerViewPreview) {
             return renderState == null || inputController.mouseReleased(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
@@ -1219,6 +1263,12 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (hudSettingsOpen && session.getActiveScene() != null
+                && editorSettingsOverlay.mouseDragged(
+                mouseX, this.width, this.height,
+                session.getActiveScene().getGrid(), session.isLocalMaster())) {
+            return true;
+        }
         if (playerViewPreview) {
             return renderState == null || inputController.mouseDragged(
                     mouseX, mouseY, button, dragX, dragY, getKeyboardModifiers(), renderState);
@@ -1265,6 +1315,8 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (hudSettingsOpen && editorSettingsOverlay.contains(
+                mouseX, mouseY, this.width, this.height)) return true;
         if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
                 editorHudState())) return true;
         if (playerViewPreview) {

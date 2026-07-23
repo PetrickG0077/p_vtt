@@ -17,6 +17,7 @@ import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.SceneMovementCollision;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.SceneObjectSpatialIndex;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometrySpatialIndex;
@@ -688,6 +689,8 @@ public final class VttServerTabletopState {
                         : upsertFogArea(command.entityId(), command.entityJson(), true);
                 case VttEnvironmentCommandPayload.FOG_CONFIG -> !delete
                         && applyFogConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.GRID_CONFIG -> !delete
+                        && applyGridConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.VISION -> delete
                         || applyVisionState(command.entityId(), command.entityJson());
                 default -> false;
@@ -821,6 +824,14 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean applyGridConfig(String json) {
+        VttSceneGrid grid = GSON.fromJson(json, VttSceneGrid.class);
+        if (grid == null) return false;
+        grid.normalize();
+        activeScene.setGrid(grid);
+        return true;
+    }
+
     private boolean applyVisionState(String id, String json) {
         VisionState vision = GSON.fromJson(json, VisionState.class);
         if (vision == null || !id.equals(vision.objectId()) || !Double.isFinite(vision.innerRadius())
@@ -853,6 +864,8 @@ public final class VttServerTabletopState {
                             .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
             case VttEnvironmentCommandPayload.FOG_CONFIG -> GSON.toJson(new FogConfig(
                     activeScene.getFogOfWar().isEnabled(), activeScene.getFogOfWar().isDefaultHidden()));
+            case VttEnvironmentCommandPayload.GRID_CONFIG ->
+                    GSON.toJson(activeScene.getGrid());
             case VttEnvironmentCommandPayload.VISION -> {
                 VttSceneObject object = activeScene.getObjects().stream()
                         .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow();

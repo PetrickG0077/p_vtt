@@ -40,7 +40,6 @@ public final class EditorHudOverlay {
             if (button.contains(context.mouseX(), context.mouseY())) hovered = button;
         }
         if (state.playersOpen()) renderPlayers(context, font, state);
-        if (state.settingsOpen()) renderSettings(context, font, state);
         if (state.creationOpen() && state.master()) renderCreation(context, font, state);
         if (hovered != null) renderTooltip(context, font, hovered);
     }
@@ -65,8 +64,6 @@ public final class EditorHudOverlay {
         }
         return state.playersOpen()
                 && playersBounds(screenHeight, state).contains(mouseX, mouseY)
-                || state.settingsOpen()
-                && settingsBounds(screenWidth, screenHeight).contains(mouseX, mouseY)
                 || state.creationOpen() && state.master()
                 && creationBounds(screenWidth, screenHeight).contains(mouseX, mouseY);
     }
@@ -218,18 +215,6 @@ public final class EditorHudOverlay {
         }
     }
 
-    private void renderSettings(VRenderContext context, Font font, State state) {
-        Bounds bounds = settingsBounds(context.screenWidth(), context.screenHeight());
-        renderPanel(context, bounds.x(), bounds.y(), bounds.width(), bounds.height());
-        context.graphics().drawString(font, "VTT Settings", bounds.x() + 8, bounds.y() + 8,
-                TEXT, false);
-        context.graphics().drawString(font, "Settings panel coming in a future step",
-                bounds.x() + 8, bounds.y() + 25, MUTED, false);
-        context.graphics().drawString(font, "Current role: " + (state.master() ? "MASTER" : "PLAYER"),
-                bounds.x() + 8, bounds.y() + 39,
-                state.master() ? OPEN_BORDER : ACTIVE_BORDER, false);
-    }
-
     private void renderCreation(VRenderContext context, Font font, State state) {
         Bounds bounds = creationBounds(context.screenWidth(), context.screenHeight());
         renderPanel(context, bounds.x(), bounds.y(), bounds.width(), bounds.height());
@@ -292,10 +277,6 @@ public final class EditorHudOverlay {
         int footer = state.master() ? 20 : 5;
         return new Bounds(MARGIN, topPopupY(screenHeight),
                 210, 29 + rows * 12 + footer);
-    }
-
-    private Bounds settingsBounds(int screenWidth, int screenHeight) {
-        return new Bounds(screenWidth / 2 - 120, topPopupY(screenHeight), 240, 58);
     }
 
     private Bounds creationBounds(int screenWidth, int screenHeight) {

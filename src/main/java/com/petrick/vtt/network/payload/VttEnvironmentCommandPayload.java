@@ -18,6 +18,7 @@ public record VttEnvironmentCommandPayload(
     public static final String FOG_HIDDEN = "FOG_HIDDEN";
     public static final String FOG_REVEALED = "FOG_REVEALED";
     public static final String FOG_CONFIG = "FOG_CONFIG";
+    public static final String GRID_CONFIG = "GRID_CONFIG";
     public static final String VISION = "VISION";
     public static final int MAX_JSON_LENGTH = 65_536;
 

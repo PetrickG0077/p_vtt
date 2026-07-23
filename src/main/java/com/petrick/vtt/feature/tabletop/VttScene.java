@@ -49,6 +49,9 @@ public final class VttScene {
     /** Null is tolerated when loading scene JSON written before fog existed. */
     private VttFogOfWar fogOfWar;
 
+    /** Null is tolerated when loading scene JSON written before grid settings existed. */
+    private VttSceneGrid grid;
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -207,6 +210,17 @@ public final class VttScene {
 
     public void setFogOfWar(VttFogOfWar fogOfWar) {
         this.fogOfWar = fogOfWar == null ? new VttFogOfWar() : fogOfWar;
+    }
+
+    public VttSceneGrid getGrid() {
+        if (grid == null) grid = new VttSceneGrid();
+        grid.normalize();
+        return grid;
+    }
+
+    public void setGrid(VttSceneGrid grid) {
+        this.grid = grid == null ? new VttSceneGrid() : grid;
+        this.grid.normalize();
     }
 
     private String normalizeId(String value) {

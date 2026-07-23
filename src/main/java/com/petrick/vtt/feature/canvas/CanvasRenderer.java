@@ -87,12 +87,14 @@ public final class CanvasRenderer {
             boolean maskWhenAuthoritativeVisionEmpty,
             Collection<String> authoritativeVisibleObjectIds
     ) {
-        gridRenderer.render(context);
+        var grid = tabletopScene == null ? null : tabletopScene.getGrid();
+        if (grid != null && !grid.isTopLayer()) gridRenderer.render(context, grid);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, scene, selectionManager, editorSelectionVisible,
                 resizeHandlesVisible, masterView, authoritativeVisibleObjectIds);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
+        if (grid != null && grid.isTopLayer()) gridRenderer.render(context, grid);
         if (masterView && visionDebugVisible) {
             sceneVisionDebugRenderer.render(context, tabletopScene, scene, selectionManager);
         }
