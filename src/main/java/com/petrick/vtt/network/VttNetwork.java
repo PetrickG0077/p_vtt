@@ -2,6 +2,7 @@ package com.petrick.vtt.network;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
+import com.petrick.vtt.network.payload.VttPlayerRosterPayload;
 import com.petrick.vtt.network.payload.VttEditorNoticePayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
@@ -38,7 +39,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "26";
+    private static final String PROTOCOL_VERSION = "27";
 
     private VttNetwork() {
     }
@@ -51,6 +52,11 @@ public final class VttNetwork {
                 VttIdentityPayload.TYPE,
                 VttIdentityPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleIdentity
+        );
+        registrar.playToClient(
+                VttPlayerRosterPayload.TYPE,
+                VttPlayerRosterPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handlePlayerRoster
         );
         registrar.playToClient(VttEditorNoticePayload.TYPE,
                 VttEditorNoticePayload.STREAM_CODEC,

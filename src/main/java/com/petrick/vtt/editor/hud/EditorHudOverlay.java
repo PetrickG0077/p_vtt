@@ -31,6 +31,8 @@ public final class EditorHudOverlay {
     private static final int ICON_TEXTURE_SIZE = 32;
     private static final int ICON_RENDER_SIZE = 16;
 
+    private String selectedPlayerId;
+
     public void render(VRenderContext context, Font font, State state) {
         List<Button> buttons = buttons(context.screenWidth(), context.screenHeight(), state);
         renderGroups(context, state);
@@ -45,6 +47,8 @@ public final class EditorHudOverlay {
     }
 
     public Action actionAt(double mouseX, double mouseY, int screenWidth, int screenHeight, State state) {
+        if (state.playersOpen() && selectPlayerAt(
+                mouseX, mouseY, screenHeight, state)) return Action.NONE;
         if (state.creationOpen() && state.master()) {
             Action creationAction = creationActionAt(
                     mouseX, mouseY, screenWidth, screenHeight, state);
@@ -196,15 +200,32 @@ public final class EditorHudOverlay {
                 bounds.x() + 7, bounds.y() + 7, TEXT, false);
         int y = bounds.y() + 23;
         if (state.players().isEmpty()) {
+            selectedPlayerId = null;
             context.graphics().drawString(font, "No connected players",
                     bounds.x() + 7, y, MUTED, false);
         } else {
-            for (VttPlayerOption player : state.players().stream()
-                    .limit(MAX_VISIBLE_PLAYERS).toList()) {
+            VttPlayerOption selected = resolveSelectedPlayer(state);
+            List<VttPlayerOption> visiblePlayers = state.players().stream()
+                    .limit(MAX_VISIBLE_PLAYERS).toList();
+            for (int index = 0; index < visiblePlayers.size(); index++) {
+                VttPlayerOption player = visiblePlayers.get(index);
                 boolean local = player.id().equals(state.localPlayerId());
+                Bounds row = playerRow(bounds, index);
+                boolean selectedRow = selected != null && player.id().equals(selected.id());
+                boolean hovered = row.contains(context.mouseX(), context.mouseY());
+                if (selectedRow || hovered) {
+                    context.graphics().fill(row.x(), row.y(), row.x() + row.width(),
+                            row.y() + row.height(),
+                            selectedRow ? BUTTON_ACTIVE : BUTTON_HOVER);
+                }
                 String name = trim(player.displayName(), 22) + (local ? " (you)" : "");
-                context.graphics().drawString(font, name, bounds.x() + 7, y,
+                context.graphics().drawString(font, name, row.x() + 3, y,
                         local ? ACTIVE_BORDER : TEXT, false);
+                String role = player.role().name();
+                context.graphics().drawString(font, role,
+                        row.x() + row.width() - font.width(role) - 3, y,
+                        player.role() == com.petrick.vtt.core.session.VttRole.MASTER
+                                ? 0xFFFFCC55 : MUTED, false);
                 y += 12;
             }
             if (state.players().size() > MAX_VISIBLE_PLAYERS) {
@@ -212,11 +233,50 @@ public final class EditorHudOverlay {
                         "+" + (state.players().size() - MAX_VISIBLE_PLAYERS) + " more",
                         bounds.x() + 7, y, MUTED, false);
             }
+            if (selected != null) {
+                String tokenLabel = selected.ownedTokenCount() == 1 ? " token" : " tokens";
+                context.graphics().hLine(bounds.x() + 6, bounds.x() + bounds.width() - 6,
+                        bounds.y() + bounds.height() - 24, 0xFF55555A);
+                context.graphics().drawString(font,
+                        selected.role().name() + "  |  " + selected.ownedTokenCount() + tokenLabel,
+                        bounds.x() + 7, bounds.y() + bounds.height() - 16,
+                        selected.role() == com.petrick.vtt.core.session.VttRole.MASTER
+                                ? 0xFFFFCC55 : MUTED, false);
+            }
         }
-        if (state.master()) {
-            context.graphics().drawString(font, "Player properties: coming later",
-                    bounds.x() + 7, bounds.y() + bounds.height() - 14, MUTED, false);
+    }
+
+    private VttPlayerOption resolveSelectedPlayer(State state) {
+        VttPlayerOption selected = state.players().stream()
+                .filter(player -> player.id().equals(selectedPlayerId))
+                .findFirst().orElse(null);
+        if (selected == null) {
+            selected = state.players().stream()
+                    .filter(player -> player.id().equals(state.localPlayerId()))
+                    .findFirst().orElse(state.players().getFirst());
+            selectedPlayerId = selected.id();
         }
+        return selected;
+    }
+
+    private boolean selectPlayerAt(
+            double mouseX, double mouseY, int screenHeight, State state
+    ) {
+        Bounds bounds = playersBounds(screenHeight, state);
+        List<VttPlayerOption> visiblePlayers = state.players().stream()
+                .limit(MAX_VISIBLE_PLAYERS).toList();
+        for (int index = 0; index < visiblePlayers.size(); index++) {
+            if (playerRow(bounds, index).contains(mouseX, mouseY)) {
+                selectedPlayerId = visiblePlayers.get(index).id();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Bounds playerRow(Bounds bounds, int index) {
+        return new Bounds(bounds.x() + 4, bounds.y() + 20 + index * 12,
+                bounds.width() - 8, 12);
     }
 
     private void renderCreation(VRenderContext context, Font font, State state) {
@@ -278,9 +338,9 @@ public final class EditorHudOverlay {
     private Bounds playersBounds(int screenHeight, State state) {
         int rows = Math.max(1, Math.min(MAX_VISIBLE_PLAYERS, state.players().size()));
         if (state.players().size() > MAX_VISIBLE_PLAYERS) rows++;
-        int footer = state.master() ? 20 : 5;
+        int footer = state.players().isEmpty() ? 5 : 30;
         return new Bounds(MARGIN, topPopupY(screenHeight),
-                210, 29 + rows * 12 + footer);
+                240, 29 + rows * 12 + footer);
     }
 
     private Bounds creationBounds(int screenWidth, int screenHeight) {

@@ -5,10 +5,12 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.session.VttRole;
+import com.petrick.vtt.core.session.VttPlayerRosterEntry;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
+import com.petrick.vtt.network.payload.VttPlayerRosterPayload;
 import com.petrick.vtt.network.payload.VttEditorNoticePayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotStartPayload;
 import com.petrick.vtt.network.payload.VttSceneSnapshotChunkPayload;
@@ -38,6 +40,8 @@ public final class VttClientPayloadHandler {
 
     private static final Gson GSON = new GsonBuilder().create();
     private static final Type SCENE_OBJECT_LIST_TYPE = new TypeToken<List<VttSceneObject>>() {}.getType();
+    private static final Type PLAYER_ROSTER_LIST_TYPE =
+            new TypeToken<List<VttPlayerRosterEntry>>() {}.getType();
 
     private VttClientPayloadHandler() {
     }
@@ -53,6 +57,18 @@ public final class VttClientPayloadHandler {
         }
 
         VTT.LOGGER.info("Received VTT identity: player={}, role={}", payload.playerId(), session.getLocalRole());
+    }
+
+    public static void handlePlayerRoster(
+            VttPlayerRosterPayload payload, IPayloadContext context
+    ) {
+        try {
+            List<VttPlayerRosterEntry> roster = GSON.fromJson(
+                    payload.rosterJson(), PLAYER_ROSTER_LIST_TYPE);
+            VTT.getApplication().getActiveSession().applyNetworkPlayerRoster(roster);
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.warn("Ignored invalid VTT player roster", exception);
+        }
     }
 
     public static void handleEditorNotice(VttEditorNoticePayload payload, IPayloadContext context) {

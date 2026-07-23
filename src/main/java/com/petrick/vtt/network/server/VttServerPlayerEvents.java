@@ -1,8 +1,13 @@
 package com.petrick.vtt.network.server;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.petrick.vtt.VTT;
+import com.petrick.vtt.core.session.VttPlayerRosterEntry;
 import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
+import com.petrick.vtt.network.payload.VttPlayerRosterPayload;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -13,9 +18,11 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
 
 @EventBusSubscriber(modid = VTT.MOD_ID)
 public final class VttServerPlayerEvents {
+    private static final Gson GSON = new GsonBuilder().create();
     private static final Map<UUID, VttRole> LAST_ROLES = new HashMap<>();
 
     private VttServerPlayerEvents() {
@@ -32,6 +39,7 @@ public final class VttServerPlayerEvents {
         }
 
         sendRole(player);
+        broadcastRoster(player.getServer(), null);
         VttServerTabletopState state = VttServerTabletopState.get();
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
         VttServerAssetSyncService.sendActiveSceneAssets(
@@ -48,6 +56,7 @@ public final class VttServerPlayerEvents {
         VttServerTabletopState state = VttServerTabletopState.get();
         if (LAST_ROLES.get(player.getUUID()) != current) {
             sendRole(player);
+            broadcastRoster(player.getServer(), null);
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
             VttServerAssetSyncService.sendActiveSceneAssets(
                     player, state.replicatedSceneFor(player), current == VttRole.MASTER, () -> {
@@ -61,6 +70,9 @@ public final class VttServerPlayerEvents {
 
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            broadcastRoster(player.getServer(), player.getUUID());
+        }
         LAST_ROLES.remove(event.getEntity().getUUID());
         VttServerVisionSourceSync.forget(event.getEntity().getUUID());
         VttServerAssetSyncService.forget(event.getEntity().getUUID());
@@ -75,5 +87,23 @@ public final class VttServerPlayerEvents {
         PacketDistributor.sendToPlayer(player,
                 new VttIdentityPayload(player.getUUID().toString(), role.name()));
         return role;
+    }
+
+    private static void broadcastRoster(MinecraftServer server, UUID excludedPlayerId) {
+        if (server == null) return;
+        List<VttPlayerRosterEntry> roster = server.getPlayerList().getPlayers().stream()
+                .filter(player -> excludedPlayerId == null
+                        || !excludedPlayerId.equals(player.getUUID()))
+                .map(player -> new VttPlayerRosterEntry(
+                        player.getUUID().toString(),
+                        player.getGameProfile().getName(),
+                        isMaster(player) ? VttRole.MASTER : VttRole.PLAYER))
+                .toList();
+        VttPlayerRosterPayload payload = new VttPlayerRosterPayload(GSON.toJson(roster));
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (excludedPlayerId == null || !excludedPlayerId.equals(player.getUUID())) {
+                PacketDistributor.sendToPlayer(player, payload);
+            }
+        }
     }
 }

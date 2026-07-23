@@ -77,6 +77,7 @@ public final class VTTSession {
     private long networkVisionRevision = -1L;
     private long networkReplicationRevision = -1L;
     private List<AuthoritativeVisionRegion> networkVisionRegions = List.of();
+    private List<VttPlayerRosterEntry> networkPlayerRoster = List.of();
     private List<String> networkVisibleObjectIds = List.of();
     private boolean networkMaskWhenVisionEmpty = true;
     private boolean networkAuthorityActive;
@@ -168,6 +169,17 @@ public final class VTTSession {
 
     public boolean isNetworkAuthorityActive() {
         return networkAuthorityActive;
+    }
+
+    public List<VttPlayerRosterEntry> getNetworkPlayerRoster() {
+        return networkPlayerRoster;
+    }
+
+    public void applyNetworkPlayerRoster(List<VttPlayerRosterEntry> roster) {
+        networkPlayerRoster = roster == null ? List.of() : roster.stream()
+                .filter(entry -> entry != null && !entry.id().isBlank())
+                .distinct()
+                .toList();
     }
 
     public Path getSyncedServerTokensFolder() {
@@ -608,6 +620,7 @@ public final class VTTSession {
         networkVisionRevision = -1L;
         networkReplicationRevision = -1L;
         networkVisionRegions = List.of();
+        networkPlayerRoster = List.of();
         networkVisibleObjectIds = List.of();
         networkMaskWhenVisionEmpty = true;
         networkResyncPending = false;

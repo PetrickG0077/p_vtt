@@ -57,7 +57,9 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -2170,11 +2172,32 @@ public final class VTTScreen extends Screen {
     }
 
     private List<VttPlayerOption> getConnectedPlayerOptions() {
+        Map<String, Integer> ownedTokens = new HashMap<>();
+        if (session.getActiveScene() != null) {
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && object.getOwnerId() != null)
+                    .forEach(object -> ownedTokens.merge(object.getOwnerId(), 1, Integer::sum));
+        }
+        if (session.isNetworkAuthorityActive()
+                && !session.getNetworkPlayerRoster().isEmpty()) {
+            return session.getNetworkPlayerRoster().stream()
+                    .map(entry -> new VttPlayerOption(
+                            entry.id(), entry.displayName(), entry.role(),
+                            ownedTokens.getOrDefault(entry.id(), 0)))
+                    .sorted(Comparator.comparing(
+                            VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
+                    .toList();
+        }
         var connection = Minecraft.getInstance().getConnection();
         if (connection == null) return List.of();
         return connection.getOnlinePlayers().stream()
-                .map(info -> new VttPlayerOption(
-                        info.getProfile().getId().toString(), info.getProfile().getName()))
+                .map(info -> {
+                    String id = info.getProfile().getId().toString();
+                    VttRole role = id.equals(session.getLocalPlayerId())
+                            ? session.getLocalRole() : VttRole.PLAYER;
+                    return new VttPlayerOption(id, info.getProfile().getName(), role,
+                            ownedTokens.getOrDefault(id, 0));
+                })
                 .sorted(Comparator.comparing(VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
