@@ -2,12 +2,16 @@ package com.petrick.vtt.editor.input;
 
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.tabletop.VttDoor;
+import com.petrick.vtt.feature.tabletop.VttFogArea;
+import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
+import com.petrick.vtt.feature.tabletop.VttWall;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -18,8 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Bounded undo/redo history for token transformations and lifecycle actions. */
-public final class EditorTokenHistory {
+/** Bounded undo/redo history for token and scene-environment editor actions. */
+public final class EditorSceneHistory {
     private static final int MAX_ENTRIES = 100;
 
     private final Deque<Change> undoStack = new ArrayDeque<>();
@@ -111,7 +115,8 @@ public final class EditorTokenHistory {
             Map<String, Fields> changedFields,
             Set<String> structuralObjectIds,
             Set<String> affectedObjectIds,
-            boolean layerOrderChanged
+            boolean layerOrderChanged,
+            boolean environmentChanged
     ) {
         private static Change between(Snapshot before, Snapshot after) {
             Map<String, CanvasObject> beforeById = before.canvasById();
@@ -147,9 +152,11 @@ public final class EditorTokenHistory {
                     }
                 }
             }
-            if (affected.isEmpty()) return null;
+            boolean environmentChanged =
+                    !before.environment().equals(after.environment());
+            if (affected.isEmpty() && !environmentChanged) return null;
             return new Change(before, after, Map.copyOf(fieldsById), Set.copyOf(structural),
-                    Set.copyOf(affected), layerChanged);
+                    Set.copyOf(affected), layerChanged, environmentChanged);
         }
 
         private void apply(Snapshot target, CanvasScene canvasScene, VttScene tabletopScene) {
@@ -193,6 +200,7 @@ public final class EditorTokenHistory {
             }
             restored.addAll(currentById.values());
             canvasScene.replaceAllObjects(restored);
+            if (environmentChanged) target.environment().restore(tabletopScene);
         }
 
         private void removePersistentObject(VttScene scene, String id) {
@@ -244,7 +252,8 @@ public final class EditorTokenHistory {
 
     private record Snapshot(
             List<CanvasObject> canvasObjects,
-            Map<String, PersistentObject> persistentById
+            Map<String, PersistentObject> persistentById,
+            Environment environment
     ) {
         private Snapshot {
             canvasObjects = List.copyOf(canvasObjects);
@@ -264,7 +273,8 @@ public final class EditorTokenHistory {
                     }
                 }
             }
-            return new Snapshot(canvasScene.getObjects(), persistent);
+            return new Snapshot(canvasScene.getObjects(), persistent,
+                    Environment.capture(tabletopScene));
         }
 
         private Map<String, CanvasObject> canvasById() {
@@ -275,6 +285,134 @@ public final class EditorTokenHistory {
 
         private List<String> canvasIds() {
             return canvasObjects.stream().map(CanvasObject::id).toList();
+        }
+    }
+
+    private record Environment(
+            List<Wall> walls,
+            List<Door> doors,
+            boolean fogEnabled,
+            boolean fogDefaultHidden,
+            List<FogArea> revealedFog,
+            List<FogArea> hiddenFog
+    ) {
+        private Environment {
+            walls = List.copyOf(walls);
+            doors = List.copyOf(doors);
+            revealedFog = List.copyOf(revealedFog);
+            hiddenFog = List.copyOf(hiddenFog);
+        }
+
+        private static Environment capture(VttScene scene) {
+            if (scene == null) {
+                return new Environment(List.of(), List.of(), false,
+                        false, List.of(), List.of());
+            }
+            VttFogOfWar fog = scene.getFogOfWar();
+            return new Environment(
+                    scene.getWalls().stream().filter(java.util.Objects::nonNull)
+                            .map(Wall::capture).toList(),
+                    scene.getDoors().stream().filter(java.util.Objects::nonNull)
+                            .map(Door::capture).toList(),
+                    fog.isEnabled(), fog.isDefaultHidden(),
+                    fog.getRevealedAreas().stream().filter(java.util.Objects::nonNull)
+                            .map(FogArea::capture).toList(),
+                    fog.getHiddenAreas().stream().filter(java.util.Objects::nonNull)
+                            .map(FogArea::capture).toList());
+        }
+
+        private void restore(VttScene scene) {
+            if (scene == null) return;
+            scene.getWalls().clear();
+            walls.stream().map(Wall::restore).forEach(scene::addWall);
+            scene.getDoors().clear();
+            doors.stream().map(Door::restore).forEach(scene::addDoor);
+
+            VttFogOfWar fog = scene.getFogOfWar();
+            fog.setEnabled(fogEnabled);
+            fog.setDefaultHidden(fogDefaultHidden);
+            fog.clearAreas();
+            revealedFog.stream().map(FogArea::restore).forEach(fog::addRevealedArea);
+            hiddenFog.stream().map(FogArea::restore).forEach(fog::addHiddenArea);
+        }
+    }
+
+    private record Wall(
+            String id, Transform transform, Size size,
+            boolean visible, boolean blocksVision, boolean blocksMovement
+    ) {
+        private static Wall capture(VttWall wall) {
+            return new Wall(wall.getId(), Transform.capture(wall.getTransform()),
+                    Size.capture(wall.getSize()), wall.isVisible(),
+                    wall.isBlocksVision(), wall.isBlocksMovement());
+        }
+
+        private VttWall restore() {
+            VttWall wall = new VttWall(id, transform.restore(), size.restore());
+            wall.setVisible(visible);
+            wall.setBlocksVision(blocksVision);
+            wall.setBlocksMovement(blocksMovement);
+            return wall;
+        }
+    }
+
+    private record Door(
+            String id, String wallId, Transform transform, Size size,
+            boolean open, boolean locked, boolean visible,
+            boolean blocksVisionWhenClosed, boolean blocksMovementWhenClosed
+    ) {
+        private static Door capture(VttDoor door) {
+            return new Door(door.getId(), door.getWallId(),
+                    Transform.capture(door.getTransform()), Size.capture(door.getSize()),
+                    door.isOpen(), door.isLocked(), door.isVisible(),
+                    door.isBlocksVisionWhenClosed(), door.isBlocksMovementWhenClosed());
+        }
+
+        private VttDoor restore() {
+            VttDoor door = new VttDoor(id, wallId, transform.restore(), size.restore());
+            door.setOpen(open);
+            door.setLocked(locked);
+            door.setVisible(visible);
+            door.setBlocksVisionWhenClosed(blocksVisionWhenClosed);
+            door.setBlocksMovementWhenClosed(blocksMovementWhenClosed);
+            return door;
+        }
+    }
+
+    private record FogArea(String id, Transform transform, Size size, boolean visible) {
+        private static FogArea capture(VttFogArea area) {
+            return new FogArea(area.getId(), Transform.capture(area.getTransform()),
+                    Size.capture(area.getSize()), area.isVisible());
+        }
+
+        private VttFogArea restore() {
+            VttFogArea area = new VttFogArea(id, transform.restore(), size.restore());
+            area.setVisible(visible);
+            return area;
+        }
+    }
+
+    private record Transform(
+            double x, double y, double scaleX, double scaleY, double rotationDegrees
+    ) {
+        private static Transform capture(VttSceneTransform transform) {
+            return new Transform(transform.getX(), transform.getY(),
+                    transform.getScaleX(), transform.getScaleY(),
+                    transform.getRotationDegrees());
+        }
+
+        private VttSceneTransform restore() {
+            return new VttSceneTransform(x, y, scaleX, scaleY, rotationDegrees);
+        }
+    }
+
+    private record Size(double width, double height) {
+        private static Size capture(VttSceneSize size) {
+            return new Size(size.getWidth(), size.getHeight());
+        }
+
+        private VttSceneSize restore() {
+            return new VttSceneSize(width, height);
         }
     }
 

@@ -392,8 +392,8 @@ public final class VTTScreen extends Screen {
                 && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
                 session.isLocalMaster(), inputController.getActiveToolId(),
-                inputController.canUndoTokenAction(),
-                inputController.canRedoTokenAction(),
+                inputController.canUndoEditorAction(),
+                inputController.canRedoEditorAction(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
@@ -501,8 +501,8 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
-            case UNDO -> inputController.undoTokenAction();
-            case REDO -> inputController.redoTokenAction();
+            case UNDO -> inputController.undoEditorAction();
+            case REDO -> inputController.redoEditorAction();
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
                 closeHudPopups();
@@ -1569,7 +1569,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             session.loadActiveSceneToCanvasScene();
             selectionManager.clearSelection();
-            inputController.clearTokenHistory();
+            inputController.clearEditorHistory();
             return true;
         }
 
@@ -1632,15 +1632,15 @@ public final class VTTScreen extends Screen {
         boolean controlDown = (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
         if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inputController.redoTokenAction();
+                inputController.redoEditorAction();
             } else {
-                inputController.undoTokenAction();
+                inputController.undoEditorAction();
             }
             return true;
         }
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
-            inputController.redoTokenAction();
+            inputController.redoEditorAction();
             return true;
         }
 
@@ -2355,7 +2355,7 @@ public final class VTTScreen extends Screen {
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
-        inputController.clearTokenHistory();
+        inputController.clearEditorHistory();
         inputController.selectHandTool();
         tokenCatalogContextMenu.close();
         sceneContextMenu.close();

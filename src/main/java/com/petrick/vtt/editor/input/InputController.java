@@ -9,6 +9,7 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.core.session.VttRole;
@@ -37,7 +38,7 @@ public final class InputController {
 
     private final Runnable saveTabletopAction;
 
-    private final EditorTokenHistory tokenHistory = new EditorTokenHistory();
+    private final EditorSceneHistory sceneHistory = new EditorSceneHistory();
 
     private boolean globalPanning;
 
@@ -74,8 +75,8 @@ public final class InputController {
             return true;
         }
 
-        if (button == 0 && "select".equals(toolController.getActiveToolId())) {
-            tokenHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
+        if (button == 0) {
+            sceneHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
         }
         ToolContext context = createToolContext(renderState);
         return toolController.mouseClicked(context, mouseX, mouseY, button, modifiers);
@@ -97,7 +98,7 @@ public final class InputController {
         ToolContext context = createToolContext(renderState);
         boolean handled = toolController.mouseReleased(
                 context, mouseX, mouseY, button, modifiers);
-        if (button == 0 && tokenHistory.end(
+        if (button == 0 && sceneHistory.end(
                 activeSceneId(), scene, tabletopSceneSupplier.get())) {
             saveTabletopAction.run();
         }
@@ -192,7 +193,7 @@ public final class InputController {
     }
 
     public void duplicateSelectedObjects() {
-        beginTokenChange();
+        beginSceneChange();
         Set<String> duplicatedIds = scene.duplicateObjects(
                 selectionManager.getSelectedObjectIds(),
                 new Vec2d(32.0, 32.0)
@@ -205,7 +206,7 @@ public final class InputController {
                 selectionManager.select(duplicatedId);
             }
         }
-        endTokenChange();
+        endSceneChange();
     }
 
     public void bringSelectedObjectsForward() {
@@ -276,37 +277,69 @@ public final class InputController {
 
     public boolean cancelMeasurement() { return toolController.cancelMeasurement(); }
 
-    public boolean toggleSelectedFogVisibility() { return toolController.toggleSelectedFogVisibility(); }
+    public boolean toggleSelectedFogVisibility() {
+        return performSceneChange(toolController::toggleSelectedFogVisibility);
+    }
 
-    public boolean toggleFogEnabled() { return toolController.toggleFogEnabled(); }
+    public boolean toggleFogEnabled() {
+        return performSceneChange(toolController::toggleFogEnabled);
+    }
 
-    public boolean deleteSelectedFogArea() { return toolController.deleteSelectedFogArea(); }
+    public boolean deleteSelectedFogArea() {
+        return performSceneChange(toolController::deleteSelectedFogArea);
+    }
 
-    public boolean scaleSelectedFogArea(double factor) { return toolController.scaleSelectedFogArea(factor); }
+    public boolean scaleSelectedFogArea(double factor) {
+        return performSceneChange(() -> toolController.scaleSelectedFogArea(factor));
+    }
 
-    public boolean rotateSelectedFogArea(double degrees) { return toolController.rotateSelectedFogArea(degrees); }
+    public boolean rotateSelectedFogArea(double degrees) {
+        return performSceneChange(() -> toolController.rotateSelectedFogArea(degrees));
+    }
 
-    public boolean resetSelectedFogAreaTransform() { return toolController.resetSelectedFogAreaTransform(); }
+    public boolean resetSelectedFogAreaTransform() {
+        return performSceneChange(toolController::resetSelectedFogAreaTransform);
+    }
 
-    public boolean deleteSelectedWall() { return toolController.deleteSelectedWall(); }
+    public boolean deleteSelectedWall() {
+        return performSceneChange(toolController::deleteSelectedWall);
+    }
 
-    public boolean scaleSelectedWall(double factor) { return toolController.scaleSelectedWall(factor); }
+    public boolean scaleSelectedWall(double factor) {
+        return performSceneChange(() -> toolController.scaleSelectedWall(factor));
+    }
 
-    public boolean rotateSelectedWall(double degrees) { return toolController.rotateSelectedWall(degrees); }
+    public boolean rotateSelectedWall(double degrees) {
+        return performSceneChange(() -> toolController.rotateSelectedWall(degrees));
+    }
 
-    public boolean resetSelectedWallTransform() { return toolController.resetSelectedWallTransform(); }
+    public boolean resetSelectedWallTransform() {
+        return performSceneChange(toolController::resetSelectedWallTransform);
+    }
 
-    public boolean deleteSelectedDoor() { return toolController.deleteSelectedDoor(); }
+    public boolean deleteSelectedDoor() {
+        return performSceneChange(toolController::deleteSelectedDoor);
+    }
 
-    public boolean toggleSelectedDoorOpen() { return toolController.toggleSelectedDoorOpen(); }
+    public boolean toggleSelectedDoorOpen() {
+        return performSceneChange(toolController::toggleSelectedDoorOpen);
+    }
 
-    public boolean toggleSelectedDoorLocked() { return toolController.toggleSelectedDoorLocked(); }
+    public boolean toggleSelectedDoorLocked() {
+        return performSceneChange(toolController::toggleSelectedDoorLocked);
+    }
 
-    public boolean scaleSelectedDoor(double factor) { return toolController.scaleSelectedDoor(factor); }
+    public boolean scaleSelectedDoor(double factor) {
+        return performSceneChange(() -> toolController.scaleSelectedDoor(factor));
+    }
 
-    public boolean rotateSelectedDoor(double degrees) { return toolController.rotateSelectedDoor(degrees); }
+    public boolean rotateSelectedDoor(double degrees) {
+        return performSceneChange(() -> toolController.rotateSelectedDoor(degrees));
+    }
 
-    public boolean resetSelectedDoorTransform() { return toolController.resetSelectedDoorTransform(); }
+    public boolean resetSelectedDoorTransform() {
+        return performSceneChange(toolController::resetSelectedDoorTransform);
+    }
 
     public void toggleSelectedObjectsVisibility() {
         performTokenChange(() ->
@@ -336,33 +369,33 @@ public final class InputController {
     }
 
     public void beginTokenLifecycleChange() {
-        beginTokenChange();
+        beginSceneChange();
     }
 
     public void endTokenLifecycleChange() {
-        endTokenChange();
+        endSceneChange();
     }
 
-    public boolean canUndoTokenAction() {
-        return tokenHistory.canUndo(activeSceneId());
+    public boolean canUndoEditorAction() {
+        return sceneHistory.canUndo(activeSceneId());
     }
 
-    public boolean canRedoTokenAction() {
-        return tokenHistory.canRedo(activeSceneId());
+    public boolean canRedoEditorAction() {
+        return sceneHistory.canRedo(activeSceneId());
     }
 
-    public boolean undoTokenAction() {
-        return applyHistoryResult(tokenHistory.undo(
+    public boolean undoEditorAction() {
+        return applyHistoryResult(sceneHistory.undo(
                 activeSceneId(), scene, tabletopSceneSupplier.get()));
     }
 
-    public boolean redoTokenAction() {
-        return applyHistoryResult(tokenHistory.redo(
+    public boolean redoEditorAction() {
+        return applyHistoryResult(sceneHistory.redo(
                 activeSceneId(), scene, tabletopSceneSupplier.get()));
     }
 
-    public void clearTokenHistory() {
-        tokenHistory.clear();
+    public void clearEditorHistory() {
+        sceneHistory.clear();
     }
 
     private void performTransform(Runnable mutation) {
@@ -370,21 +403,28 @@ public final class InputController {
     }
 
     private void performTokenChange(Runnable mutation) {
-        beginTokenChange();
+        beginSceneChange();
         mutation.run();
-        endTokenChange();
+        endSceneChange();
     }
 
-    private void beginTokenChange() {
-        tokenHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
+    private void beginSceneChange() {
+        sceneHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
     }
 
-    private void endTokenChange() {
+    private void endSceneChange() {
         saveTabletopAction.run();
-        tokenHistory.end(activeSceneId(), scene, tabletopSceneSupplier.get());
+        sceneHistory.end(activeSceneId(), scene, tabletopSceneSupplier.get());
     }
 
-    private boolean applyHistoryResult(EditorTokenHistory.Result result) {
+    private boolean performSceneChange(BooleanSupplier mutation) {
+        beginSceneChange();
+        boolean handled = mutation.getAsBoolean();
+        endSceneChange();
+        return handled;
+    }
+
+    private boolean applyHistoryResult(EditorSceneHistory.Result result) {
         if (!result.changed()) return false;
         VttClientTokenTransformSync.markCollisionBypass(result.affectedObjectIds());
         selectionManager.removeMissingObjects(scene);
