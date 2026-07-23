@@ -347,7 +347,8 @@ public final class VTTSession {
         var replacement = object.withTransform(transform)
                 .withFlippedHorizontally(update.flippedHorizontally())
                 .withVisible(update.visible())
-                .withActiveState(update.activeStateId());
+                .withActiveState(update.activeStateId())
+                .withDisplayName(update.displayName());
         canvasScene.replaceObject(replacement);
         canvasScene.moveObjectToLayer(update.objectId(), update.layerIndex());
 
@@ -363,6 +364,7 @@ public final class VTTSession {
                         sceneObject.getState().setFlippedHorizontally(update.flippedHorizontally());
                         sceneObject.getState().setVisible(update.visible());
                         sceneObject.getState().setActiveStateId(update.activeStateId());
+                        sceneObject.setDisplayName(update.displayName());
                     });
             for (var sceneObject : activeScene.getObjects()) {
                 if (sceneObject == null) continue;

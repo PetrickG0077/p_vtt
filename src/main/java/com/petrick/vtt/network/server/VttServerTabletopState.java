@@ -440,7 +440,8 @@ public final class VttServerTabletopState {
                 || (nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 && nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
                 && request.layerIndex() == previousLayerIndex
-                && request.visible() == object.getState().isVisible());
+                && request.visible() == object.getState().isVisible()
+                && Objects.equals(request.displayName(), object.getDisplayName()));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
         double acceptedRotation = normalizeRotation(request.rotationDegrees());
         boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
@@ -451,7 +452,8 @@ public final class VttServerTabletopState {
                 || master && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
                 || request.layerIndex() != previousLayerIndex
-                || request.visible() != object.getState().isVisible());
+                || request.visible() != object.getState().isVisible()
+                || !Objects.equals(request.displayName(), object.getDisplayName()));
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(acceptedRotation);
@@ -460,6 +462,7 @@ public final class VttServerTabletopState {
             object.getTransform().setScaleY(request.scaleY());
             moveObjectToLayer(object, request.layerIndex());
             object.getState().setVisible(request.visible());
+            object.setDisplayName(request.displayName());
         }
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
@@ -472,7 +475,7 @@ public final class VttServerTabletopState {
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
-                object.getState().getActiveStateId(),
+                object.getDisplayName(), object.getState().getActiveStateId(),
                 playerId, movementAccepted && masterFieldsAccepted);
     }
 
@@ -490,7 +493,7 @@ public final class VttServerTabletopState {
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
-                object.getState().getActiveStateId(), playerId, false);
+                object.getDisplayName(), object.getState().getActiveStateId(), playerId, false);
     }
 
     public synchronized VttTokenLifecycleUpdatePayload applyTokenLifecycle(
@@ -935,6 +938,8 @@ public final class VttServerTabletopState {
     private boolean valid(VttTokenTransformRequestPayload request) {
         return request.authorityRevision() > 0L && request.clientSequence() > 0L
                 && request.objectId() != null && !request.objectId().isBlank()
+                && request.displayName() != null && !request.displayName().isBlank()
+                && request.displayName().length() <= 128
                 && request.activeStateId() != null && !request.activeStateId().isBlank()
                 && Double.isFinite(request.x()) && Double.isFinite(request.y())
                 && Double.isFinite(request.rotationDegrees())

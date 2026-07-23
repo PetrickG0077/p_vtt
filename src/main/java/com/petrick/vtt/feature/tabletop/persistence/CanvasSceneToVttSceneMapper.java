@@ -61,21 +61,17 @@ public final class CanvasSceneToVttSceneMapper {
         int layerIndex = 0;
 
         for (CanvasObject canvasObject : canvasScene.getObjects()) {
+            String metadataSourceId = resolveMetadataSourceId(
+                    canvasObject.id(), existingVisionRanges);
             VttSceneObject sceneObject = convertObject(
                     canvasObject,
                     layerIndex,
-                    existingVisionRanges.getOrDefault(canvasObject.id(), 0.0),
-                    existingVisionInnerRadii.getOrDefault(canvasObject.id(), 256.0),
-                    existingVisionEnabled.getOrDefault(canvasObject.id(), true),
-                    existingOwnerIds.get(canvasObject.id())
+                    existingVisionRanges.getOrDefault(metadataSourceId, 0.0),
+                    existingVisionInnerRadii.getOrDefault(metadataSourceId, 256.0),
+                    existingVisionEnabled.getOrDefault(metadataSourceId, true),
+                    existingOwnerIds.get(metadataSourceId)
             );
-            VttSceneCollisionBox collisionBox = existingCollisionBoxes.get(canvasObject.id());
-            if (collisionBox == null) {
-                collisionBox = existingCollisionBoxes.entrySet().stream()
-                        .filter(entry -> canvasObject.id().startsWith(entry.getKey() + "_copy"))
-                        .max(Map.Entry.comparingByKey(java.util.Comparator.comparingInt(String::length)))
-                        .map(Map.Entry::getValue).orElse(null);
-            }
+            VttSceneCollisionBox collisionBox = existingCollisionBoxes.get(metadataSourceId);
             if (collisionBox != null) {
                 sceneObject.setCollisionBox(new VttSceneCollisionBox(collisionBox.getOffsetX(),
                         collisionBox.getOffsetY(), collisionBox.getWidth(), collisionBox.getHeight()));
@@ -85,6 +81,17 @@ public final class CanvasSceneToVttSceneMapper {
 
             layerIndex++;
         }
+    }
+
+    private static String resolveMetadataSourceId(
+            String objectId,
+            Map<String, Double> existingObjects
+    ) {
+        if (existingObjects.containsKey(objectId)) return objectId;
+        return existingObjects.keySet().stream()
+                .filter(existingId -> objectId.startsWith(existingId + "_copy"))
+                .max(java.util.Comparator.comparingInt(String::length))
+                .orElse(objectId);
     }
 
     private static VttSceneObject convertObject(

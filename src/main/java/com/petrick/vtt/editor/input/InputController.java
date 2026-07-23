@@ -37,8 +37,7 @@ public final class InputController {
 
     private final Runnable saveTabletopAction;
 
-    private final EditorTokenTransformHistory transformHistory =
-            new EditorTokenTransformHistory();
+    private final EditorTokenHistory tokenHistory = new EditorTokenHistory();
 
     private boolean globalPanning;
 
@@ -76,7 +75,7 @@ public final class InputController {
         }
 
         if (button == 0 && "select".equals(toolController.getActiveToolId())) {
-            transformHistory.beginGesture(activeSceneId(), scene);
+            tokenHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
         }
         ToolContext context = createToolContext(renderState);
         return toolController.mouseClicked(context, mouseX, mouseY, button, modifiers);
@@ -98,7 +97,8 @@ public final class InputController {
         ToolContext context = createToolContext(renderState);
         boolean handled = toolController.mouseReleased(
                 context, mouseX, mouseY, button, modifiers);
-        if (button == 0 && transformHistory.endGesture(activeSceneId(), scene)) {
+        if (button == 0 && tokenHistory.end(
+                activeSceneId(), scene, tabletopSceneSupplier.get())) {
             saveTabletopAction.run();
         }
         return handled;
@@ -192,6 +192,7 @@ public final class InputController {
     }
 
     public void duplicateSelectedObjects() {
+        beginTokenChange();
         Set<String> duplicatedIds = scene.duplicateObjects(
                 selectionManager.getSelectedObjectIds(),
                 new Vec2d(32.0, 32.0)
@@ -204,6 +205,7 @@ public final class InputController {
                 selectionManager.select(duplicatedId);
             }
         }
+        endTokenChange();
     }
 
     public void bringSelectedObjectsForward() {
@@ -227,15 +229,15 @@ public final class InputController {
     }
 
     public void deleteSelectedObjects() {
-        VttScene tabletopScene = tabletopSceneSupplier.get();
-        boolean deletesVisionSource = tabletopScene != null
-                && tabletopScene.getVisionSourceObjectIds().removeIf(
-                selectionManager.getSelectedObjectIds()::contains);
-        scene.removeObjects(selectionManager.getSelectedObjectIds());
-        selectionManager.clearSelection();
-        if (deletesVisionSource) {
-            saveTabletopAction.run();
-        }
+        performTokenChange(() -> {
+            VttScene tabletopScene = tabletopSceneSupplier.get();
+            if (tabletopScene != null) {
+                tabletopScene.getVisionSourceObjectIds().removeIf(
+                        selectionManager.getSelectedObjectIds()::contains);
+            }
+            scene.removeObjects(selectionManager.getSelectedObjectIds());
+            selectionManager.clearSelection();
+        });
     }
 
     public void selectHandTool() {
@@ -307,7 +309,8 @@ public final class InputController {
     public boolean resetSelectedDoorTransform() { return toolController.resetSelectedDoorTransform(); }
 
     public void toggleSelectedObjectsVisibility() {
-        scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds());
+        performTokenChange(() ->
+                scene.toggleObjectsVisibility(selectionManager.getSelectedObjectIds()));
     }
 
     public void resetSelectedObjectsScaleAndRotation() {
@@ -316,10 +319,10 @@ public final class InputController {
     }
 
     public void setSelectedObjectsActiveState(String stateId) {
-        scene.setObjectsActiveState(
+        performTokenChange(() -> scene.setObjectsActiveState(
                 selectionManager.getSelectedObjectIds(),
                 stateId
-        );
+        ));
     }
 
     public void flipSelectedObjectsHorizontally() {
@@ -328,35 +331,63 @@ public final class InputController {
         ));
     }
 
-    public boolean canUndoTokenTransform() {
-        return transformHistory.canUndo(activeSceneId());
+    public void renameObject(String objectId, String displayName) {
+        performTokenChange(() -> scene.renameObject(objectId, displayName));
     }
 
-    public boolean canRedoTokenTransform() {
-        return transformHistory.canRedo(activeSceneId());
+    public void beginTokenLifecycleChange() {
+        beginTokenChange();
     }
 
-    public boolean undoTokenTransform() {
-        return applyHistoryResult(transformHistory.undo(activeSceneId(), scene));
+    public void endTokenLifecycleChange() {
+        endTokenChange();
     }
 
-    public boolean redoTokenTransform() {
-        return applyHistoryResult(transformHistory.redo(activeSceneId(), scene));
+    public boolean canUndoTokenAction() {
+        return tokenHistory.canUndo(activeSceneId());
     }
 
-    public void clearTokenTransformHistory() {
-        transformHistory.clear();
+    public boolean canRedoTokenAction() {
+        return tokenHistory.canRedo(activeSceneId());
+    }
+
+    public boolean undoTokenAction() {
+        return applyHistoryResult(tokenHistory.undo(
+                activeSceneId(), scene, tabletopSceneSupplier.get()));
+    }
+
+    public boolean redoTokenAction() {
+        return applyHistoryResult(tokenHistory.redo(
+                activeSceneId(), scene, tabletopSceneSupplier.get()));
+    }
+
+    public void clearTokenHistory() {
+        tokenHistory.clear();
     }
 
     private void performTransform(Runnable mutation) {
-        if (transformHistory.perform(activeSceneId(), scene, mutation)) {
-            saveTabletopAction.run();
-        }
+        performTokenChange(mutation);
     }
 
-    private boolean applyHistoryResult(EditorTokenTransformHistory.Result result) {
+    private void performTokenChange(Runnable mutation) {
+        beginTokenChange();
+        mutation.run();
+        endTokenChange();
+    }
+
+    private void beginTokenChange() {
+        tokenHistory.begin(activeSceneId(), scene, tabletopSceneSupplier.get());
+    }
+
+    private void endTokenChange() {
+        saveTabletopAction.run();
+        tokenHistory.end(activeSceneId(), scene, tabletopSceneSupplier.get());
+    }
+
+    private boolean applyHistoryResult(EditorTokenHistory.Result result) {
         if (!result.changed()) return false;
         VttClientTokenTransformSync.markCollisionBypass(result.affectedObjectIds());
+        selectionManager.removeMissingObjects(scene);
         saveTabletopAction.run();
         return true;
     }

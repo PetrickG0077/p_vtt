@@ -392,8 +392,8 @@ public final class VTTScreen extends Screen {
                 && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
                 session.isLocalMaster(), inputController.getActiveToolId(),
-                inputController.canUndoTokenTransform(),
-                inputController.canRedoTokenTransform(),
+                inputController.canUndoTokenAction(),
+                inputController.canRedoTokenAction(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
@@ -501,8 +501,8 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
-            case UNDO -> inputController.undoTokenTransform();
-            case REDO -> inputController.redoTokenTransform();
+            case UNDO -> inputController.undoTokenAction();
+            case REDO -> inputController.redoTokenAction();
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
                 closeHudPopups();
@@ -1569,7 +1569,7 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             session.loadActiveSceneToCanvasScene();
             selectionManager.clearSelection();
-            inputController.clearTokenTransformHistory();
+            inputController.clearTokenHistory();
             return true;
         }
 
@@ -1632,15 +1632,15 @@ public final class VTTScreen extends Screen {
         boolean controlDown = (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
         if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inputController.redoTokenTransform();
+                inputController.redoTokenAction();
             } else {
-                inputController.undoTokenTransform();
+                inputController.undoTokenAction();
             }
             return true;
         }
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
-            inputController.redoTokenTransform();
+            inputController.redoTokenAction();
             return true;
         }
 
@@ -2174,6 +2174,7 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        inputController.beginTokenLifecycleChange();
         CanvasObject placedToken = tokenPlacementService.placeToken(definition, worldPosition);
         if (definition.defaultOwnerId() != null && session.getActiveScene() != null) {
             session.saveCanvasSceneToActiveScene();
@@ -2185,6 +2186,7 @@ public final class VTTScreen extends Screen {
                         session.saveActiveTabletopAndScene();
                     });
         }
+        inputController.endTokenLifecycleChange();
         inputController.selectSelectTool();
     }
 
@@ -2212,7 +2214,7 @@ public final class VTTScreen extends Screen {
             return;
         }
 
-        scene.renameObject(renamingObjectId, renameBuffer);
+        inputController.renameObject(renamingObjectId, renameBuffer);
 
         this.renamingObjectId = null;
         this.renameBuffer = null;
@@ -2353,7 +2355,7 @@ public final class VTTScreen extends Screen {
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
-        inputController.clearTokenTransformHistory();
+        inputController.clearTokenHistory();
         inputController.selectHandTool();
         tokenCatalogContextMenu.close();
         sceneContextMenu.close();

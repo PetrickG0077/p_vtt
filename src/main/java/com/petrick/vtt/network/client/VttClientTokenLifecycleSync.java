@@ -138,17 +138,21 @@ public final class VttClientTokenLifecycleSync {
         result.setState(new VttSceneState(object.activeStateId(), object.visible(),
                 object.flippedHorizontally()));
         result.setLayerIndex(layerIndex);
+        VttSceneObject exactSource = session.getActiveScene().getObjects().stream()
+                .filter(source -> source != null && object.id().equals(source.getId()))
+                .findFirst().orElse(null);
         VttSceneObject duplicateSource = session.getActiveScene().getObjects().stream()
                 .filter(source -> source != null && source.getId() != null
                         && object.id().startsWith(source.getId() + "_copy"))
                 .max(java.util.Comparator.comparingInt(source -> source.getId().length()))
                 .orElse(null);
-        if (duplicateSource != null) {
-            result.setOwnerId(duplicateSource.getOwnerId());
-            result.setVisionInnerRadius(duplicateSource.getVisionInnerRadius());
-            result.setVisionOuterRadius(duplicateSource.getVisionOuterRadius());
-            result.setVisionEnabled(duplicateSource.isVisionEnabled());
-            VttSceneCollisionBox sourceBox = duplicateSource.getCollisionBox();
+        VttSceneObject metadataSource = exactSource != null ? exactSource : duplicateSource;
+        if (metadataSource != null) {
+            result.setOwnerId(metadataSource.getOwnerId());
+            result.setVisionInnerRadius(metadataSource.getVisionInnerRadius());
+            result.setVisionOuterRadius(metadataSource.getVisionOuterRadius());
+            result.setVisionEnabled(metadataSource.isVisionEnabled());
+            VttSceneCollisionBox sourceBox = metadataSource.getCollisionBox();
             if (sourceBox != null) {
                 result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),
                         sourceBox.getOffsetY(), sourceBox.getWidth(), sourceBox.getHeight()));
