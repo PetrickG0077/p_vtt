@@ -248,11 +248,15 @@ public final class InputController {
 
     public void selectFogTool() { toolController.selectFogTool(); }
 
+    public void selectMeasureTool() { toolController.selectMeasureTool(); }
+
     public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
 
     public boolean cancelDoorEditing() { return toolController.cancelDoorEditing(); }
 
     public boolean cancelFogDrawing() { return toolController.cancelFogDrawing(); }
+
+    public boolean cancelMeasurement() { return toolController.cancelMeasurement(); }
 
     public boolean toggleSelectedFogVisibility() { return toolController.toggleSelectedFogVisibility(); }
 

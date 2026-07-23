@@ -41,6 +41,8 @@ public final class HelpOverlay {
                 "Tools:",
                 "S: Select",
                 "H: Hand",
+                "M: Measure (Esc/RMB cancel)",
+                "Measure: snap grid/walls/doors",
                 "W: Wall box (drag)",
                 "D: Door box (drag)",
                 "Select: click a door to edit it",

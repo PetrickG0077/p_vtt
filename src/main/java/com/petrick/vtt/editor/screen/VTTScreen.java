@@ -463,7 +463,13 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
-            case MEASURE -> VttClientEditorNotice.show("Measure Tool will be added later");
+            case MEASURE -> {
+                if (master) {
+                    selectionManager.clearSelection();
+                    inputController.selectMeasureTool();
+                }
+                closeHudPopups();
+            }
             case UNDO -> VttClientEditorNotice.show("Undo history will be added later");
             case REDO -> VttClientEditorNotice.show("Redo history will be added later");
             case SCENES -> {
@@ -1438,7 +1444,8 @@ public final class VTTScreen extends Screen {
                 && (inputController.closeCollisionBoxEditor()
                 || inputController.cancelWallDrawing()
                 || inputController.cancelDoorEditing()
-                || inputController.cancelFogDrawing())) {
+                || inputController.cancelFogDrawing()
+                || inputController.cancelMeasurement())) {
             return true;
         }
 
@@ -1574,6 +1581,13 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_S) {
             inputController.selectSelectTool();
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_M) {
+            if (!session.getLocalRole().canEditTabletop()) return true;
+            selectionManager.clearSelection();
+            inputController.selectMeasureTool();
             return true;
         }
 

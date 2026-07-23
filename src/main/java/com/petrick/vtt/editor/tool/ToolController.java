@@ -17,6 +17,7 @@ public final class ToolController {
     private final WallTool wallTool;
     private final DoorTool doorTool;
     private final FogTool fogTool;
+    private final MeasureTool measureTool;
     private final Supplier<VttRole> roleSupplier;
 
     private Tool activeTool;
@@ -31,6 +32,7 @@ public final class ToolController {
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);
+        this.measureTool = new MeasureTool(sceneSupplier);
 
         this.activeTool = handTool;
     }
@@ -56,6 +58,7 @@ public final class ToolController {
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
+        measureTool.deactivate();
         setActiveTool(handTool);
     }
 
@@ -63,6 +66,7 @@ public final class ToolController {
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
+        measureTool.deactivate();
         setActiveTool(selectTool);
     }
 
@@ -83,6 +87,7 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         doorTool.deactivate();
         fogTool.deactivate();
+        measureTool.deactivate();
         setActiveTool(wallTool);
     }
 
@@ -90,6 +95,7 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         fogTool.deactivate();
+        measureTool.deactivate();
         setActiveTool(doorTool);
     }
 
@@ -97,8 +103,17 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         doorTool.deactivate();
+        measureTool.deactivate();
         fogTool.activateLocalizedMode();
         setActiveTool(fogTool);
+    }
+
+    public void selectMeasureTool() {
+        selectTool.closeCollisionBoxEditor();
+        wallTool.deactivate();
+        doorTool.deactivate();
+        fogTool.deactivate();
+        setActiveTool(measureTool);
     }
 
     public boolean cancelWallDrawing() {
@@ -117,6 +132,10 @@ public final class ToolController {
         if (activeTool != fogTool || !fogTool.isDrawing()) return false;
         fogTool.cancel();
         return true;
+    }
+
+    public boolean cancelMeasurement() {
+        return activeTool == measureTool && measureTool.cancel();
     }
 
     public boolean toggleSelectedFogVisibility() {

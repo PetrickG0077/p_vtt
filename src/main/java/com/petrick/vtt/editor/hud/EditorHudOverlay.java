@@ -101,9 +101,8 @@ public final class EditorHudOverlay {
         int rightX = screenWidth - MARGIN - PADDING - size;
         int rightY = Math.max(MARGIN + PADDING, (screenHeight - rightHeight) / 2 + PADDING);
         for (Action tool : tools) {
-            boolean enabled = tool != Action.MEASURE;
             result.add(button(tool, rightX, rightY, size, toolShortcut(tool), toolTooltip(tool),
-                    enabled, toolId(tool).equals(state.activeToolId())));
+                    true, toolId(tool).equals(state.activeToolId())));
             rightY += size + GAP;
         }
         rightY += separator;
@@ -330,6 +329,7 @@ public final class EditorHudOverlay {
             case FOG -> " [F]";
             case WALL -> " [W]";
             case DOOR -> " [D]";
+            case MEASURE -> " [M]";
             default -> "";
         };
     }
@@ -365,6 +365,7 @@ public final class EditorHudOverlay {
             case FOG -> "fog";
             case WALL -> "wall";
             case DOOR -> "door";
+            case MEASURE -> "measure";
             default -> "";
         };
     }
