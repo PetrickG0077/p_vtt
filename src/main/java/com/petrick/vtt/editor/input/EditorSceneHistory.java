@@ -53,7 +53,8 @@ public final class EditorSceneHistory {
         Change change = undoStack.removeLast();
         change.apply(change.before(), canvasScene, tabletopScene);
         redoStack.addLast(change);
-        return new Result(true, change.affectedObjectIds());
+        return new Result(true, change.affectedObjectIds(), change.backgroundChanged(),
+                change.before().environment().backgroundAssetId());
     }
 
     public Result redo(String sceneId, CanvasScene canvasScene, VttScene tabletopScene) {
@@ -63,7 +64,8 @@ public final class EditorSceneHistory {
         Change change = redoStack.removeLast();
         change.apply(change.after(), canvasScene, tabletopScene);
         undoStack.addLast(change);
-        return new Result(true, change.affectedObjectIds());
+        return new Result(true, change.affectedObjectIds(), change.backgroundChanged(),
+                change.after().environment().backgroundAssetId());
     }
 
     public boolean canUndo(String sceneId) {
@@ -98,14 +100,19 @@ public final class EditorSceneHistory {
         clear();
     }
 
-    public record Result(boolean changed, Set<String> affectedObjectIds) {
+    public record Result(
+            boolean changed,
+            Set<String> affectedObjectIds,
+            boolean backgroundChanged,
+            String backgroundAssetId
+    ) {
         public Result {
             affectedObjectIds = affectedObjectIds == null
                     ? Set.of() : Set.copyOf(affectedObjectIds);
         }
 
         private static Result none() {
-            return new Result(false, Set.of());
+            return new Result(false, Set.of(), false, null);
         }
     }
 
@@ -114,9 +121,11 @@ public final class EditorSceneHistory {
             Snapshot after,
             Map<String, Fields> changedFields,
             Set<String> structuralObjectIds,
+            Set<String> persistentChangedObjectIds,
             Set<String> affectedObjectIds,
             boolean layerOrderChanged,
-            boolean environmentChanged
+            boolean environmentChanged,
+            boolean backgroundChanged
     ) {
         private static Change between(Snapshot before, Snapshot after) {
             Map<String, CanvasObject> beforeById = before.canvasById();
@@ -126,6 +135,7 @@ public final class EditorSceneHistory {
 
             Map<String, Fields> fieldsById = new LinkedHashMap<>();
             Set<String> structural = new LinkedHashSet<>();
+            Set<String> persistentChanged = new LinkedHashSet<>();
             for (String id : allIds) {
                 CanvasObject beforeObject = beforeById.get(id);
                 CanvasObject afterObject = afterById.get(id);
@@ -135,6 +145,11 @@ public final class EditorSceneHistory {
                 }
                 Fields fields = Fields.between(beforeObject, afterObject);
                 if (fields.any()) fieldsById.put(id, fields);
+                if (!java.util.Objects.equals(
+                        before.persistentById().get(id),
+                        after.persistentById().get(id))) {
+                    persistentChanged.add(id);
+                }
             }
 
             boolean sameIds = beforeById.keySet().equals(afterById.keySet());
@@ -142,6 +157,7 @@ public final class EditorSceneHistory {
                     && !before.canvasIds().equals(after.canvasIds());
             Set<String> affected = new LinkedHashSet<>(structural);
             affected.addAll(fieldsById.keySet());
+            affected.addAll(persistentChanged);
             if (layerChanged) {
                 for (int index = 0; index < before.canvasIds().size(); index++) {
                     String beforeId = before.canvasIds().get(index);
@@ -154,9 +170,13 @@ public final class EditorSceneHistory {
             }
             boolean environmentChanged =
                     !before.environment().equals(after.environment());
+            boolean backgroundChanged = !java.util.Objects.equals(
+                    before.environment().backgroundAssetId(),
+                    after.environment().backgroundAssetId());
             if (affected.isEmpty() && !environmentChanged) return null;
             return new Change(before, after, Map.copyOf(fieldsById), Set.copyOf(structural),
-                    Set.copyOf(affected), layerChanged, environmentChanged);
+                    Set.copyOf(persistentChanged), Set.copyOf(affected),
+                    layerChanged, environmentChanged, backgroundChanged);
         }
 
         private void apply(Snapshot target, CanvasScene canvasScene, VttScene tabletopScene) {
@@ -183,6 +203,11 @@ public final class EditorSceneHistory {
                 if (current != null && targetObject != null) {
                     currentById.put(entry.getKey(),
                             entry.getValue().restore(current, targetObject));
+                }
+            }
+            for (String id : persistentChangedObjectIds) {
+                if (!structuralObjectIds.contains(id)) {
+                    restorePersistentObject(tabletopScene, target.persistentById().get(id));
                 }
             }
 
@@ -291,6 +316,8 @@ public final class EditorSceneHistory {
     private record Environment(
             List<Wall> walls,
             List<Door> doors,
+            String backgroundAssetId,
+            Grid grid,
             boolean fogEnabled,
             boolean fogDefaultHidden,
             List<FogArea> revealedFog,
@@ -305,8 +332,8 @@ public final class EditorSceneHistory {
 
         private static Environment capture(VttScene scene) {
             if (scene == null) {
-                return new Environment(List.of(), List.of(), false,
-                        false, List.of(), List.of());
+                return new Environment(List.of(), List.of(), null, Grid.defaults(),
+                        false, false, List.of(), List.of());
             }
             VttFogOfWar fog = scene.getFogOfWar();
             return new Environment(
@@ -314,6 +341,8 @@ public final class EditorSceneHistory {
                             .map(Wall::capture).toList(),
                     scene.getDoors().stream().filter(java.util.Objects::nonNull)
                             .map(Door::capture).toList(),
+                    scene.getBackgroundAssetId(),
+                    Grid.capture(scene),
                     fog.isEnabled(), fog.isDefaultHidden(),
                     fog.getRevealedAreas().stream().filter(java.util.Objects::nonNull)
                             .map(FogArea::capture).toList(),
@@ -327,6 +356,8 @@ public final class EditorSceneHistory {
             walls.stream().map(Wall::restore).forEach(scene::addWall);
             scene.getDoors().clear();
             doors.stream().map(Door::restore).forEach(scene::addDoor);
+            scene.setBackgroundAssetId(backgroundAssetId);
+            scene.setGrid(grid.restore());
 
             VttFogOfWar fog = scene.getFogOfWar();
             fog.setEnabled(fogEnabled);
@@ -392,6 +423,30 @@ public final class EditorSceneHistory {
         }
     }
 
+    private record Grid(
+            int colorRgb, double opacity, double gridSize, int lineWidth, boolean topLayer
+    ) {
+        private static Grid capture(VttScene scene) {
+            var grid = scene.getGrid();
+            return new Grid(grid.getColorRgb(), grid.getOpacity(), grid.getGridSize(),
+                    grid.getLineWidth(), grid.isTopLayer());
+        }
+
+        private static Grid defaults() {
+            return new Grid(0xFFFFFF, 0.2, 64.0, 1, false);
+        }
+
+        private com.petrick.vtt.feature.tabletop.VttSceneGrid restore() {
+            var grid = new com.petrick.vtt.feature.tabletop.VttSceneGrid();
+            grid.setColorRgb(colorRgb);
+            grid.setOpacity(opacity);
+            grid.setGridSize(gridSize);
+            grid.setLineWidth(lineWidth);
+            grid.setTopLayer(topLayer);
+            return grid;
+        }
+    }
+
     private record Transform(
             double x, double y, double scaleX, double scaleY, double rotationDegrees
     ) {
@@ -430,7 +485,7 @@ public final class EditorSceneHistory {
             String activeStateId,
             boolean visible,
             boolean flipped,
-            VttSceneCollisionBox collisionBox,
+            CollisionBox collisionBox,
             int layerIndex,
             double visionOuterRadius,
             double visionInnerRadius,
@@ -440,7 +495,7 @@ public final class EditorSceneHistory {
     ) {
         private static PersistentObject capture(VttSceneObject object, boolean visionSource) {
             VttSceneCollisionBox box = object.getCollisionBox();
-            VttSceneCollisionBox boxCopy = box == null ? null : new VttSceneCollisionBox(
+            CollisionBox boxCopy = box == null ? null : new CollisionBox(
                     box.getOffsetX(), box.getOffsetY(), box.getWidth(), box.getHeight());
             return new PersistentObject(
                     object.getId(), object.getDisplayName(), object.getSourceTokenDefinitionId(),
@@ -467,10 +522,13 @@ public final class EditorSceneHistory {
             object.setOwnerId(ownerId);
             if (collisionBox != null) {
                 object.setCollisionBox(new VttSceneCollisionBox(
-                        collisionBox.getOffsetX(), collisionBox.getOffsetY(),
-                        collisionBox.getWidth(), collisionBox.getHeight()));
+                        collisionBox.offsetX(), collisionBox.offsetY(),
+                        collisionBox.width(), collisionBox.height()));
             }
             return object;
         }
+    }
+
+    private record CollisionBox(double offsetX, double offsetY, double width, double height) {
     }
 }

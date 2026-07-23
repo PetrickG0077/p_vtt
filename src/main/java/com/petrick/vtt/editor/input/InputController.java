@@ -10,6 +10,7 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.platform.render.VRenderContext;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.core.session.VttRole;
@@ -38,6 +39,8 @@ public final class InputController {
 
     private final Runnable saveTabletopAction;
 
+    private final Consumer<String> setBackgroundAction;
+
     private final EditorSceneHistory sceneHistory = new EditorSceneHistory();
 
     private boolean globalPanning;
@@ -50,6 +53,7 @@ public final class InputController {
             SelectionManager selectionManager,
             Supplier<VttScene> tabletopSceneSupplier,
             Runnable saveTabletopAction,
+            Consumer<String> setBackgroundAction,
             Supplier<VttRole> roleSupplier,
             Supplier<String> playerIdSupplier
     ) {
@@ -58,6 +62,7 @@ public final class InputController {
         this.selectionManager = selectionManager;
         this.tabletopSceneSupplier = tabletopSceneSupplier;
         this.saveTabletopAction = saveTabletopAction;
+        this.setBackgroundAction = setBackgroundAction;
         this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction,
                 roleSupplier, playerIdSupplier);
     }
@@ -250,7 +255,8 @@ public final class InputController {
     }
 
     public boolean toggleCollisionBoxEditor(RenderState renderState) {
-        return toolController.toggleCollisionBoxEditor(createToolContext(renderState));
+        return performSceneChange(() ->
+                toolController.toggleCollisionBoxEditor(createToolContext(renderState)));
     }
 
     public boolean isEditingCollisionBox() {
@@ -376,6 +382,14 @@ public final class InputController {
         endSceneChange();
     }
 
+    public void beginEditorAction() {
+        beginSceneChange();
+    }
+
+    public void endEditorAction() {
+        endSceneChange();
+    }
+
     public boolean canUndoEditorAction() {
         return sceneHistory.canUndo(activeSceneId());
     }
@@ -428,6 +442,9 @@ public final class InputController {
         if (!result.changed()) return false;
         VttClientTokenTransformSync.markCollisionBypass(result.affectedObjectIds());
         selectionManager.removeMissingObjects(scene);
+        if (result.backgroundChanged()) {
+            setBackgroundAction.accept(result.backgroundAssetId());
+        }
         saveTabletopAction.run();
         return true;
     }

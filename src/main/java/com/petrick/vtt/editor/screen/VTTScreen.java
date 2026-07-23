@@ -185,6 +185,7 @@ public final class VTTScreen extends Screen {
         );
         this.inputController = new InputController(camera, scene, selectionManager,
                 session::getActiveScene, session::saveCanvasSceneToActiveScene,
+                assetId -> session.setActiveSceneBackground(assetId),
                 session::getLocalRole, session::getLocalPlayerId);
         this.editorHudOverlay = new EditorHudOverlay();
         this.editorSettingsOverlay = new EditorSettingsOverlay();
@@ -427,11 +428,15 @@ public final class VTTScreen extends Screen {
             double mouseX, double mouseY, int button
     ) {
         if (!hudSettingsOpen || session.getActiveScene() == null) return false;
+        inputController.beginEditorAction();
         EditorSettingsOverlay.Interaction interaction = editorSettingsOverlay.mouseClicked(
                 mouseX, mouseY, button, width, height,
                 session.getActiveScene().getGrid(), session.isLocalMaster());
         if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
             persistGridSettings();
+        }
+        if (!editorSettingsOverlay.isDraggingOpacity()) {
+            inputController.endEditorAction();
         }
         return interaction != EditorSettingsOverlay.Interaction.NONE;
     }
@@ -456,6 +461,7 @@ public final class VTTScreen extends Screen {
             }
             case SETTINGS -> {
                 boolean closing = hudSettingsOpen;
+                if (closing) finishGridSettingsDrag();
                 hudSettingsOpen = !hudSettingsOpen;
                 hudPlayersOpen = false;
                 hudCreationOpen = false;
@@ -573,9 +579,17 @@ public final class VTTScreen extends Screen {
     }
 
     private void closeHudPopups() {
+        finishGridSettingsDrag();
         hudPlayersOpen = false;
         hudSettingsOpen = false;
         hudCreationOpen = false;
+        editorSettingsOverlay.cancelDrag();
+    }
+
+    private void finishGridSettingsDrag() {
+        if (!editorSettingsOverlay.isDraggingOpacity()) return;
+        persistGridSettings();
+        inputController.endEditorAction();
         editorSettingsOverlay.cancelDrag();
     }
 
@@ -1214,6 +1228,7 @@ public final class VTTScreen extends Screen {
                 mouseX, button, this.width, this.height,
                 session.getActiveScene().getGrid(), session.isLocalMaster())) {
             persistGridSettings();
+            inputController.endEditorAction();
             return true;
         }
         if (playerViewPreview) {
@@ -1587,9 +1602,14 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_B) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                if (session.setActiveSceneBackground(null)) {
-                    closeBackgroundImagePicker();
-                    VTT.LOGGER.info("[VTT Background] Requested background removal for active scene");
+                inputController.beginEditorAction();
+                try {
+                    if (session.setActiveSceneBackground(null)) {
+                        closeBackgroundImagePicker();
+                        VTT.LOGGER.info("[VTT Background] Requested background removal for active scene");
+                    }
+                } finally {
+                    inputController.endEditorAction();
                 }
                 return true;
             }
@@ -1841,43 +1861,53 @@ public final class VTTScreen extends Screen {
     }
 
     private void toggleSelectedTokenAsVisionSource() {
-        if (session.getActiveScene() == null) return;
-        if (selectionManager.getSelectedObjectIds().size() != 1) {
-            if (!session.getActiveScene().getVisionSourceObjectIds().isEmpty()) {
-                session.getActiveScene().clearVisionSourceObjectIds();
-                session.saveActiveTabletopAndScene();
-                VTT.LOGGER.info("Cleared all scene vision sources");
+        inputController.beginEditorAction();
+        try {
+            if (session.getActiveScene() == null) return;
+            if (selectionManager.getSelectedObjectIds().size() != 1) {
+                if (!session.getActiveScene().getVisionSourceObjectIds().isEmpty()) {
+                    session.getActiveScene().clearVisionSourceObjectIds();
+                    session.saveActiveTabletopAndScene();
+                    VTT.LOGGER.info("Cleared all scene vision sources");
+                }
+                return;
             }
-            return;
+            String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+            CanvasObject selected = scene.findObjectById(selectedId);
+            if (selected == null || !selected.visible() || !selected.hasSourceTokenDefinition()) return;
+            boolean removed = session.getActiveScene().removeVisionSourceObjectId(selectedId);
+            if (!removed) session.getActiveScene().addVisionSourceObjectId(selectedId);
+            session.saveActiveTabletopAndScene();
+            VTT.LOGGER.info("Token {} {} scene vision sources", selectedId,
+                    removed ? "removed from" : "added to");
+        } finally {
+            inputController.endEditorAction();
         }
-        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
-        CanvasObject selected = scene.findObjectById(selectedId);
-        if (selected == null || !selected.visible() || !selected.hasSourceTokenDefinition()) return;
-        boolean removed = session.getActiveScene().removeVisionSourceObjectId(selectedId);
-        if (!removed) session.getActiveScene().addVisionSourceObjectId(selectedId);
-        session.saveActiveTabletopAndScene();
-        VTT.LOGGER.info("Token {} {} scene vision sources", selectedId,
-                removed ? "removed from" : "added to");
     }
 
     private void toggleSelectedTokenOwnership() {
-        if (session.getActiveScene() == null
-                || selectionManager.getSelectedObjectIds().size() != 1) return;
-        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
-        CanvasObject selected = scene.findObjectById(selectedId);
-        if (selected == null || !selected.hasSourceTokenDefinition()) return;
-        session.saveCanvasSceneToActiveScene();
-        session.getActiveScene().getObjects().stream()
-                .filter(object -> object != null && selectedId.equals(object.getId()))
-                .findFirst()
-                .ifPresent(object -> {
-                    String localPlayerId = session.getLocalPlayerId();
-                    boolean removeOwnership = localPlayerId.equals(object.getOwnerId());
-                    object.setOwnerId(removeOwnership ? null : localPlayerId);
-                    session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} ownership {}", selectedId,
-                            removeOwnership ? "cleared" : "assigned to local player");
-                });
+        inputController.beginEditorAction();
+        try {
+            if (session.getActiveScene() == null
+                    || selectionManager.getSelectedObjectIds().size() != 1) return;
+            String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+            CanvasObject selected = scene.findObjectById(selectedId);
+            if (selected == null || !selected.hasSourceTokenDefinition()) return;
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && selectedId.equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        String localPlayerId = session.getLocalPlayerId();
+                        boolean removeOwnership = localPlayerId.equals(object.getOwnerId());
+                        object.setOwnerId(removeOwnership ? null : localPlayerId);
+                        session.saveActiveTabletopAndScene();
+                        VTT.LOGGER.info("Token {} ownership {}", selectedId,
+                                removeOwnership ? "cleared" : "assigned to local player");
+                    });
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private boolean canTransformSelectedTokens() {
@@ -1903,39 +1933,49 @@ public final class VTTScreen extends Screen {
     }
 
     private void adjustTokenVisionOuterRadius(double delta) {
-        String objectId = resolveVisionRangeTargetId();
-        if (objectId == null || session.getActiveScene() == null) return;
-        session.saveCanvasSceneToActiveScene();
-        session.getActiveScene().getObjects().stream()
-                .filter(object -> object != null && objectId.equals(object.getId()))
-                .findFirst()
-                .ifPresent(object -> {
-                    double current = object.getVisionOuterRadius() > 0.0
-                            ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
-                    double next = Math.max(TOKEN_VISION_OUTER_STEP, current + delta);
-                    object.setVisionOuterRadius(next);
-                    object.setVisionInnerRadius(Math.min(resolveInnerRadius(object), next));
-                    session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} outer vision radius changed to {}", objectId, next);
-                });
+        inputController.beginEditorAction();
+        try {
+            String objectId = resolveVisionRangeTargetId();
+            if (objectId == null || session.getActiveScene() == null) return;
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && objectId.equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        double current = object.getVisionOuterRadius() > 0.0
+                                ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
+                        double next = Math.max(TOKEN_VISION_OUTER_STEP, current + delta);
+                        object.setVisionOuterRadius(next);
+                        object.setVisionInnerRadius(Math.min(resolveInnerRadius(object), next));
+                        session.saveActiveTabletopAndScene();
+                        VTT.LOGGER.info("Token {} outer vision radius changed to {}", objectId, next);
+                    });
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private void adjustTokenVisionInnerRadius(double delta) {
-        String objectId = resolveVisionRangeTargetId();
-        if (objectId == null || session.getActiveScene() == null) return;
-        session.saveCanvasSceneToActiveScene();
-        session.getActiveScene().getObjects().stream()
-                .filter(object -> object != null && objectId.equals(object.getId()))
-                .findFirst()
-                .ifPresent(object -> {
-                    double outer = object.getVisionOuterRadius() > 0.0
-                            ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
-                    double next = Math.max(0.0, Math.min(outer, resolveInnerRadius(object) + delta));
-                    object.setVisionOuterRadius(outer);
-                    object.setVisionInnerRadius(next);
-                    session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} inner vision radius changed to {}", objectId, next);
-                });
+        inputController.beginEditorAction();
+        try {
+            String objectId = resolveVisionRangeTargetId();
+            if (objectId == null || session.getActiveScene() == null) return;
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && objectId.equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        double outer = object.getVisionOuterRadius() > 0.0
+                                ? object.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
+                        double next = Math.max(0.0, Math.min(outer, resolveInnerRadius(object) + delta));
+                        object.setVisionOuterRadius(outer);
+                        object.setVisionInnerRadius(next);
+                        session.saveActiveTabletopAndScene();
+                        VTT.LOGGER.info("Token {} inner vision radius changed to {}", objectId, next);
+                    });
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private double resolveInnerRadius(com.petrick.vtt.feature.tabletop.VttSceneObject object) {
@@ -1943,34 +1983,44 @@ public final class VTTScreen extends Screen {
     }
 
     private void resetTokenVisionRadii() {
-        String objectId = resolveVisionRangeTargetId();
-        if (objectId == null || session.getActiveScene() == null) return;
-        session.saveCanvasSceneToActiveScene();
-        session.getActiveScene().getObjects().stream()
-                .filter(object -> object != null && objectId.equals(object.getId()))
-                .findFirst()
-                .ifPresent(object -> {
-                    object.setVisionInnerRadius(DEFAULT_TOKEN_VISION_INNER_RADIUS);
-                    object.setVisionOuterRadius(DEFAULT_TOKEN_VISION_OUTER_RADIUS);
-                    session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} vision radii reset: inner={}, outer={}", objectId,
-                            DEFAULT_TOKEN_VISION_INNER_RADIUS, DEFAULT_TOKEN_VISION_OUTER_RADIUS);
-                });
+        inputController.beginEditorAction();
+        try {
+            String objectId = resolveVisionRangeTargetId();
+            if (objectId == null || session.getActiveScene() == null) return;
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && objectId.equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        object.setVisionInnerRadius(DEFAULT_TOKEN_VISION_INNER_RADIUS);
+                        object.setVisionOuterRadius(DEFAULT_TOKEN_VISION_OUTER_RADIUS);
+                        session.saveActiveTabletopAndScene();
+                        VTT.LOGGER.info("Token {} vision radii reset: inner={}, outer={}", objectId,
+                                DEFAULT_TOKEN_VISION_INNER_RADIUS, DEFAULT_TOKEN_VISION_OUTER_RADIUS);
+                    });
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private void toggleSelectedTokenVision() {
-        String objectId = resolveVisionRangeTargetId();
-        if (objectId == null || session.getActiveScene() == null) return;
-        session.saveCanvasSceneToActiveScene();
-        session.getActiveScene().getObjects().stream()
-                .filter(object -> object != null && objectId.equals(object.getId()))
-                .findFirst()
-                .ifPresent(object -> {
-                    object.setVisionEnabled(!object.isVisionEnabled());
-                    session.saveActiveTabletopAndScene();
-                    VTT.LOGGER.info("Token {} vision {}", objectId,
-                            object.isVisionEnabled() ? "enabled" : "disabled");
-                });
+        inputController.beginEditorAction();
+        try {
+            String objectId = resolveVisionRangeTargetId();
+            if (objectId == null || session.getActiveScene() == null) return;
+            session.saveCanvasSceneToActiveScene();
+            session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && objectId.equals(object.getId()))
+                    .findFirst()
+                    .ifPresent(object -> {
+                        object.setVisionEnabled(!object.isVisionEnabled());
+                        session.saveActiveTabletopAndScene();
+                        VTT.LOGGER.info("Token {} vision {}", objectId,
+                                object.isVisionEnabled() ? "enabled" : "disabled");
+                    });
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private String resolveVisionRangeTargetId() {
@@ -2023,9 +2073,14 @@ public final class VTTScreen extends Screen {
             VTT.LOGGER.warn("[VTT Background] There is no active scene");
             return;
         }
-        if (!session.setActiveSceneBackground(item.id())) return;
-        VTT.LOGGER.info("[VTT Background] Background update requested for scene {}: {}",
-                session.getActiveScene().getId(), item.id());
+        inputController.beginEditorAction();
+        try {
+            if (!session.setActiveSceneBackground(item.id())) return;
+            VTT.LOGGER.info("[VTT Background] Background update requested for scene {}: {}",
+                    session.getActiveScene().getId(), item.id());
+        } finally {
+            inputController.endEditorAction();
+        }
     }
 
     private void closeBackgroundImagePicker() {

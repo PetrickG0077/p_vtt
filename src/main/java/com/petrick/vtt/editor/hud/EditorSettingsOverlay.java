@@ -148,6 +148,10 @@ public final class EditorSettingsOverlay {
         draggingOpacity = false;
     }
 
+    public boolean isDraggingOpacity() {
+        return draggingOpacity;
+    }
+
     private void renderColors(
             VRenderContext context,
             Font font,

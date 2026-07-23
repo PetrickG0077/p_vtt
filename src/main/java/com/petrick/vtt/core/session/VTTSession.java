@@ -460,6 +460,7 @@ public final class VTTSession {
     public boolean setActiveSceneBackground(String assetId) {
         if (activeScene == null || !isLocalMaster()) return false;
         if (networkAuthorityActive) {
+            activeScene.setBackgroundAssetId(assetId);
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
                     networkAuthorityRevision, VttSceneCommandPayload.SET_BACKGROUND,
                     "", assetId == null ? "" : assetId));
