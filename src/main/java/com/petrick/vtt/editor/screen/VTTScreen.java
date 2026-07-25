@@ -26,6 +26,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
+import com.petrick.vtt.editor.token.VttOwnedTokenOption;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
@@ -435,6 +436,7 @@ public final class VTTScreen extends Screen {
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
+                getOwnedTokenOptions(),
                 session.getLocalPlayerId(),
                 selectedSceneToken == null ? "" : selectedSceneToken.id(),
                 selectedSceneToken == null ? "" : selectedSceneToken.displayName(),
@@ -504,6 +506,7 @@ public final class VTTScreen extends Screen {
                     setSelectedSceneTokenOwner(editorHudOverlay.getSelectedPlayerId());
             case CLEAR_SELECTED_TOKEN_OWNER -> setSelectedSceneTokenOwner(null);
             case TOGGLE_SELECTED_PLAYER_SPECTATOR -> toggleSelectedPlayerSpectator();
+            case FOCUS_SELECTED_PLAYER_TOKEN -> focusSelectedPlayerToken();
             case SETTINGS -> {
                 boolean closing = hudSettingsOpen;
                 if (closing) finishGridSettingsDrag();
@@ -649,6 +652,21 @@ public final class VTTScreen extends Screen {
                         new VttPlayerModeCommandPayload(
                                 session.getNetworkAuthorityRevision(),
                                 player.id(), !player.spectator())));
+    }
+
+    private void focusSelectedPlayerToken() {
+        String objectId = editorHudOverlay.getSelectedOwnedTokenId();
+        if (objectId == null || objectId.isBlank()) return;
+        CanvasObject object = scene.findObjectById(objectId);
+        if (object == null) {
+            VttClientEditorNotice.show("Token is not available in the active scene");
+            return;
+        }
+        camera.setPosition(object.transform().position());
+        if (session.isLocalMaster()) {
+            inputController.selectSelectTool();
+            selectionManager.selectOnly(object.id());
+        }
     }
 
     private void closeHudPopups() {
@@ -2272,6 +2290,25 @@ public final class VTTScreen extends Screen {
                             ownedTokens.getOrDefault(id, 0), false);
                 })
                 .sorted(Comparator.comparing(VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    private List<VttOwnedTokenOption> getOwnedTokenOptions() {
+        if (session.getActiveScene() == null) return List.of();
+        String sceneId = session.getActiveScene().getId();
+        String sceneName = session.getActiveScene().getDisplayName();
+        return session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null
+                        && object.getOwnerId() != null
+                        && object.getSourceTokenDefinitionId() != null)
+                .map(object -> new VttOwnedTokenOption(
+                        object.getId(),
+                        object.getDisplayName(),
+                        object.getOwnerId(),
+                        sceneId,
+                        sceneName,
+                        object.getState().isVisible(),
+                        object.isVisionEnabled()))
                 .toList();
     }
 
