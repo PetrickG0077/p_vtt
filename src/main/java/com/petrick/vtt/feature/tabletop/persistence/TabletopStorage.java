@@ -7,6 +7,7 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
+import com.petrick.vtt.feature.tabletop.VttTabletopPlayerPreferences;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.function.Predicate;
+import java.util.UUID;
 
 /**
  * Serviço responsável por salvar e carregar Tabletop/Scenes em JSON.
@@ -132,6 +134,19 @@ public final class TabletopStorage {
         return scene;
     }
 
+    public synchronized VttTabletopPlayerPreferences loadOrCreatePlayerPreferences(
+            String tabletopId
+    ) {
+        Path file = paths.playersFile(tabletopId);
+        VttTabletopPlayerPreferences preferences = loadWithRecovery(
+                file, VttTabletopPlayerPreferences.class, this::validPlayerPreferences,
+                "player preferences", TabletopSchemaMigrator.DocumentType.PLAYER_PREFERENCES);
+        if (preferences != null) return preferences;
+        preferences = new VttTabletopPlayerPreferences();
+        savePlayerPreferences(tabletopId, preferences);
+        return preferences;
+    }
+
     private void warnComplexity(
             String id, java.util.List<VttSceneLimits.Violation> violations
     ) {
@@ -171,6 +186,18 @@ public final class TabletopStorage {
         Path file = paths.sceneFile(tabletopId, scene.getId());
 
         return writeAtomically(file, scene, VttScene.class, this::validScene, "scene");
+    }
+
+    public synchronized boolean savePlayerPreferences(
+            String tabletopId, VttTabletopPlayerPreferences preferences
+    ) {
+        if (tabletopId == null || tabletopId.isBlank() || preferences == null) return false;
+        preferences.setSchemaVersion(
+                TabletopSchemaMigrator.CURRENT_PLAYER_PREFERENCES_SCHEMA_VERSION);
+        paths.ensureTabletopFoldersExist(tabletopId);
+        return writeAtomically(paths.playersFile(tabletopId), preferences,
+                VttTabletopPlayerPreferences.class, this::validPlayerPreferences,
+                "player preferences");
     }
 
     public synchronized boolean deleteScene(String tabletopId, String sceneId) {
@@ -237,6 +264,22 @@ public final class TabletopStorage {
             }
             return true;
         } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private boolean validPlayerPreferences(VttTabletopPlayerPreferences preferences) {
+        if (preferences == null || preferences.getSchemaVersion()
+                != TabletopSchemaMigrator.CURRENT_PLAYER_PREFERENCES_SCHEMA_VERSION) {
+            return false;
+        }
+        try {
+            for (var entry : preferences.getPlayers().entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) return false;
+                if (!UUID.fromString(entry.getKey()).toString().equals(entry.getKey())) return false;
+            }
+            return true;
+        } catch (IllegalArgumentException exception) {
             return false;
         }
     }

@@ -15,6 +15,7 @@ import com.mojang.math.Axis;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Supplier;
+import java.util.function.BooleanSupplier;
 
 /**
  * Ferramenta de seleção.
@@ -57,6 +58,7 @@ public final class SelectTool implements Tool {
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
     private final Supplier<VttRole> roleSupplier;
     private final Supplier<String> playerIdSupplier;
+    private final BooleanSupplier spectatorSupplier;
     private final Runnable saveAction;
 
     private String collisionEditingObjectId;
@@ -100,11 +102,13 @@ public final class SelectTool implements Tool {
             Supplier<VttScene> tabletopSceneSupplier,
             Supplier<VttRole> roleSupplier,
             Supplier<String> playerIdSupplier,
+            BooleanSupplier spectatorSupplier,
             Runnable saveAction
     ) {
         this.tabletopSceneSupplier = tabletopSceneSupplier;
         this.roleSupplier = roleSupplier;
         this.playerIdSupplier = playerIdSupplier;
+        this.spectatorSupplier = spectatorSupplier;
         this.saveAction = saveAction;
     }
 
@@ -830,7 +834,7 @@ public final class SelectTool implements Tool {
     }
 
     private boolean canControl(CanvasObject object) {
-        if (object == null) return false;
+        if (object == null || spectatorSupplier.getAsBoolean()) return false;
         if (roleSupplier.get() == VttRole.MASTER) return true;
         VttScene scene = tabletopSceneSupplier.get();
         String playerId = playerIdSupplier.get();

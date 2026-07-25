@@ -79,6 +79,7 @@ public final class CanvasRenderer {
             CanvasScene scene,
             SelectionManager selectionManager,
             boolean masterView,
+            boolean renderVisionMask,
             boolean editorSelectionVisible,
             boolean resizeHandlesVisible,
             boolean visionDebugVisible,
@@ -98,7 +99,7 @@ public final class CanvasRenderer {
         if (masterView && visionDebugVisible) {
             sceneVisionDebugRenderer.render(context, tabletopScene, scene, selectionManager);
         }
-        if (!masterView) {
+        if (renderVisionMask) {
             sceneVisionMaskRenderer.render(
                     context, tabletopScene, scene, selectionManager, visionOwnerId,
                     authoritativeVisionRegions, maskWhenAuthoritativeVisionEmpty);

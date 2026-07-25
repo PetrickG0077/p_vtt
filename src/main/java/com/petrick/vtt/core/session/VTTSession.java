@@ -70,6 +70,7 @@ public final class VTTSession {
     private VttScene activeScene;
 
     private VttRole localRole = VttRole.MASTER;
+    private boolean localSpectator;
 
     private String localPlayerId;
     private long networkSnapshotVersion;
@@ -146,6 +147,10 @@ public final class VTTSession {
         return localRole == VttRole.MASTER;
     }
 
+    public boolean isLocalSpectator() {
+        return localSpectator && !isLocalMaster();
+    }
+
     public String getLocalPlayerId() {
         if (localPlayerId == null) {
             var player = Minecraft.getInstance().player;
@@ -161,9 +166,10 @@ public final class VTTSession {
         this.localPlayerId = localPlayerId.trim();
     }
 
-    public void applyNetworkIdentity(String playerId, VttRole role) {
+    public void applyNetworkIdentity(String playerId, VttRole role, boolean spectator) {
         setLocalPlayerId(playerId);
         setLocalRole(role);
+        localSpectator = spectator && role != VttRole.MASTER;
         networkAuthorityActive = true;
     }
 
@@ -180,6 +186,11 @@ public final class VTTSession {
                 .filter(entry -> entry != null && !entry.id().isBlank())
                 .distinct()
                 .toList();
+        networkPlayerRoster.stream()
+                .filter(entry -> entry.id().equals(getLocalPlayerId()))
+                .findFirst()
+                .ifPresent(entry -> localSpectator =
+                        entry.spectator() && entry.role() != VttRole.MASTER);
     }
 
     public Path getSyncedServerTokensFolder() {
@@ -646,6 +657,7 @@ public final class VTTSession {
         lastNetworkRecoveryReason = "none";
         localPlayerId = null;
         localRole = VttRole.MASTER;
+        localSpectator = false;
 
         assetRegistry.clear();
         DebugAssets.registerAll(assetRegistry);

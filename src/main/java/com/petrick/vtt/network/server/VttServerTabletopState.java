@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.VttTabletopPlayerPreferences;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import net.neoforged.fml.loading.FMLPaths;
@@ -41,6 +42,7 @@ import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class VttServerTabletopState {
 
@@ -53,6 +55,7 @@ public final class VttServerTabletopState {
     private static VttServerTabletopState instance;
 
     private final VttTabletop tabletop;
+    private final VttTabletopPlayerPreferences playerPreferences;
     private VttScene activeScene;
     private final TabletopStorage storage;
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
@@ -78,6 +81,7 @@ public final class VttServerTabletopState {
 
         this.storage = new TabletopStorage(paths);
         this.tabletop = storage.loadOrCreateDefaultTabletop();
+        this.playerPreferences = storage.loadOrCreatePlayerPreferences(tabletop.getId());
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
         this.objectSpatialIndex.rebuild(activeScene);
         this.visionGeometryIndex.rebuild(activeScene);
@@ -114,7 +118,7 @@ public final class VttServerTabletopState {
     ) {}
 
     public synchronized VttScene replicatedSceneFor(ServerPlayer player) {
-        if (player == null || VttServerPlayerEvents.isMaster(player)) return activeScene;
+        if (player == null || VttServerPlayerEvents.canViewFullTabletop(player)) return activeScene;
         VttScene copy = GSON.fromJson(GSON.toJson(activeScene), VttScene.class);
         var visibleIds = VttServerVisionSourceSync.visibleObjectsFor(player, this).stream()
                 .map(VttSceneObject::getId).collect(java.util.stream.Collectors.toSet());
@@ -129,6 +133,18 @@ public final class VttServerTabletopState {
 
     public VttTabletop activeTabletop() {
         return tabletop;
+    }
+
+    public synchronized boolean isPlayerSpectator(UUID playerId) {
+        return playerPreferences.isSpectator(playerId);
+    }
+
+    public synchronized boolean setPlayerSpectator(UUID playerId, boolean spectator) {
+        boolean previous = playerPreferences.isSpectator(playerId);
+        if (!playerPreferences.setSpectator(playerId, spectator)) return false;
+        if (storage.savePlayerPreferences(tabletop.getId(), playerPreferences)) return true;
+        playerPreferences.setSpectator(playerId, previous);
+        return false;
     }
 
     public synchronized List<VttSceneObject> querySceneObjects(
@@ -921,7 +937,7 @@ public final class VttServerTabletopState {
     }
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState(ServerPlayer player) {
-        var allowedIds = player == null || VttServerPlayerEvents.isMaster(player)
+        var allowedIds = player == null || VttServerPlayerEvents.canViewFullTabletop(player)
                 ? null : VttServerVisionSourceSync.visibleObjectsFor(player, this).stream()
                 .map(VttSceneObject::getId).collect(java.util.stream.Collectors.toSet());
         return new VttEnvironmentStateUpdatePayload(

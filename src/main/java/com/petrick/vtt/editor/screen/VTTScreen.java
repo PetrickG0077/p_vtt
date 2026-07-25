@@ -50,10 +50,12 @@ import com.petrick.vtt.platform.client.VttAssetSyncHudOverlay;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
+import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Comparator;
@@ -188,7 +190,7 @@ public final class VTTScreen extends Screen {
         this.inputController = new InputController(camera, scene, selectionManager,
                 session::getActiveScene, session::saveCanvasSceneToActiveScene,
                 assetId -> session.setActiveSceneBackground(assetId),
-                session::getLocalRole, session::getLocalPlayerId);
+                session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
         this.editorSettingsOverlay = new EditorSettingsOverlay();
 
@@ -226,6 +228,10 @@ public final class VTTScreen extends Screen {
         ensureRenderState();
         handleActiveSceneChange();
         selectionManager.removeMissingObjects(scene);
+        if (session.isLocalSpectator()
+                && !selectionManager.getSelectedObjectIds().isEmpty()) {
+            selectionManager.clearSelection();
+        }
 
         VRenderContext context = new VRenderContext(
                 graphics,
@@ -240,18 +246,24 @@ public final class VTTScreen extends Screen {
         updateCursor(mouseX, mouseY);
 
         renderOpaqueBackground(context);
+        boolean masterView = isMasterView();
+        boolean spectatorView = session.isLocalSpectator();
+        boolean fullTabletopView = masterView || spectatorView;
+        boolean authoritativePlayerView = !session.isLocalMaster() && !spectatorView
+                && session.isNetworkAuthorityActive();
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
-                isMasterView(), !inputController.isEditingCollisionBox(), session.isLocalMaster(), panelVisibility.isDebugVisible(),
+                masterView, !fullTabletopView, !inputController.isEditingCollisionBox(),
+                session.isLocalMaster(), panelVisibility.isDebugVisible(),
                 session.isLocalMaster() ? null : session.getLocalPlayerId(),
-                !session.isLocalMaster() && session.isNetworkAuthorityActive()
+                authoritativePlayerView
                         ? session.getNetworkVisionRegions() : null,
                 session.shouldMaskWhenNetworkVisionEmpty(),
-                !session.isLocalMaster() && session.isNetworkAuthorityActive()
+                authoritativePlayerView
                         ? session.getNetworkVisibleObjectIds() : null);
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
-        if (playerViewPreview) {
+        if (playerViewPreview || spectatorView) {
             renderEditorNotice(context);
             renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
@@ -370,6 +382,7 @@ public final class VTTScreen extends Screen {
 
     private void renderEditorHud(VRenderContext context) {
         boolean master = session.isLocalMaster();
+        boolean spectator = session.isLocalSpectator();
         if (!master) {
             hudCreationOpen = false;
             panelVisibility.hideMasterPanels();
@@ -377,6 +390,10 @@ public final class VTTScreen extends Screen {
             if (!"hand".equals(activeTool) && !"select".equals(activeTool)) {
                 inputController.selectHandTool();
             }
+        }
+        if (spectator) {
+            hudSettingsOpen = false;
+            hudCreationOpen = false;
         }
         editorHudOverlay.render(context, this.font, editorHudState());
         if (hudSettingsOpen && session.getActiveScene() != null) {
@@ -409,7 +426,8 @@ public final class VTTScreen extends Screen {
                 && session.getActiveTabletop().getSceneIds().size() > 1
                 && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
-                session.isLocalMaster(), inputController.getActiveToolId(),
+                session.isLocalMaster(), session.isLocalSpectator(),
+                inputController.getActiveToolId(),
                 inputController.canUndoEditorAction(),
                 inputController.canRedoEditorAction(),
                 inputController.nextUndoDescription(),
@@ -485,6 +503,7 @@ public final class VTTScreen extends Screen {
             case ASSIGN_SELECTED_TOKEN_OWNER ->
                     setSelectedSceneTokenOwner(editorHudOverlay.getSelectedPlayerId());
             case CLEAR_SELECTED_TOKEN_OWNER -> setSelectedSceneTokenOwner(null);
+            case TOGGLE_SELECTED_PLAYER_SPECTATOR -> toggleSelectedPlayerSpectator();
             case SETTINGS -> {
                 boolean closing = hudSettingsOpen;
                 if (closing) finishGridSettingsDrag();
@@ -618,6 +637,20 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private void toggleSelectedPlayerSpectator() {
+        if (!session.isLocalMaster() || !session.isNetworkAuthorityActive()) return;
+        String playerId = editorHudOverlay.getSelectedPlayerId();
+        if (playerId == null || playerId.isBlank()) return;
+        getConnectedPlayerOptions().stream()
+                .filter(player -> playerId.equals(player.id())
+                        && player.role() != VttRole.MASTER)
+                .findFirst()
+                .ifPresent(player -> PacketDistributor.sendToServer(
+                        new VttPlayerModeCommandPayload(
+                                session.getNetworkAuthorityRevision(),
+                                player.id(), !player.spectator())));
+    }
+
     private void closeHudPopups() {
         finishGridSettingsDrag();
         hudPlayersOpen = false;
@@ -673,6 +706,9 @@ public final class VTTScreen extends Screen {
         if (playerViewPreview) {
             graphics.drawCenteredString(this.font, "PLAYER PREVIEW - Ctrl+P to exit",
                     this.width / 2, 70, 0xFFFF6666);
+        } else if (session.isLocalSpectator()) {
+            graphics.drawCenteredString(this.font, "SPECTATOR - full view / read only",
+                    this.width / 2, 70, 0xFF66DDEE);
         }
     }
 
@@ -1951,6 +1987,7 @@ public final class VTTScreen extends Screen {
     }
 
     private boolean canTransformSelectedTokens() {
+        if (session.isLocalSpectator()) return false;
         if (session.isLocalMaster()) return true;
         if (selectionManager.getSelectedObjectIds().isEmpty() || session.getActiveScene() == null) return false;
         String localPlayerId = session.getLocalPlayerId();
@@ -2219,7 +2256,7 @@ public final class VTTScreen extends Screen {
             return session.getNetworkPlayerRoster().stream()
                     .map(entry -> new VttPlayerOption(
                             entry.id(), entry.displayName(), entry.role(),
-                            ownedTokens.getOrDefault(entry.id(), 0)))
+                            ownedTokens.getOrDefault(entry.id(), 0), entry.spectator()))
                     .sorted(Comparator.comparing(
                             VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
                     .toList();
@@ -2232,7 +2269,7 @@ public final class VTTScreen extends Screen {
                     VttRole role = id.equals(session.getLocalPlayerId())
                             ? session.getLocalRole() : VttRole.PLAYER;
                     return new VttPlayerOption(id, info.getProfile().getName(), role,
-                            ownedTokens.getOrDefault(id, 0));
+                            ownedTokens.getOrDefault(id, 0), false);
                 })
                 .sorted(Comparator.comparing(VttPlayerOption::displayName, String.CASE_INSENSITIVE_ORDER))
                 .toList();

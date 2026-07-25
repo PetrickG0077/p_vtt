@@ -24,6 +24,16 @@ public final class VttServerTokenTransformHandler {
             }
             return;
         }
+        if (VttServerPlayerEvents.isSpectator(player)) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_TRANSFORM,
+                    "spectators cannot transform tokens");
+            var confirmed = state.currentTokenTransform(
+                    request.sceneId(), request.objectId(), player.getUUID().toString(),
+                    request.clientSequence());
+            if (confirmed != null) PacketDistributor.sendToPlayer(player, confirmed);
+            return;
+        }
         var update = state.applyTokenTransform(
                 request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player)
         );

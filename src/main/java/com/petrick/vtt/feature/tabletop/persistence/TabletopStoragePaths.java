@@ -33,6 +33,7 @@ public final class TabletopStoragePaths {
     private static final String SCENES_FOLDER = "scenes";
 
     private static final String TABLETOP_FILE_NAME = "tabletop.json";
+    private static final String PLAYERS_FILE_NAME = "players.json";
 
     private static final String SCENE_FILE_EXTENSION = ".json";
 
@@ -76,6 +77,11 @@ public final class TabletopStoragePaths {
     public Path tabletopFile(String tabletopId) {
         return tabletopFolder(tabletopId)
                 .resolve(TABLETOP_FILE_NAME);
+    }
+
+    public Path playersFile(String tabletopId) {
+        return tabletopFolder(tabletopId)
+                .resolve(PLAYERS_FILE_NAME);
     }
 
     public Path scenesFolder(String tabletopId) {

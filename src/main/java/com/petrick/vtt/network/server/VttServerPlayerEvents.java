@@ -32,14 +32,29 @@ public final class VttServerPlayerEvents {
         return player != null && player.hasPermissions(2);
     }
 
+    public static boolean isSpectator(ServerPlayer player) {
+        return player != null && !isMaster(player)
+                && VttServerTabletopState.get().isPlayerSpectator(player.getUUID());
+    }
+
+    public static boolean canViewFullTabletop(ServerPlayer player) {
+        return isMaster(player) || isSpectator(player);
+    }
+
+    public static boolean setSpectator(ServerPlayer player, boolean spectator) {
+        if (player == null || spectator && isMaster(player)) return false;
+        return VttServerTabletopState.get().setPlayerSpectator(
+                player.getUUID(), spectator);
+    }
+
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
 
-        sendRole(player);
-        broadcastRoster(player.getServer(), null);
+        sendIdentity(player);
+        broadcastRoster(player.getServer());
         VttServerTabletopState state = VttServerTabletopState.get();
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
         VttServerAssetSyncService.sendActiveSceneAssets(
@@ -55,11 +70,12 @@ public final class VttServerPlayerEvents {
         VttRole current = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
         VttServerTabletopState state = VttServerTabletopState.get();
         if (LAST_ROLES.get(player.getUUID()) != current) {
-            sendRole(player);
-            broadcastRoster(player.getServer(), null);
+            if (current == VttRole.MASTER) setSpectator(player, false);
+            sendIdentity(player);
+            broadcastRoster(player.getServer());
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
             VttServerAssetSyncService.sendActiveSceneAssets(
-                    player, state.replicatedSceneFor(player), current == VttRole.MASTER, () -> {
+                    player, state.replicatedSceneFor(player), isMaster(player), () -> {
                         VttServerSceneSnapshotSync.sendToPlayer(player, state);
                         VttServerVisionSourceSync.sendToPlayer(player, state);
                     });
@@ -79,14 +95,19 @@ public final class VttServerPlayerEvents {
         VttServerRequestRateLimiter.forget(event.getEntity().getUUID());
     }
 
-    private static VttRole sendRole(ServerPlayer player) {
+    public static VttRole sendIdentity(ServerPlayer player) {
         VttRole role = isMaster(player) ? VttRole.MASTER : VttRole.PLAYER;
         LAST_ROLES.put(player.getUUID(), role);
-        VTT.LOGGER.info("Assigned VTT {} role to {} ({}) based on server permissions",
-                role, player.getGameProfile().getName(), player.getUUID());
+        VTT.LOGGER.info("Assigned VTT {} role to {} ({}) based on server permissions; spectator={}",
+                role, player.getGameProfile().getName(), player.getUUID(), isSpectator(player));
         PacketDistributor.sendToPlayer(player,
-                new VttIdentityPayload(player.getUUID().toString(), role.name()));
+                new VttIdentityPayload(
+                        player.getUUID().toString(), role.name(), isSpectator(player)));
         return role;
+    }
+
+    public static void broadcastRoster(MinecraftServer server) {
+        broadcastRoster(server, null);
     }
 
     private static void broadcastRoster(MinecraftServer server, UUID excludedPlayerId) {
@@ -97,7 +118,8 @@ public final class VttServerPlayerEvents {
                 .map(player -> new VttPlayerRosterEntry(
                         player.getUUID().toString(),
                         player.getGameProfile().getName(),
-                        isMaster(player) ? VttRole.MASTER : VttRole.PLAYER))
+                        isMaster(player) ? VttRole.MASTER : VttRole.PLAYER,
+                        isSpectator(player)))
                 .toList();
         VttPlayerRosterPayload payload = new VttPlayerRosterPayload(GSON.toJson(roster));
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {

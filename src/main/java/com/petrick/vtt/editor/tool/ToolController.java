@@ -4,6 +4,7 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -24,11 +25,13 @@ public final class ToolController {
 
     public ToolController(
             Supplier<VttScene> sceneSupplier, Runnable saveAction,
-            Supplier<VttRole> roleSupplier, Supplier<String> playerIdSupplier
+            Supplier<VttRole> roleSupplier, Supplier<String> playerIdSupplier,
+            BooleanSupplier spectatorSupplier
     ) {
         this.roleSupplier = roleSupplier;
         this.handTool = new HandTool();
-        this.selectTool = new SelectTool(sceneSupplier, roleSupplier, playerIdSupplier, saveAction);
+        this.selectTool = new SelectTool(
+                sceneSupplier, roleSupplier, playerIdSupplier, spectatorSupplier, saveAction);
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);

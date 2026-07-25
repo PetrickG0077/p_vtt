@@ -58,7 +58,9 @@ public final class VttServerVisionSourceSync {
 
     public static List<VttSceneObject> visibleObjectsFor(ServerPlayer player, VttServerTabletopState state) {
         if (player == null || state == null || state.activeScene() == null) return List.of();
-        if (VttServerPlayerEvents.isMaster(player)) return List.copyOf(state.activeScene().getObjects());
+        if (VttServerPlayerEvents.canViewFullTabletop(player)) {
+            return List.copyOf(state.activeScene().getObjects());
+        }
         PlayerScope cached = PLAYER_SCOPES.get(player.getUUID());
         VisionState vision = sameScope(cached, state) ? cached.vision() : resolveVision(player, state);
         return resolveVisibleObjects(player, state, vision);
@@ -124,6 +126,9 @@ public final class VttServerVisionSourceSync {
     }
 
     private static VisionState resolveVision(ServerPlayer player, VttServerTabletopState state) {
+        if (VttServerPlayerEvents.isSpectator(player)) {
+            return new VisionState(false, List.of());
+        }
         VttScene scene = state.activeScene();
         String ownerId = player.getUUID().toString();
         List<AuthoritativeVisionRegion> regions = new ArrayList<>();
@@ -221,7 +226,7 @@ public final class VttServerVisionSourceSync {
             ServerPlayer player, VttServerTabletopState state, String objectId
     ) {
         if (player == null || state == null || objectId == null || state.activeScene() == null) return false;
-        if (VttServerPlayerEvents.isMaster(player)) return true;
+        if (VttServerPlayerEvents.canViewFullTabletop(player)) return true;
         PlayerScope scope = PLAYER_SCOPES.get(player.getUUID());
         return sameScope(scope, state) && scope.objectIds().contains(objectId);
     }

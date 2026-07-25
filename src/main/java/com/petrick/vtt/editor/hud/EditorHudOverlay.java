@@ -91,6 +91,7 @@ public final class EditorHudOverlay {
             result.add(button(Action.OUTLINER, topX, topY, size, "", "Scene Outliner", true,
                     state.outlinerOpen()));
         }
+        if (state.spectator()) return result;
 
         int settingsX = screenWidth / 2 - size / 2;
         result.add(button(Action.SETTINGS, settingsX, topY, size, "", "Settings", true,
@@ -142,6 +143,7 @@ public final class EditorHudOverlay {
         int topCount = state.master() ? 3 : 2;
         renderPanel(context, MARGIN, MARGIN,
                 PADDING * 2 + topCount * size + (topCount - 1) * GAP, PADDING * 2 + size);
+        if (state.spectator()) return;
         renderPanel(context, screenWidth / 2 - size / 2 - PADDING, MARGIN,
                 size + PADDING * 2, size + PADDING * 2);
 
@@ -229,7 +231,7 @@ public final class EditorHudOverlay {
                         Math.max(8, 22 - markers.length())) + markers;
                 context.graphics().drawString(font, name, row.x() + 3, y,
                         local ? ACTIVE_BORDER : TEXT, false);
-                String role = player.role().name();
+                String role = player.spectator() ? "SPECTATOR" : player.role().name();
                 context.graphics().drawString(font, role,
                         row.x() + row.width() - font.width(role) - 3, y,
                         player.role() == com.petrick.vtt.core.session.VttRole.MASTER
@@ -245,8 +247,10 @@ public final class EditorHudOverlay {
                 String tokenLabel = selected.ownedTokenCount() == 1 ? " token" : " tokens";
                 context.graphics().hLine(bounds.x() + 6, bounds.x() + bounds.width() - 6,
                         playerDetailsTop(bounds, state), 0xFF55555A);
+                String selectedMode = selected.spectator()
+                        ? selected.role().name() + " / SPECTATOR" : selected.role().name();
                 context.graphics().drawString(font,
-                        selected.role().name() + "  |  " + selected.ownedTokenCount() + tokenLabel,
+                        selectedMode + "  |  " + selected.ownedTokenCount() + tokenLabel,
                         bounds.x() + 7, playerDetailsTop(bounds, state) + 7,
                         selected.role() == com.petrick.vtt.core.session.VttRole.MASTER
                                 ? 0xFFFFCC55 : MUTED, false);
@@ -262,6 +266,9 @@ public final class EditorHudOverlay {
                             canAssignOwner(state, selected));
                     renderPlayerActionRow(context, font, clearOwnerRow(bounds, state),
                             "Clear token owner", canClearOwner(state));
+                    renderPlayerActionRow(context, font, spectatorRow(bounds, state),
+                            selected.spectator() ? "Disable spectator" : "Enable spectator",
+                            selected.role() != com.petrick.vtt.core.session.VttRole.MASTER);
                 }
             }
         }
@@ -323,11 +330,16 @@ public final class EditorHudOverlay {
                 && canClearOwner(state)) {
             return Action.CLEAR_SELECTED_TOKEN_OWNER;
         }
+        if (spectatorRow(bounds, state).contains(mouseX, mouseY)
+                && selected.role() != com.petrick.vtt.core.session.VttRole.MASTER) {
+            return Action.TOGGLE_SELECTED_PLAYER_SPECTATOR;
+        }
         return Action.NONE;
     }
 
     private boolean canAssignOwner(State state, VttPlayerOption player) {
         return !state.selectedSceneTokenId().isBlank()
+                && !player.spectator()
                 && !player.id().equals(state.selectedSceneTokenOwnerId());
     }
 
@@ -346,7 +358,7 @@ public final class EditorHudOverlay {
     }
 
     private int playerDetailsTop(Bounds bounds, State state) {
-        return bounds.y() + bounds.height() - (state.master() ? 72 : 25);
+        return bounds.y() + bounds.height() - (state.master() ? 91 : 25);
     }
 
     private Bounds assignOwnerRow(Bounds bounds, State state) {
@@ -356,6 +368,11 @@ public final class EditorHudOverlay {
 
     private Bounds clearOwnerRow(Bounds bounds, State state) {
         return new Bounds(bounds.x() + 6, playerDetailsTop(bounds, state) + 50,
+                bounds.width() - 12, 16);
+    }
+
+    private Bounds spectatorRow(Bounds bounds, State state) {
+        return new Bounds(bounds.x() + 6, playerDetailsTop(bounds, state) + 69,
                 bounds.width() - 12, 16);
     }
 
@@ -418,7 +435,7 @@ public final class EditorHudOverlay {
     private Bounds playersBounds(int screenHeight, State state) {
         int rows = Math.max(1, Math.min(MAX_VISIBLE_PLAYERS, state.players().size()));
         if (state.players().size() > MAX_VISIBLE_PLAYERS) rows++;
-        int footer = state.players().isEmpty() ? 5 : state.master() ? 78 : 32;
+        int footer = state.players().isEmpty() ? 5 : state.master() ? 97 : 32;
         return new Bounds(MARGIN, topPopupY(screenHeight),
                 240, 29 + rows * 12 + footer);
     }
@@ -542,6 +559,7 @@ public final class EditorHudOverlay {
         PLAYERS,
         ASSIGN_SELECTED_TOKEN_OWNER,
         CLEAR_SELECTED_TOKEN_OWNER,
+        TOGGLE_SELECTED_PLAYER_SPECTATOR,
         OUTLINER,
         SETTINGS,
         HAND,
@@ -567,6 +585,7 @@ public final class EditorHudOverlay {
 
     public record State(
             boolean master,
+            boolean spectator,
             String activeToolId,
             boolean canUndo,
             boolean canRedo,

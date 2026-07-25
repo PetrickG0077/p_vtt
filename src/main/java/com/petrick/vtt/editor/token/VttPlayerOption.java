@@ -7,7 +7,8 @@ public record VttPlayerOption(
         String id,
         String displayName,
         VttRole role,
-        int ownedTokenCount
+        int ownedTokenCount,
+        boolean spectator
 ) {
     public VttPlayerOption {
         id = id == null ? "" : id.trim();
@@ -17,6 +18,6 @@ public record VttPlayerOption(
     }
 
     public VttPlayerOption(String id, String displayName) {
-        this(id, displayName, VttRole.PLAYER, 0);
+        this(id, displayName, VttRole.PLAYER, 0, false);
     }
 }

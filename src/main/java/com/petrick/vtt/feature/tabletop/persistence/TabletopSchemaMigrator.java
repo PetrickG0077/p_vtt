@@ -11,6 +11,7 @@ final class TabletopSchemaMigrator {
     static final int LEGACY_SCHEMA_VERSION = 0;
     static final int CURRENT_TABLETOP_SCHEMA_VERSION = 1;
     static final int CURRENT_SCENE_SCHEMA_VERSION = 1;
+    static final int CURRENT_PLAYER_PREFERENCES_SCHEMA_VERSION = 1;
 
     private TabletopSchemaMigrator() {}
 
@@ -30,6 +31,7 @@ final class TabletopSchemaMigrator {
             document = switch (type) {
                 case TABLETOP -> migrateTabletop(document, version);
                 case SCENE -> migrateScene(document, version);
+                case PLAYER_PREFERENCES -> migratePlayerPreferences(document, version);
             };
             version++;
         }
@@ -84,6 +86,19 @@ final class TabletopSchemaMigrator {
         return document;
     }
 
+    private static JsonObject migratePlayerPreferences(
+            JsonObject document, int sourceVersion
+    ) {
+        if (sourceVersion != LEGACY_SCHEMA_VERSION) {
+            throw new JsonParseException(
+                    "No player preferences migration from schema " + sourceVersion);
+        }
+        if (!document.has("players") || !document.get("players").isJsonObject()) {
+            document.add("players", new JsonObject());
+        }
+        return document;
+    }
+
     private static void ensureArray(JsonObject document, String name) {
         if (!document.has(name) || !document.get(name).isJsonArray()) {
             document.add(name, new JsonArray());
@@ -131,13 +146,17 @@ final class TabletopSchemaMigrator {
     }
 
     private static int currentVersion(DocumentType type) {
-        return type == DocumentType.TABLETOP
-                ? CURRENT_TABLETOP_SCHEMA_VERSION : CURRENT_SCENE_SCHEMA_VERSION;
+        return switch (type) {
+            case TABLETOP -> CURRENT_TABLETOP_SCHEMA_VERSION;
+            case SCENE -> CURRENT_SCENE_SCHEMA_VERSION;
+            case PLAYER_PREFERENCES -> CURRENT_PLAYER_PREFERENCES_SCHEMA_VERSION;
+        };
     }
 
     enum DocumentType {
         TABLETOP,
-        SCENE
+        SCENE,
+        PLAYER_PREFERENCES
     }
 
     record MigrationResult(
