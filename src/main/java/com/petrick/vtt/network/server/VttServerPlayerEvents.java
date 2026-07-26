@@ -103,6 +103,11 @@ public final class VttServerPlayerEvents {
         PacketDistributor.sendToPlayer(player,
                 new VttIdentityPayload(
                         player.getUUID().toString(), role.name(), isSpectator(player)));
+        if (role != VttRole.MASTER) {
+            PacketDistributor.sendToPlayer(player,
+                    VttServerPresentationHandler.currentBlackout(
+                            VttServerTabletopState.get()));
+        }
         return role;
     }
 

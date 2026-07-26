@@ -51,7 +51,9 @@ import com.petrick.vtt.platform.client.VttAssetSyncHudOverlay;
 import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
+import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
+import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -227,6 +229,7 @@ public final class VTTScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
+        applyPendingPresentationCamera();
         handleActiveSceneChange();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
@@ -268,6 +271,7 @@ public final class VTTScreen extends Screen {
             renderEditorNotice(context);
             renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
+            renderPresentationCurtain(context);
             return;
         }
 
@@ -368,6 +372,41 @@ public final class VTTScreen extends Screen {
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
         VttAssetSyncHudOverlay.render(graphics);
+        renderPresentationCurtain(context);
+    }
+
+    private void applyPendingPresentationCamera() {
+        VttClientPresentationState.CameraTarget target =
+                VttClientPresentationState.consumeCamera();
+        if (target == null) return;
+        camera.setPosition(new Vec2d(target.x(), target.y()));
+        camera.setZoom(target.zoom());
+    }
+
+    private void renderPresentationCurtain(VRenderContext context) {
+        if (session.isLocalMaster()) return;
+        float progress = VttClientPresentationState.curtainProgress();
+        if (progress <= 0.001F) return;
+        int curtainHeight = Math.min(context.screenHeight(),
+                Math.max(1, Math.round(context.screenHeight() * progress)));
+        context.graphics().fill(0, 0, context.screenWidth(), curtainHeight, 0xFF000000);
+
+        if (curtainHeight < context.screenHeight()) {
+            int foldWidth = 32;
+            for (int x = 0; x < context.screenWidth(); x += foldWidth * 2) {
+                context.graphics().fill(x, 0,
+                        Math.min(context.screenWidth(), x + foldWidth),
+                        curtainHeight, 0xFF030303);
+            }
+            int edgeTop = Math.max(0, curtainHeight - 8);
+            context.graphics().fill(0, edgeTop, context.screenWidth(),
+                    curtainHeight, 0xFF050505);
+            for (int x = 0; x < context.screenWidth(); x += 24) {
+                context.graphics().fill(x, curtainHeight,
+                        Math.min(context.screenWidth(), x + 12),
+                        Math.min(context.screenHeight(), curtainHeight + 4), 0xFF000000);
+            }
+        }
     }
 
     private void renderEditorNotice(VRenderContext context) {
@@ -667,6 +706,20 @@ public final class VTTScreen extends Screen {
             inputController.selectSelectTool();
             selectionManager.selectOnly(object.id());
         }
+    }
+
+    private boolean sendPresentationCommand(String operation) {
+        if (!session.isLocalMaster() || !session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show("Presentation controls require server authority");
+            return false;
+        }
+        PacketDistributor.sendToServer(new VttPresentationCommandPayload(
+                session.getNetworkAuthorityRevision(),
+                operation,
+                camera.getPosition().x(),
+                camera.getPosition().y(),
+                camera.getZoom()));
+        return true;
     }
 
     private void closeHudPopups() {
@@ -1693,25 +1746,12 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (keyCode == GLFW.GLFW_KEY_B) {
+        if (keyCode == GLFW.GLFW_KEY_B && tokenCreationDraft == null
+                && !assetCatalogController.isSearchActive()) {
             if (!session.getLocalRole().canEditTabletop()) return true;
-            if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inputController.beginEditorAction();
-                try {
-                    if (session.setActiveSceneBackground(null)) {
-                        closeBackgroundImagePicker();
-                        VTT.LOGGER.info("[VTT Background] Requested background removal for active scene");
-                    }
-                } finally {
-                    inputController.endEditorAction();
-                }
-                return true;
+            if (sendPresentationCommand(VttPresentationCommandPayload.TOGGLE_BLACKOUT)) {
+                VttClientEditorNotice.show("Player blackout toggled");
             }
-            backgroundImagePickerActive = true;
-            assetCatalogSelection.clear();
-            lastBackgroundImagePickerClickedItemId = null;
-            lastBackgroundImagePickerClickTime = 0L;
-            VTT.LOGGER.info("[VTT Background] Background image picker opened");
             return true;
         }
 
@@ -1783,7 +1823,13 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_C) {
             if (!session.getLocalRole().canEditTabletop()) return true;
-            inputController.toggleCollisionBoxEditor(renderState);
+            if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+                inputController.toggleCollisionBoxEditor(renderState);
+            } else {
+                if (sendPresentationCommand(VttPresentationCommandPayload.SYNC_CAMERA)) {
+                    VttClientEditorNotice.show("Camera position sent to players");
+                }
+            }
             return true;
         }
 

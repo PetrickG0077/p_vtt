@@ -77,6 +77,7 @@ public final class VttServerRequestRateLimiter {
         TOKEN_LIFECYCLE(2.0, 5.0, true),
         TOKEN_OWNERSHIP(2.0, 5.0, true),
         PLAYER_MODE(1.0, 3.0, true),
+        PRESENTATION(2.0, 5.0, true),
         SCENE_COMMAND(0.5, 3.0, true),
         TOKEN_DEFINITION(0.5, 2.0, true),
         ASSET_SYNC_REQUEST(4.0, 8.0, false),

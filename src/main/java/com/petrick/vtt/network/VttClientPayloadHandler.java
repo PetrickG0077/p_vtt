@@ -31,6 +31,8 @@ import com.petrick.vtt.network.client.VttClientTokenLifecycleSync;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
+import com.petrick.vtt.network.client.VttClientPresentationState;
+import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -163,5 +165,11 @@ public final class VttClientPayloadHandler {
 
     public static void handleTokenLifecycleUpdate(VttTokenLifecycleUpdatePayload payload, IPayloadContext context) {
         VttClientTokenLifecycleSync.acceptConfirmed(VTT.getApplication().getActiveSession(), payload);
+    }
+
+    public static void handlePresentationUpdate(
+            VttPresentationUpdatePayload payload, IPayloadContext context
+    ) {
+        VttClientPresentationState.accept(payload);
     }
 }

@@ -73,6 +73,7 @@ public final class VttServerTabletopState {
     private long pendingSceneMutationCount;
     private long completedSceneSaveCount;
     private long lastCompletedSceneSaveAt;
+    private boolean presentationBlackout;
 
     private VttServerTabletopState() {
         TabletopStoragePaths paths = new TabletopStoragePaths(FMLPaths.GAMEDIR.get());
@@ -195,6 +196,15 @@ public final class VttServerTabletopState {
 
     public synchronized long authorityRevision() {
         return authorityRevision;
+    }
+
+    public synchronized boolean togglePresentationBlackout() {
+        presentationBlackout = !presentationBlackout;
+        return presentationBlackout;
+    }
+
+    public synchronized boolean isPresentationBlackout() {
+        return presentationBlackout;
     }
 
     public synchronized void tickPersistence() {
