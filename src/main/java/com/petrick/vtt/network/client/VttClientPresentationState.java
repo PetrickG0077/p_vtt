@@ -8,6 +8,7 @@ public final class VttClientPresentationState {
     private static final long CURTAIN_DURATION_MS = 700L;
 
     private static boolean blackout;
+    private static boolean cameraFollow;
     private static float curtainFrom;
     private static long curtainStartedAt;
     private static CameraTarget pendingCamera;
@@ -15,20 +16,42 @@ public final class VttClientPresentationState {
     private VttClientPresentationState() {
     }
 
-    public static synchronized void accept(VttPresentationUpdatePayload update) {
+    public static synchronized void accept(
+            VttPresentationUpdatePayload update, boolean acceptCamera
+    ) {
         if (update == null) return;
         if (VttPresentationCommandPayload.TOGGLE_BLACKOUT.equals(update.operation())) {
             long now = System.currentTimeMillis();
             curtainFrom = curtainProgress(now);
             blackout = update.blackout();
+            cameraFollow = update.cameraFollow();
             curtainStartedAt = now;
             return;
         }
+        if (VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW.equals(update.operation())
+                || VttPresentationCommandPayload.CURRENT_STATE.equals(update.operation())) {
+            if (VttPresentationCommandPayload.CURRENT_STATE.equals(update.operation())) {
+                long now = System.currentTimeMillis();
+                curtainFrom = curtainProgress(now);
+                blackout = update.blackout();
+                curtainStartedAt = now;
+            }
+            cameraFollow = update.cameraFollow();
+            if (!cameraFollow) pendingCamera = null;
+            if (acceptCamera && cameraFollow && validCamera(update)) {
+                pendingCamera = new CameraTarget(
+                        update.cameraX(), update.cameraY(), update.cameraZoom(), true);
+            }
+            return;
+        }
         if (VttPresentationCommandPayload.SYNC_CAMERA.equals(update.operation())
-                && finite(update.cameraX(), update.cameraY(), update.cameraZoom())
-                && update.cameraZoom() > 0.0) {
-            pendingCamera = new CameraTarget(
-                    update.cameraX(), update.cameraY(), update.cameraZoom());
+                && validCamera(update)) {
+            cameraFollow = update.cameraFollow();
+            if (acceptCamera) {
+                pendingCamera = new CameraTarget(
+                        update.cameraX(), update.cameraY(), update.cameraZoom(),
+                        update.cameraFollow());
+            }
         }
     }
 
@@ -51,8 +74,13 @@ public final class VttClientPresentationState {
         return result;
     }
 
+    public static synchronized boolean isFollowingMasterCamera() {
+        return cameraFollow;
+    }
+
     public static synchronized void reset() {
         blackout = false;
+        cameraFollow = false;
         curtainFrom = 0.0F;
         curtainStartedAt = 0L;
         pendingCamera = null;
@@ -63,6 +91,11 @@ public final class VttClientPresentationState {
         return true;
     }
 
-    public record CameraTarget(double x, double y, double zoom) {
+    private static boolean validCamera(VttPresentationUpdatePayload update) {
+        return finite(update.cameraX(), update.cameraY(), update.cameraZoom())
+                && update.cameraZoom() > 0.0;
+    }
+
+    public record CameraTarget(double x, double y, double zoom, boolean following) {
     }
 }

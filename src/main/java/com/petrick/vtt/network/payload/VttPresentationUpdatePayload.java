@@ -8,7 +8,8 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Server-confirmed presentation state sent to non-master clients. */
 public record VttPresentationUpdatePayload(
-        String operation, boolean blackout, double cameraX, double cameraY, double cameraZoom
+        String operation, boolean blackout, boolean cameraFollow,
+        double cameraX, double cameraY, double cameraZoom
 ) implements CustomPacketPayload {
     public static final Type<VttPresentationUpdatePayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "presentation_update")
@@ -18,7 +19,7 @@ public record VttPresentationUpdatePayload(
         @Override
         public VttPresentationUpdatePayload decode(RegistryFriendlyByteBuf buffer) {
             return new VttPresentationUpdatePayload(
-                    buffer.readUtf(16), buffer.readBoolean(),
+                    buffer.readUtf(16), buffer.readBoolean(), buffer.readBoolean(),
                     buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         }
 
@@ -28,6 +29,7 @@ public record VttPresentationUpdatePayload(
         ) {
             buffer.writeUtf(payload.operation(), 16);
             buffer.writeBoolean(payload.blackout());
+            buffer.writeBoolean(payload.cameraFollow());
             buffer.writeDouble(payload.cameraX());
             buffer.writeDouble(payload.cameraY());
             buffer.writeDouble(payload.cameraZoom());

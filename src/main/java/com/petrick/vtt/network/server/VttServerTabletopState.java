@@ -74,6 +74,10 @@ public final class VttServerTabletopState {
     private long completedSceneSaveCount;
     private long lastCompletedSceneSaveAt;
     private boolean presentationBlackout;
+    private boolean presentationCameraFollow;
+    private double presentationCameraX;
+    private double presentationCameraY;
+    private double presentationCameraZoom = 1.0;
 
     private VttServerTabletopState() {
         TabletopStoragePaths paths = new TabletopStoragePaths(FMLPaths.GAMEDIR.get());
@@ -207,6 +211,40 @@ public final class VttServerTabletopState {
         return presentationBlackout;
     }
 
+    public synchronized boolean togglePresentationCameraFollow(
+            double cameraX, double cameraY, double cameraZoom
+    ) {
+        updatePresentationCamera(cameraX, cameraY, cameraZoom);
+        presentationCameraFollow = !presentationCameraFollow;
+        return presentationCameraFollow;
+    }
+
+    public synchronized void updatePresentationCamera(
+            double cameraX, double cameraY, double cameraZoom
+    ) {
+        presentationCameraX = cameraX;
+        presentationCameraY = cameraY;
+        presentationCameraZoom = cameraZoom;
+    }
+
+    public synchronized boolean disablePresentationCameraFollow() {
+        if (!presentationCameraFollow) return false;
+        presentationCameraFollow = false;
+        return true;
+    }
+
+    public synchronized PresentationState presentationState() {
+        return new PresentationState(
+                presentationBlackout, presentationCameraFollow,
+                presentationCameraX, presentationCameraY, presentationCameraZoom);
+    }
+
+    public record PresentationState(
+            boolean blackout, boolean cameraFollow,
+            double cameraX, double cameraY, double cameraZoom
+    ) {
+    }
+
     public synchronized void tickPersistence() {
         if (!activeSceneDirty) return;
         long now = System.currentTimeMillis();
@@ -279,7 +317,9 @@ public final class VttServerTabletopState {
         return true;
     }
 
-    public synchronized boolean createAndActivateScene(String displayName) {
+    public synchronized boolean createAndActivateScene(
+            String displayName, String backgroundAssetId
+    ) {
         if (displayName == null || displayName.isBlank() || displayName.length() > 48
                 || VttSceneLimits.sceneCreation(tabletop) != null) return false;
         String trimmedName = displayName.trim();
@@ -294,6 +334,7 @@ public final class VttServerTabletopState {
 
         if (!flushActiveSceneNow("scene creation")) return false;
         VttScene created = new VttScene(sceneId, trimmedName);
+        created.setBackgroundAssetId(backgroundAssetId);
         if (!saveSceneImmediately(created, "scene creation")) return false;
         tabletop.addSceneId(sceneId);
         tabletop.setSceneDisplayName(sceneId, trimmedName);

@@ -419,7 +419,8 @@ public final class VTTSession {
                     || !activeTabletop.getSceneIds().contains(sceneId)) return false;
             if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.SWITCH, sceneId, ""));
+                    networkAuthorityRevision, VttSceneCommandPayload.SWITCH,
+                    sceneId, "", ""));
             return true;
         }
         if (activeTabletop == null || sceneId == null || sceneId.isBlank()) return false;
@@ -445,6 +446,10 @@ public final class VTTSession {
     }
 
     public VttScene createScene(String displayName) {
+        return createScene(displayName, null);
+    }
+
+    public VttScene createScene(String displayName, String backgroundAssetId) {
         if (networkAuthorityActive) {
             VTT.LOGGER.warn("Scene creation is not network-authoritative yet");
             return null;
@@ -460,6 +465,7 @@ public final class VTTSession {
 
         saveCanvasSceneToActiveScene();
         VttScene createdScene = new VttScene(sceneId, displayName.trim());
+        createdScene.setBackgroundAssetId(backgroundAssetId);
         tabletopStorage.saveScene(activeTabletop.getId(), createdScene);
         activeTabletop.addSceneId(sceneId);
         activeTabletop.setSceneDisplayName(sceneId, displayName.trim());
@@ -471,12 +477,16 @@ public final class VTTSession {
         return createdScene;
     }
 
-    public boolean requestCreateScene(String displayName) {
-        if (!networkAuthorityActive) return createScene(displayName) != null;
+    public boolean requestCreateScene(String displayName, String backgroundAssetId) {
+        if (!networkAuthorityActive) {
+            return createScene(displayName, backgroundAssetId) != null;
+        }
         if (!isLocalMaster() || displayName == null || displayName.isBlank()
-                || displayName.length() > 48) return false;
+                || displayName.length() > 48
+                || backgroundAssetId != null && backgroundAssetId.length() > 512) return false;
         PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                networkAuthorityRevision, VttSceneCommandPayload.CREATE, "", displayName.trim()));
+                networkAuthorityRevision, VttSceneCommandPayload.CREATE, "",
+                displayName.trim(), backgroundAssetId == null ? "" : backgroundAssetId));
         return true;
     }
 
@@ -486,7 +496,7 @@ public final class VTTSession {
             activeScene.setBackgroundAssetId(assetId);
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
                     networkAuthorityRevision, VttSceneCommandPayload.SET_BACKGROUND,
-                    "", assetId == null ? "" : assetId));
+                    "", assetId == null ? "" : assetId, ""));
             return true;
         }
         activeScene.setBackgroundAssetId(assetId);
@@ -515,7 +525,7 @@ public final class VTTSession {
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
                     networkAuthorityRevision, VttSceneCommandPayload.RENAME,
-                    sceneId, displayName.trim()));
+                    sceneId, displayName.trim(), ""));
             return true;
         }
         VttScene target = sceneId.equals(activeScene.getId())
@@ -534,7 +544,8 @@ public final class VTTSession {
                 || !activeTabletop.getSceneIds().contains(sceneId)) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.DELETE, sceneId, ""));
+                    networkAuthorityRevision, VttSceneCommandPayload.DELETE,
+                    sceneId, "", ""));
             return true;
         }
         boolean deletingActive = sceneId.equals(activeScene.getId());

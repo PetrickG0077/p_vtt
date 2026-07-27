@@ -4,10 +4,13 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/** Validates master presentation commands and broadcasts them to non-master clients. */
+import java.util.UUID;
+
+/** Validates master presentation commands and broadcasts the confirmed state. */
 public final class VttServerPresentationHandler {
     private static final double MAX_CAMERA_COORDINATE = 10_000_000.0;
     private static final double MIN_CAMERA_ZOOM = 0.1;
@@ -32,41 +35,75 @@ public final class VttServerPresentationHandler {
 
         VttPresentationUpdatePayload update;
         if (VttPresentationCommandPayload.TOGGLE_BLACKOUT.equals(command.operation())) {
-            boolean blackout = state.togglePresentationBlackout();
-            update = blackoutUpdate(blackout);
+            state.togglePresentationBlackout();
+            update = update(
+                    VttPresentationCommandPayload.TOGGLE_BLACKOUT, state.presentationState());
             VTT.LOGGER.info("VTT player blackout set to {} by {}",
-                    blackout, requester.getGameProfile().getName());
+                    state.isPresentationBlackout(), requester.getGameProfile().getName());
+        } else if (VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW.equals(
+                command.operation())) {
+            if (!validCamera(command)) {
+                reject(requester, "invalid camera");
+                return;
+            }
+            boolean following = state.togglePresentationCameraFollow(
+                    command.cameraX(), command.cameraY(), command.cameraZoom());
+            update = update(
+                    VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW,
+                    state.presentationState());
+            VTT.LOGGER.info("VTT player camera follow set to {} by {}",
+                    following, requester.getGameProfile().getName());
         } else if (VttPresentationCommandPayload.SYNC_CAMERA.equals(command.operation())) {
             if (!validCamera(command)) {
                 reject(requester, "invalid camera");
                 return;
             }
-            update = new VttPresentationUpdatePayload(
-                    VttPresentationCommandPayload.SYNC_CAMERA,
-                    state.isPresentationBlackout(),
+            state.updatePresentationCamera(
                     command.cameraX(), command.cameraY(), command.cameraZoom());
+            update = update(
+                    VttPresentationCommandPayload.SYNC_CAMERA, state.presentationState());
         } else {
             reject(requester, "unknown operation");
             return;
         }
 
         for (ServerPlayer player : requester.getServer().getPlayerList().getPlayers()) {
-            if (!VttServerPlayerEvents.isMaster(player)) {
+            PacketDistributor.sendToPlayer(player, update);
+        }
+    }
+
+    public static VttPresentationUpdatePayload currentPresentation(
+            VttServerTabletopState state
+    ) {
+        VttServerTabletopState.PresentationState current = state == null
+                ? new VttServerTabletopState.PresentationState(
+                false, false, 0.0, 0.0, 1.0)
+                : state.presentationState();
+        return update(VttPresentationCommandPayload.CURRENT_STATE, current);
+    }
+
+    public static void stopCameraFollow(
+            MinecraftServer server, UUID excludedPlayerId
+    ) {
+        if (server == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
+        if (!state.disablePresentationCameraFollow()) return;
+        VttPresentationUpdatePayload update = update(
+                VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW,
+                state.presentationState());
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (excludedPlayerId == null || !excludedPlayerId.equals(player.getUUID())) {
                 PacketDistributor.sendToPlayer(player, update);
             }
         }
     }
 
-    public static VttPresentationUpdatePayload currentBlackout(
-            VttServerTabletopState state
+    private static VttPresentationUpdatePayload update(
+            String operation, VttServerTabletopState.PresentationState state
     ) {
-        return blackoutUpdate(state != null && state.isPresentationBlackout());
-    }
-
-    private static VttPresentationUpdatePayload blackoutUpdate(boolean blackout) {
         return new VttPresentationUpdatePayload(
-                VttPresentationCommandPayload.TOGGLE_BLACKOUT,
-                blackout, 0.0, 0.0, 1.0);
+                operation, state.blackout(), state.cameraFollow(),
+                state.cameraX(), state.cameraY(), state.cameraZoom());
     }
 
     private static boolean validCamera(VttPresentationCommandPayload command) {

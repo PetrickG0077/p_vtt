@@ -9,7 +9,8 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Master request to change server-authoritative scene lifecycle or metadata. */
 public record VttSceneCommandPayload(
-        long authorityRevision, String operation, String targetId, String value)
+        long authorityRevision, String operation, String targetId,
+        String value, String backgroundAssetId)
         implements CustomPacketPayload {
     public static final String CREATE = "CREATE";
     public static final String SWITCH = "SWITCH";
@@ -22,9 +23,10 @@ public record VttSceneCommandPayload(
 
     public static final StreamCodec<ByteBuf, VttSceneCommandPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_LONG, VttSceneCommandPayload::authorityRevision,
-            ByteBufCodecs.STRING_UTF8, VttSceneCommandPayload::operation,
-            ByteBufCodecs.STRING_UTF8, VttSceneCommandPayload::targetId,
-            ByteBufCodecs.STRING_UTF8, VttSceneCommandPayload::value,
+            ByteBufCodecs.stringUtf8(16), VttSceneCommandPayload::operation,
+            ByteBufCodecs.stringUtf8(128), VttSceneCommandPayload::targetId,
+            ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::value,
+            ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::backgroundAssetId,
             VttSceneCommandPayload::new);
 
     @Override

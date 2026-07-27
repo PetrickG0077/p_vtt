@@ -170,6 +170,7 @@ public final class VttClientPayloadHandler {
     public static void handlePresentationUpdate(
             VttPresentationUpdatePayload payload, IPayloadContext context
     ) {
-        VttClientPresentationState.accept(payload);
+        var session = VTT.getApplication().getActiveSession();
+        VttClientPresentationState.accept(payload, !session.isLocalMaster());
     }
 }

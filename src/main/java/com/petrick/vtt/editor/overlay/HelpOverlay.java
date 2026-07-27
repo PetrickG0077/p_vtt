@@ -95,6 +95,7 @@ public final class HelpOverlay {
                 "Ctrl+F5: Asset filter",
                 "B: Toggle player blackout",
                 "C: Send camera to players",
+                "Alt+C: Toggle player camera follow",
                 "F6: Tokens",
                 "F7: Outliner",
                 "F9: Hide panels",

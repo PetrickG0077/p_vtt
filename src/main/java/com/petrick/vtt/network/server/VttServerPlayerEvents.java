@@ -87,6 +87,10 @@ public final class VttServerPlayerEvents {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            if (isMaster(player)) {
+                VttServerPresentationHandler.stopCameraFollow(
+                        player.getServer(), player.getUUID());
+            }
             broadcastRoster(player.getServer(), player.getUUID());
         }
         LAST_ROLES.remove(event.getEntity().getUUID());
@@ -103,11 +107,9 @@ public final class VttServerPlayerEvents {
         PacketDistributor.sendToPlayer(player,
                 new VttIdentityPayload(
                         player.getUUID().toString(), role.name(), isSpectator(player)));
-        if (role != VttRole.MASTER) {
-            PacketDistributor.sendToPlayer(player,
-                    VttServerPresentationHandler.currentBlackout(
-                            VttServerTabletopState.get()));
-        }
+        PacketDistributor.sendToPlayer(player,
+                VttServerPresentationHandler.currentPresentation(
+                        VttServerTabletopState.get()));
         return role;
     }
 

@@ -58,6 +58,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
@@ -78,6 +79,7 @@ public final class VTTScreen extends Screen {
     private static final double DEFAULT_TOKEN_VISION_INNER_RADIUS = 256.0;
     private static final double TOKEN_VISION_OUTER_STEP = 64.0;
     private static final double TOKEN_VISION_INNER_STEP = 16.0;
+    private static final long FOLLOW_CAMERA_SEND_INTERVAL_MS = 50L;
 
     private final VTTSession session;
 
@@ -144,6 +146,7 @@ public final class VTTScreen extends Screen {
     private String lastTokenImagePickerClickedItemId;
 
     private boolean backgroundImagePickerActive;
+    private BackgroundPickerTarget backgroundPickerTarget = BackgroundPickerTarget.NONE;
 
     private long lastBackgroundImagePickerClickTime;
 
@@ -158,6 +161,11 @@ public final class VTTScreen extends Screen {
     private String renameBuffer;
 
     private String newSceneNameBuffer;
+    private String newSceneBackgroundAssetId;
+    private String newSceneBackgroundDisplayName;
+    private ResourceLocation newSceneBackgroundPreviewTexture;
+    private int newSceneBackgroundPreviewWidth;
+    private int newSceneBackgroundPreviewHeight;
 
     private String renamingSceneId;
 
@@ -174,6 +182,12 @@ public final class VTTScreen extends Screen {
     private boolean hudCreationOpen;
 
     private String observedActiveSceneId;
+    private long lastFollowCameraSentAt;
+    private double lastFollowCameraX = Double.NaN;
+    private double lastFollowCameraY = Double.NaN;
+    private double lastFollowCameraZoom = Double.NaN;
+    private Vec2d followedCameraTarget;
+    private double followedCameraZoom = 1.0;
 
     public VTTScreen() {
         super(Component.literal("Virtual Tabletop"));
@@ -230,6 +244,7 @@ public final class VTTScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
         applyPendingPresentationCamera();
+        sendFollowCameraIfNeeded();
         handleActiveSceneChange();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
@@ -366,7 +381,7 @@ public final class VTTScreen extends Screen {
             renderRenameDialog(context);
         }
 
-        if (newSceneNameBuffer != null) {
+        if (newSceneNameBuffer != null && !backgroundImagePickerActive) {
             renderNewSceneDialog(context);
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
@@ -378,9 +393,58 @@ public final class VTTScreen extends Screen {
     private void applyPendingPresentationCamera() {
         VttClientPresentationState.CameraTarget target =
                 VttClientPresentationState.consumeCamera();
-        if (target == null) return;
-        camera.setPosition(new Vec2d(target.x(), target.y()));
-        camera.setZoom(target.zoom());
+        if (target != null) {
+            if (target.following() && !session.isLocalMaster()) {
+                followedCameraTarget = new Vec2d(target.x(), target.y());
+                followedCameraZoom = target.zoom();
+            } else {
+                followedCameraTarget = null;
+                camera.setPosition(new Vec2d(target.x(), target.y()));
+                camera.setZoom(target.zoom());
+            }
+        }
+        if (session.isLocalMaster()
+                || !VttClientPresentationState.isFollowingMasterCamera()) {
+            followedCameraTarget = null;
+            return;
+        }
+        if (followedCameraTarget == null) return;
+        camera.setPosition(camera.getPosition().add(
+                followedCameraTarget.subtract(camera.getPosition()).multiply(0.35)));
+        camera.setZoom(camera.getZoom() + (followedCameraZoom - camera.getZoom()) * 0.35);
+    }
+
+    private void sendFollowCameraIfNeeded() {
+        if (!session.isLocalMaster()
+                || !session.isNetworkAuthorityActive()
+                || !VttClientPresentationState.isFollowingMasterCamera()) {
+            lastFollowCameraSentAt = 0L;
+            lastFollowCameraX = Double.NaN;
+            lastFollowCameraY = Double.NaN;
+            lastFollowCameraZoom = Double.NaN;
+            return;
+        }
+        Vec2d position = camera.getPosition();
+        double zoom = camera.getZoom();
+        boolean changed = !Double.isFinite(lastFollowCameraX)
+                || Math.abs(position.x() - lastFollowCameraX) > 0.01
+                || Math.abs(position.y() - lastFollowCameraY) > 0.01
+                || Math.abs(zoom - lastFollowCameraZoom) > 0.0001;
+        long now = System.currentTimeMillis();
+        if (!changed || now - lastFollowCameraSentAt < FOLLOW_CAMERA_SEND_INTERVAL_MS) return;
+        if (sendPresentationCommand(VttPresentationCommandPayload.SYNC_CAMERA)) {
+            lastFollowCameraSentAt = now;
+            lastFollowCameraX = position.x();
+            lastFollowCameraY = position.y();
+            lastFollowCameraZoom = zoom;
+        }
+    }
+
+    private boolean blocksFollowedCameraPointer(int button) {
+        if (session.isLocalMaster()
+                || !VttClientPresentationState.isFollowingMasterCamera()) return false;
+        return button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE
+                || "hand".equals(inputController.getActiveToolId());
     }
 
     private void renderPresentationCurtain(VRenderContext context) {
@@ -436,9 +500,10 @@ public final class VTTScreen extends Screen {
             hudCreationOpen = false;
         }
         editorHudOverlay.render(context, this.font, editorHudState());
-        if (hudSettingsOpen && session.getActiveScene() != null) {
+        if (hudSettingsOpen && session.getActiveScene() != null
+                && backgroundPickerTarget != BackgroundPickerTarget.ACTIVE_SCENE) {
             editorSettingsOverlay.render(
-                    context, this.font, session.getActiveScene().getGrid(), master);
+                    context, this.font, session.getActiveScene(), master);
         }
     }
 
@@ -513,9 +578,19 @@ public final class VTTScreen extends Screen {
         inputController.beginEditorAction();
         EditorSettingsOverlay.Interaction interaction = editorSettingsOverlay.mouseClicked(
                 mouseX, mouseY, button, width, height,
-                session.getActiveScene().getGrid(), session.isLocalMaster());
+                session.getActiveScene(), session.isLocalMaster());
         if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
             persistGridSettings();
+        } else if (interaction == EditorSettingsOverlay.Interaction.CHOOSE_BACKGROUND) {
+            inputController.endEditorAction();
+            openBackgroundImagePicker(BackgroundPickerTarget.ACTIVE_SCENE);
+            return true;
+        } else if (interaction == EditorSettingsOverlay.Interaction.REMOVE_BACKGROUND) {
+            if (session.setActiveSceneBackground(null)) {
+                VttClientEditorNotice.show("Scene background removed");
+            }
+            inputController.endEditorAction();
+            return true;
         }
         if (!editorSettingsOverlay.isDraggingOpacity()) {
             inputController.endEditorAction();
@@ -613,7 +688,7 @@ public final class VTTScreen extends Screen {
                 }
             }
             case CREATE_SCENE -> {
-                if (master) newSceneNameBuffer = "";
+                if (master) beginNewSceneDialog();
                 closeHudPopups();
             }
             case CREATE_TOKEN -> {
@@ -694,6 +769,11 @@ public final class VTTScreen extends Screen {
     }
 
     private void focusSelectedPlayerToken() {
+        if (!session.isLocalMaster()
+                && VttClientPresentationState.isFollowingMasterCamera()) {
+            VttClientEditorNotice.show("Camera is following the master");
+            return;
+        }
         String objectId = editorHudOverlay.getSelectedOwnedTokenId();
         if (objectId == null || objectId.isBlank()) return;
         CanvasObject object = scene.findObjectById(objectId);
@@ -850,7 +930,11 @@ public final class VTTScreen extends Screen {
             return renderState == null || inputController.mouseClicked(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
-        if (newSceneNameBuffer != null || renamingSceneId != null || pendingDeleteSceneId != null) return true;
+        if (newSceneNameBuffer != null) {
+            if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) return true;
+            return handleNewSceneDialogMouseClicked(mouseX, mouseY, button);
+        }
+        if (renamingSceneId != null || pendingDeleteSceneId != null) return true;
 
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
             return true;
@@ -863,6 +947,7 @@ public final class VTTScreen extends Screen {
         if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
+        if (blocksFollowedCameraPointer(button)) return true;
         if (!session.getLocalRole().canEditTabletop()) {
             if (renderState != null) {
                 return inputController.mouseClicked(mouseX, mouseY, button,
@@ -1061,8 +1146,9 @@ public final class VTTScreen extends Screen {
                     && now - lastBackgroundImagePickerClickTime <= 350L;
 
             if (isSelectableBackgroundImage(clickedItem) && doubleClick) {
-                applySceneBackgroundSelection(clickedItem);
-                closeBackgroundImagePicker();
+                if (applyBackgroundImageSelection(clickedItem)) {
+                    closeBackgroundImagePicker();
+                }
             } else {
                 lastBackgroundImagePickerClickedItemId = clickedItem.id();
                 lastBackgroundImagePickerClickTime = now;
@@ -1389,6 +1475,7 @@ public final class VTTScreen extends Screen {
         if (backgroundImagePickerActive) {
             return true;
         }
+        if (newSceneNameBuffer != null) return true;
 
         if (tokenCreationDraft != null) {
             return true;
@@ -1451,6 +1538,7 @@ public final class VTTScreen extends Screen {
         if (backgroundImagePickerActive) {
             return true;
         }
+        if (newSceneNameBuffer != null) return true;
 
         if (tokenCreationDraft != null) {
             return true;
@@ -1460,6 +1548,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (blocksFollowedCameraPointer(button)) return true;
         if (renderState != null && inputController.mouseDragged(
                 mouseX,
                 mouseY,
@@ -1482,7 +1571,8 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
-        if (hudSettingsOpen && editorSettingsOverlay.contains(
+        if (!backgroundImagePickerActive
+                && hudSettingsOpen && editorSettingsOverlay.contains(
                 mouseX, mouseY, this.width, this.height)) return true;
         if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
                 editorHudState())) return true;
@@ -1495,6 +1585,7 @@ public final class VTTScreen extends Screen {
                     session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY, scrollY);
             return true;
         }
+        if (newSceneNameBuffer != null) return true;
 
         if (tokenCreationDraft != null && tokenImagePickerActive) {
             if (assetCatalogController.mouseScrolled(
@@ -1552,6 +1643,8 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (!session.isLocalMaster()
+                && VttClientPresentationState.isFollowingMasterCamera()) return true;
         if (renderState != null && inputController.mouseScrolled(
                 mouseX,
                 mouseY,
@@ -1596,13 +1689,23 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (newSceneNameBuffer != null && backgroundImagePickerActive) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                closeBackgroundImagePicker();
+                return true;
+            }
+            if (assetCatalogController.keyPressed(
+                    keyCode, getKeyboardModifiers())) return true;
+            return true;
+        }
+
         if (newSceneNameBuffer != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmNewScene();
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                newSceneNameBuffer = null;
+                closeNewSceneDialog();
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !newSceneNameBuffer.isEmpty()) {
@@ -1825,6 +1928,11 @@ public final class VTTScreen extends Screen {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
                 inputController.toggleCollisionBoxEditor(renderState);
+            } else if ((getKeyboardModifiers() & GLFW.GLFW_MOD_ALT) != 0) {
+                if (sendPresentationCommand(
+                        VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW)) {
+                    VttClientEditorNotice.show("Player camera follow toggled");
+                }
             } else {
                 if (sendPresentationCommand(VttPresentationCommandPayload.SYNC_CAMERA)) {
                     VttClientEditorNotice.show("Camera position sent to players");
@@ -2201,7 +2309,7 @@ public final class VTTScreen extends Screen {
             closeBackgroundImagePicker();
             closeTokenCreationDialog();
             tokenCatalogContextMenu.close();
-            newSceneNameBuffer = null;
+            closeNewSceneDialog();
             cancelRename();
             inputController.selectHandTool();
             closeHudPopups();
@@ -2209,23 +2317,66 @@ public final class VTTScreen extends Screen {
         VTT.LOGGER.info("Player view preview {}", playerViewPreview ? "enabled" : "disabled");
     }
 
-    private void applySceneBackgroundSelection(AssetCatalogItem item) {
-        if (session.getActiveScene() == null) {
-            VTT.LOGGER.warn("[VTT Background] There is no active scene");
-            return;
+    private boolean applyNewSceneBackgroundSelection(AssetCatalogItem item) {
+        if (newSceneNameBuffer == null || item == null
+                || !isSelectableBackgroundImage(item)) return false;
+        ResourceLocation texture = null;
+        int textureWidth = 0;
+        int textureHeight = 0;
+        if (item instanceof AssetCatalogItem.RegisteredAsset registered
+                && registered.assetRef() instanceof BuiltInTextureAssetRef builtIn) {
+            texture = builtIn.texture();
+            textureWidth = builtIn.textureWidth();
+            textureHeight = builtIn.textureHeight();
+        } else {
+            AssetThumbnail thumbnail = session.getAssetThumbnailRegistry()
+                    .findById(item.id()).orElse(null);
+            if (thumbnail != null) {
+                texture = thumbnail.texture();
+                textureWidth = thumbnail.width();
+                textureHeight = thumbnail.height();
+            }
         }
-        inputController.beginEditorAction();
-        try {
-            if (!session.setActiveSceneBackground(item.id())) return;
-            VTT.LOGGER.info("[VTT Background] Background update requested for scene {}: {}",
-                    session.getActiveScene().getId(), item.id());
-        } finally {
+        if (texture == null || textureWidth <= 0 || textureHeight <= 0) return false;
+        newSceneBackgroundAssetId = item.id();
+        newSceneBackgroundDisplayName = item.displayName();
+        newSceneBackgroundPreviewTexture = texture;
+        newSceneBackgroundPreviewWidth = textureWidth;
+        newSceneBackgroundPreviewHeight = textureHeight;
+        VTT.LOGGER.info("[VTT Background] Selected background for new scene: {}", item.id());
+        return true;
+    }
+
+    private boolean applyBackgroundImageSelection(AssetCatalogItem item) {
+        if (backgroundPickerTarget == BackgroundPickerTarget.NEW_SCENE) {
+            return applyNewSceneBackgroundSelection(item);
+        }
+        if (backgroundPickerTarget == BackgroundPickerTarget.ACTIVE_SCENE
+                && isSelectableBackgroundImage(item)) {
+            inputController.beginEditorAction();
+            boolean changed = session.setActiveSceneBackground(item.id());
             inputController.endEditorAction();
+            if (changed) {
+                VttClientEditorNotice.show("Scene background changed");
+                VTT.LOGGER.info(
+                        "[VTT Background] Active scene background changed to {}", item.id());
+            }
+            return changed;
         }
+        return false;
+    }
+
+    private void openBackgroundImagePicker(BackgroundPickerTarget target) {
+        backgroundPickerTarget = target;
+        backgroundImagePickerActive = true;
+        assetCatalogSelection.clear();
+        lastBackgroundImagePickerClickedItemId = null;
+        lastBackgroundImagePickerClickTime = 0L;
     }
 
     private void closeBackgroundImagePicker() {
         backgroundImagePickerActive = false;
+        backgroundPickerTarget = BackgroundPickerTarget.NONE;
         lastBackgroundImagePickerClickedItemId = null;
         lastBackgroundImagePickerClickTime = 0L;
     }
@@ -2236,6 +2387,10 @@ public final class VTTScreen extends Screen {
             if (isAllowedRenameCharacter(codePoint) && sceneRenameBuffer.length() < 48) {
                 sceneRenameBuffer += codePoint;
             }
+            return true;
+        }
+        if (newSceneNameBuffer != null && backgroundImagePickerActive) {
+            assetCatalogController.charTyped(codePoint);
             return true;
         }
         if (newSceneNameBuffer != null) {
@@ -2524,11 +2679,31 @@ public final class VTTScreen extends Screen {
 
     private void confirmNewScene() {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
-        if (session.requestCreateScene(newSceneNameBuffer)) {
+        if (session.requestCreateScene(
+                newSceneNameBuffer, newSceneBackgroundAssetId)) {
             selectionManager.clearSelection();
             inputController.selectHandTool();
-            newSceneNameBuffer = null;
+            closeNewSceneDialog();
         }
+    }
+
+    private void beginNewSceneDialog() {
+        newSceneNameBuffer = "";
+        clearNewSceneBackground();
+    }
+
+    private void closeNewSceneDialog() {
+        newSceneNameBuffer = null;
+        clearNewSceneBackground();
+        closeBackgroundImagePicker();
+    }
+
+    private void clearNewSceneBackground() {
+        newSceneBackgroundAssetId = null;
+        newSceneBackgroundDisplayName = null;
+        newSceneBackgroundPreviewTexture = null;
+        newSceneBackgroundPreviewWidth = 0;
+        newSceneBackgroundPreviewHeight = 0;
     }
 
     private void handleSceneContextMenuAction(SceneContextMenuOverlay.Action action) {
@@ -2597,31 +2772,143 @@ public final class VTTScreen extends Screen {
         sceneContextMenu.close();
         renamingObjectId = null;
         renameBuffer = null;
-        newSceneNameBuffer = null;
+        closeNewSceneDialog();
         tokenCreationDraft = null;
         renamingSceneId = null;
         sceneRenameBuffer = null;
         pendingDeleteSceneId = null;
-        backgroundImagePickerActive = false;
+        closeBackgroundImagePicker();
         tokenImagePickerActive = false;
         closeHudPopups();
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);
     }
 
     private void renderNewSceneDialog(VRenderContext context) {
-        int width = 300;
-        int height = 70;
+        int width = 380;
+        int height = 170;
         int x = context.screenWidth() / 2 - width / 2;
         int y = context.screenHeight() / 2 - height / 2;
-        context.graphics().fill(x, y, x + width, y + height, 0xEE000000);
-        context.graphics().hLine(x, x + width, y, 0xFFFFAA44);
-        context.graphics().hLine(x, x + width, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x, y, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x + width, y, y + height, 0xFFFFAA44);
+        renderSceneDialogFrame(context, x, y, width, height);
         context.graphics().drawString(this.font, "Create Scene", x + 10, y + 10, 0xFFFFFFFF, false);
-        context.graphics().drawString(this.font, newSceneNameBuffer + "_", x + 10, y + 28, 0xFFFFFFFF, false);
-        context.graphics().drawString(this.font, "Enter: create   Esc: cancel",
-                x + 10, y + 48, 0xFFAAAAAA, false);
+        context.graphics().drawString(this.font, "Name:", x + 10, y + 30,
+                0xFFAAAAAA, false);
+        context.graphics().fill(x + 55, y + 24, x + width - 10, y + 43, 0xCC111116);
+        sceneDialogBorder(context, x + 55, y + 24, width - 65, 19, 0xFFFFAA44);
+        context.graphics().drawString(this.font, newSceneNameBuffer + "_",
+                x + 61, y + 30, 0xFFFFFFFF, false);
+
+        int previewX = x + 10;
+        int previewY = y + 52;
+        int previewSize = 80;
+        context.graphics().fill(previewX, previewY,
+                previewX + previewSize, previewY + previewSize, 0xCC111116);
+        sceneDialogBorder(context, previewX, previewY, previewSize, previewSize, 0xFF77777D);
+        if (newSceneBackgroundPreviewTexture != null) {
+            int[] fitted = fitPreview(
+                    newSceneBackgroundPreviewWidth, newSceneBackgroundPreviewHeight,
+                    previewSize - 4);
+            int imageX = previewX + (previewSize - fitted[0]) / 2;
+            int imageY = previewY + (previewSize - fitted[1]) / 2;
+            context.graphics().blit(
+                    newSceneBackgroundPreviewTexture,
+                    imageX, imageY, fitted[0], fitted[1],
+                    0.0F, 0.0F,
+                    newSceneBackgroundPreviewWidth, newSceneBackgroundPreviewHeight,
+                    newSceneBackgroundPreviewWidth, newSceneBackgroundPreviewHeight);
+        } else {
+            context.graphics().drawCenteredString(
+                    this.font, "No image", previewX + previewSize / 2,
+                    previewY + previewSize / 2 - 4, 0xFF88888E);
+        }
+
+        renderNewSceneButton(context, x + 100, y + 55, 260, 22,
+                "Choose Background", true);
+        renderNewSceneButton(context, x + 100, y + 82, 260, 22,
+                "Use No Background", newSceneBackgroundAssetId != null);
+        String selectedBackground = newSceneBackgroundDisplayName == null
+                ? "Background: none"
+                : "Background: " + ellipsize(newSceneBackgroundDisplayName, 31);
+        context.graphics().drawString(this.font, selectedBackground,
+                x + 100, y + 113,
+                newSceneBackgroundAssetId == null ? 0xFFAAAAAA : 0xFFFFFFFF, false);
+
+        renderNewSceneButton(context, x + 100, y + 140, 110, 20,
+                "Create", !newSceneNameBuffer.isBlank());
+        renderNewSceneButton(context, x + 250, y + 140, 110, 20,
+                "Cancel", true);
+    }
+
+    private boolean handleNewSceneDialogMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (newSceneNameBuffer == null) return false;
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
+        int dialogX = this.width / 2 - 190;
+        int dialogY = this.height / 2 - 85;
+        if (inside(mouseX, mouseY, dialogX + 100, dialogY + 55, 260, 22)) {
+            openBackgroundImagePicker(BackgroundPickerTarget.NEW_SCENE);
+            return true;
+        }
+        if (inside(mouseX, mouseY, dialogX + 100, dialogY + 82, 260, 22)) {
+            clearNewSceneBackground();
+            return true;
+        }
+        if (inside(mouseX, mouseY, dialogX + 100, dialogY + 140, 110, 20)) {
+            confirmNewScene();
+            return true;
+        }
+        if (inside(mouseX, mouseY, dialogX + 250, dialogY + 140, 110, 20)) {
+            closeNewSceneDialog();
+            return true;
+        }
+        return true;
+    }
+
+    private void renderNewSceneButton(
+            VRenderContext context, int x, int y, int width, int height,
+            String label, boolean enabled
+    ) {
+        boolean hovered = enabled && inside(
+                context.mouseX(), context.mouseY(), x, y, width, height);
+        context.graphics().fill(x, y, x + width, y + height,
+                enabled ? hovered ? 0xEE34343D : 0xDD18181E : 0xCC111114);
+        sceneDialogBorder(context, x, y, width, height,
+                enabled ? 0xFFFFAA44 : 0xFF55555A);
+        context.graphics().drawCenteredString(this.font, label,
+                x + width / 2, y + (height - 8) / 2,
+                enabled ? 0xFFFFFFFF : 0xFF77777D);
+    }
+
+    private void sceneDialogBorder(
+            VRenderContext context, int x, int y, int width, int height, int color
+    ) {
+        context.graphics().hLine(x, x + width, y, color);
+        context.graphics().hLine(x, x + width, y + height, color);
+        context.graphics().vLine(x, y, y + height, color);
+        context.graphics().vLine(x + width, y, y + height, color);
+    }
+
+    private int[] fitPreview(int sourceWidth, int sourceHeight, int maximumSize) {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return new int[]{maximumSize, maximumSize};
+        double scale = Math.min(
+                maximumSize / (double) sourceWidth,
+                maximumSize / (double) sourceHeight);
+        return new int[]{
+                Math.max(1, (int) Math.round(sourceWidth * scale)),
+                Math.max(1, (int) Math.round(sourceHeight * scale))
+        };
+    }
+
+    private boolean inside(
+            double mouseX, double mouseY, int x, int y, int width, int height
+    ) {
+        return mouseX >= x && mouseX <= x + width
+                && mouseY >= y && mouseY <= y + height;
+    }
+
+    private String ellipsize(String value, int maximumLength) {
+        if (value == null || value.length() <= maximumLength) return value;
+        return value.substring(0, Math.max(0, maximumLength - 3)) + "...";
     }
 
     private boolean isSelectableTokenImage(AssetCatalogItem item) {
@@ -2699,8 +2986,18 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private enum BackgroundPickerTarget {
+        NONE,
+        NEW_SCENE,
+        ACTIVE_SCENE
+    }
+
     @Override
     public void removed() {
+        if (session.isLocalMaster()
+                && VttClientPresentationState.isFollowingMasterCamera()) {
+            sendPresentationCommand(VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW);
+        }
         inputController.cancelWallDrawing();
         inputController.cancelDoorEditing();
         inputController.cancelFogDrawing();

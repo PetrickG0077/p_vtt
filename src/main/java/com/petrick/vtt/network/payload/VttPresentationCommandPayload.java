@@ -12,6 +12,8 @@ public record VttPresentationCommandPayload(
 ) implements CustomPacketPayload {
     public static final String TOGGLE_BLACKOUT = "BLACKOUT";
     public static final String SYNC_CAMERA = "CAMERA";
+    public static final String TOGGLE_CAMERA_FOLLOW = "FOLLOW";
+    public static final String CURRENT_STATE = "STATE";
 
     public static final Type<VttPresentationCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "presentation_command")

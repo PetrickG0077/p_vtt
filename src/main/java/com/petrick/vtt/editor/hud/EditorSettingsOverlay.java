@@ -1,12 +1,13 @@
 package com.petrick.vtt.editor.hud;
 
+import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
 import java.util.Locale;
 
-/** Extensible settings window. The first available category configures the scene grid. */
+/** Extensible settings window for the active scene. */
 public final class EditorSettingsOverlay {
     private static final int WIDTH = 340;
     private static final int HEIGHT = 190;
@@ -25,13 +26,15 @@ public final class EditorSettingsOverlay {
     };
 
     private boolean draggingOpacity;
+    private Category selectedCategory = Category.GRID;
 
     public void render(
             VRenderContext context,
             Font font,
-            VttSceneGrid grid,
+            VttScene scene,
             boolean editable
     ) {
+        VttSceneGrid grid = scene.getGrid();
         Bounds panel = bounds(context.screenWidth(), context.screenHeight());
         context.graphics().fill(panel.x(), panel.y(), panel.right(), panel.bottom(),
                 PANEL_BACKGROUND);
@@ -40,13 +43,17 @@ public final class EditorSettingsOverlay {
                 font, "Settings", panel.x() + panel.width() / 2, panel.y() + 8, TEXT);
         context.graphics().hLine(panel.x() + 8, panel.right() - 8, panel.y() + 21, PANEL_BORDER);
 
-        Bounds category = categoryBounds(panel);
-        context.graphics().fill(category.x(), category.y(), category.right(), category.bottom(),
-                SELECTED_BACKGROUND);
-        context.graphics().drawCenteredString(
-                font, "Grid", category.x() + category.width() / 2, category.y() + 6, TEXT);
+        renderCategory(context, font, gridCategoryBounds(panel), "Grid",
+                selectedCategory == Category.GRID);
+        renderCategory(context, font, sceneCategoryBounds(panel), "Scene",
+                selectedCategory == Category.SCENE);
         context.graphics().vLine(panel.x() + CATEGORY_WIDTH + 8,
                 panel.y() + 29, panel.bottom() - 8, 0xFF66666C);
+
+        if (selectedCategory == Category.SCENE) {
+            renderScene(context, font, panel, scene, editable);
+            return;
+        }
 
         int contentX = panel.x() + CATEGORY_WIDTH + 20;
         context.graphics().drawString(font, "Grid", contentX, panel.y() + 31, TEXT, false);
@@ -68,12 +75,38 @@ public final class EditorSettingsOverlay {
             int button,
             int screenWidth,
             int screenHeight,
-            VttSceneGrid grid,
+            VttScene scene,
             boolean editable
     ) {
         Bounds panel = bounds(screenWidth, screenHeight);
         if (!panel.contains(mouseX, mouseY)) return Interaction.NONE;
-        if (button != 0 || !editable || grid == null) return Interaction.CONSUMED;
+        if (button != 0) return Interaction.CONSUMED;
+
+        if (gridCategoryBounds(panel).contains(mouseX, mouseY)) {
+            selectedCategory = Category.GRID;
+            draggingOpacity = false;
+            return Interaction.CONSUMED;
+        }
+        if (sceneCategoryBounds(panel).contains(mouseX, mouseY)) {
+            selectedCategory = Category.SCENE;
+            draggingOpacity = false;
+            return Interaction.CONSUMED;
+        }
+        if (!editable || scene == null) return Interaction.CONSUMED;
+
+        if (selectedCategory == Category.SCENE) {
+            if (chooseBackgroundBounds(panel).contains(mouseX, mouseY)) {
+                return Interaction.CHOOSE_BACKGROUND;
+            }
+            if (scene.getBackgroundAssetId() != null
+                    && removeBackgroundBounds(panel).contains(mouseX, mouseY)) {
+                return Interaction.REMOVE_BACKGROUND;
+            }
+            return Interaction.CONSUMED;
+        }
+
+        VttSceneGrid grid = scene.getGrid();
+        if (grid == null) return Interaction.CONSUMED;
 
         for (int index = 0; index < COLOR_PRESETS.length; index++) {
             if (colorBounds(panel, index).contains(mouseX, mouseY)) {
@@ -119,7 +152,8 @@ public final class EditorSettingsOverlay {
             VttSceneGrid grid,
             boolean editable
     ) {
-        if (!draggingOpacity || !editable || grid == null) return false;
+        if (selectedCategory != Category.GRID
+                || !draggingOpacity || !editable || grid == null) return false;
         updateOpacity(grid, opacitySliderBounds(bounds(screenWidth, screenHeight)), mouseX);
         return true;
     }
@@ -150,6 +184,79 @@ public final class EditorSettingsOverlay {
 
     public boolean isDraggingOpacity() {
         return draggingOpacity;
+    }
+
+    private void renderCategory(
+            VRenderContext context,
+            Font font,
+            Bounds bounds,
+            String label,
+            boolean selected
+    ) {
+        if (selected) {
+            context.graphics().fill(
+                    bounds.x(), bounds.y(), bounds.right(), bounds.bottom(),
+                    SELECTED_BACKGROUND);
+        }
+        context.graphics().drawCenteredString(
+                font, label, bounds.x() + bounds.width() / 2, bounds.y() + 6,
+                selected ? TEXT : MUTED);
+    }
+
+    private void renderScene(
+            VRenderContext context,
+            Font font,
+            Bounds panel,
+            VttScene scene,
+            boolean editable
+    ) {
+        int contentX = panel.x() + CATEGORY_WIDTH + 20;
+        context.graphics().drawString(font, "Scene", contentX, panel.y() + 31, TEXT, false);
+        if (!editable) {
+            context.graphics().drawString(
+                    font, "Read only", panel.right() - 58, panel.y() + 31, MUTED, false);
+        }
+
+        context.graphics().drawString(font, "Name", contentX, panel.y() + 52, MUTED, false);
+        context.graphics().drawString(font,
+                ellipsize(font, scene.getDisplayName(), 210),
+                contentX, panel.y() + 65, TEXT, false);
+
+        context.graphics().drawString(font, "Background", contentX, panel.y() + 87, MUTED, false);
+        String background = scene.getBackgroundAssetId() == null
+                ? "None"
+                : scene.getBackgroundAssetId();
+        context.graphics().drawString(font, ellipsize(font, background, 210),
+                contentX, panel.y() + 100,
+                scene.getBackgroundAssetId() == null ? MUTED : TEXT, false);
+
+        renderSceneButton(context, font, chooseBackgroundBounds(panel),
+                scene.getBackgroundAssetId() == null ? "Choose Background" : "Change Background",
+                editable);
+        renderSceneButton(context, font, removeBackgroundBounds(panel),
+                "Remove", editable && scene.getBackgroundAssetId() != null);
+    }
+
+    private void renderSceneButton(
+            VRenderContext context,
+            Font font,
+            Bounds bounds,
+            String label,
+            boolean enabled
+    ) {
+        renderControl(context, bounds,
+                enabled && bounds.contains(context.mouseX(), context.mouseY()), enabled);
+        context.graphics().drawCenteredString(font, label,
+                bounds.x() + bounds.width() / 2, bounds.y() + 5,
+                enabled ? TEXT : MUTED);
+    }
+
+    private String ellipsize(Font font, String value, int maxWidth) {
+        if (value == null || font.width(value) <= maxWidth) return value == null ? "" : value;
+        String suffix = "...";
+        int end = value.length();
+        while (end > 0 && font.width(value.substring(0, end) + suffix) > maxWidth) end--;
+        return value.substring(0, end) + suffix;
     }
 
     private void renderColors(
@@ -289,8 +396,20 @@ public final class EditorSettingsOverlay {
         return new Bounds(x, y, WIDTH, HEIGHT);
     }
 
-    private Bounds categoryBounds(Bounds panel) {
+    private Bounds gridCategoryBounds(Bounds panel) {
         return new Bounds(panel.x() + 8, panel.y() + 43, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds sceneCategoryBounds(Bounds panel) {
+        return new Bounds(panel.x() + 8, panel.y() + 68, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds chooseBackgroundBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 20, panel.y() + 125, 144, 22);
+    }
+
+    private Bounds removeBackgroundBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 170, panel.y() + 125, 62, 22);
     }
 
     private Bounds colorBounds(Bounds panel, int index) {
@@ -333,7 +452,14 @@ public final class EditorSettingsOverlay {
     public enum Interaction {
         NONE,
         CONSUMED,
-        CHANGED
+        CHANGED,
+        CHOOSE_BACKGROUND,
+        REMOVE_BACKGROUND
+    }
+
+    private enum Category {
+        GRID,
+        SCENE
     }
 
     private record Bounds(int x, int y, int width, int height) {

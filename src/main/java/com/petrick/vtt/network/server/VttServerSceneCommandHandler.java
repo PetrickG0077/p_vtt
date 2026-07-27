@@ -24,7 +24,9 @@ public final class VttServerSceneCommandHandler {
         VttServerTabletopState state = VttServerTabletopState.get();
         if (request == null
                 || request.authorityRevision() != state.authorityRevision()
-                || request.operation() == null || request.targetId() == null || request.value() == null) {
+                || request.operation() == null || request.targetId() == null
+                || request.value() == null || request.backgroundAssetId() == null
+                || request.backgroundAssetId().length() > 512) {
             reject(requester, "invalid request");
             return;
         }
@@ -40,7 +42,8 @@ public final class VttServerSceneCommandHandler {
 
         String previousSceneId = state.activeScene().getId();
         boolean changed = switch (request.operation()) {
-            case VttSceneCommandPayload.CREATE -> state.createAndActivateScene(request.value());
+            case VttSceneCommandPayload.CREATE -> state.createAndActivateScene(
+                    request.value(), request.backgroundAssetId());
             case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.targetId());
             case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
             case VttSceneCommandPayload.RENAME -> state.renameScene(request.targetId(), request.value());
