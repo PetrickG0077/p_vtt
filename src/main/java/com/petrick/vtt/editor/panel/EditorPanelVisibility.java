@@ -20,6 +20,7 @@ public final class EditorPanelVisibility {
 
     private boolean sceneOutlinerVisible = false;
     private boolean sceneListVisible = false;
+    private boolean mapCatalogVisible = false;
 
     public boolean isHelpVisible() {
         return helpVisible;
@@ -45,6 +46,7 @@ public final class EditorPanelVisibility {
         return sceneOutlinerVisible;
     }
     public boolean isSceneListVisible() { return sceneListVisible; }
+    public boolean isMapCatalogVisible() { return mapCatalogVisible; }
 
     public void toggleHelp() {
         helpVisible = !helpVisible;
@@ -64,7 +66,10 @@ public final class EditorPanelVisibility {
 
     public void toggleTokenCatalog() {
         tokenCatalogVisible = !tokenCatalogVisible;
-        if (tokenCatalogVisible) sceneListVisible = false;
+        if (tokenCatalogVisible) {
+            sceneListVisible = false;
+            mapCatalogVisible = false;
+        }
     }
 
     public void toggleSceneOutliner() {
@@ -72,12 +77,24 @@ public final class EditorPanelVisibility {
     }
     public void toggleSceneList() {
         sceneListVisible = !sceneListVisible;
-        if (sceneListVisible) tokenCatalogVisible = false;
+        if (sceneListVisible) {
+            tokenCatalogVisible = false;
+            mapCatalogVisible = false;
+        }
+    }
+
+    public void toggleMapCatalog() {
+        mapCatalogVisible = !mapCatalogVisible;
+        if (mapCatalogVisible) {
+            sceneListVisible = false;
+            tokenCatalogVisible = false;
+        }
     }
 
     public void hideBottomCatalogs() {
         tokenCatalogVisible = false;
         sceneListVisible = false;
+        mapCatalogVisible = false;
     }
 
     public void hideMasterPanels() {
@@ -85,6 +102,7 @@ public final class EditorPanelVisibility {
         tokenCatalogVisible = false;
         sceneOutlinerVisible = false;
         sceneListVisible = false;
+        mapCatalogVisible = false;
         selectionInspectorVisible = false;
     }
 
@@ -95,6 +113,7 @@ public final class EditorPanelVisibility {
         tokenCatalogVisible = false;
         sceneOutlinerVisible = false;
         sceneListVisible = false;
+        mapCatalogVisible = false;
     }
 
     public void showAllEditorPanels() {
@@ -104,5 +123,6 @@ public final class EditorPanelVisibility {
         tokenCatalogVisible = true;
         sceneOutlinerVisible = true;
         sceneListVisible = false;
+        mapCatalogVisible = false;
     }
 }
