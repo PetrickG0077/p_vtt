@@ -7,6 +7,7 @@ import java.util.List;
 public final class VttSceneLimits {
     public static final int MAX_SCENES = 256;
     public static final int MAX_TOKENS = 4_096;
+    public static final int MAX_MAPS = 256;
     public static final int MAX_WALLS = 8_192;
     public static final int MAX_DOORS = 2_048;
     public static final int MAX_FOG_AREAS = 4_096;
@@ -56,6 +57,7 @@ public final class VttSceneLimits {
         if (scene == null) return List.of();
         List<Violation> violations = new ArrayList<>();
         addExceeded(violations, "tokens", scene.getObjects().size(), MAX_TOKENS);
+        addExceeded(violations, "maps", scene.getMaps().size(), MAX_MAPS);
         addExceeded(violations, "walls", scene.getWalls().size(), MAX_WALLS);
         addExceeded(violations, "doors", scene.getDoors().size(), MAX_DOORS);
         addExceeded(violations, "fog areas", fogAreaCount(scene), MAX_FOG_AREAS);

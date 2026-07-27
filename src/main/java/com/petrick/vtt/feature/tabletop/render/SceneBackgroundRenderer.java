@@ -9,15 +9,21 @@ import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
+import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.resources.ResourceLocation;
+
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Renders the scene map independently from selectable canvas objects. */
 public final class SceneBackgroundRenderer {
     private final AssetRegistry assetRegistry;
     private final AssetThumbnailRegistry thumbnailRegistry;
-    private String lastResolvedBackgroundId;
-    private String lastMissingBackgroundId;
+    private final Set<String> resolvedIds = new HashSet<>();
+    private final Set<String> missingIds = new HashSet<>();
 
     public SceneBackgroundRenderer(AssetRegistry assetRegistry, AssetThumbnailRegistry thumbnailRegistry) {
         this.assetRegistry = assetRegistry;
@@ -25,16 +31,30 @@ public final class SceneBackgroundRenderer {
     }
 
     public void render(VRenderContext context, VttScene scene) {
-        if (scene == null || scene.getBackgroundAssetId() == null) return;
-        BackgroundTexture texture = resolveTexture(scene.getBackgroundAssetId());
+        if (scene == null) return;
+        if (scene.getBackgroundAssetId() != null) {
+            renderTexture(context, scene.getBackgroundAssetId(),
+                    scene.getBackgroundTransform());
+        }
+        scene.getMaps().stream()
+                .filter(map -> map != null && map.isVisible() && map.getAssetId() != null)
+                .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex))
+                .forEach(map -> renderTexture(context, map.getAssetId(), map.getTransform()));
+    }
+
+    private void renderTexture(
+            VRenderContext context,
+            String assetId,
+            VttSceneBackgroundTransform transform
+    ) {
+        BackgroundTexture texture = resolveTexture(assetId);
         if (texture == null) {
-            logMissingOnce(scene.getBackgroundAssetId());
+            logMissingOnce(assetId);
             return;
         }
 
-        logResolvedOnce(scene.getBackgroundAssetId(), texture);
+        logResolvedOnce(assetId, texture);
 
-        var transform = scene.getBackgroundTransform();
         Vec2d center = context.renderState().worldToScreen(
                 new Vec2d(transform.getX(), transform.getY()));
         double zoom = context.renderState().getCamera().getZoom();
@@ -74,17 +94,15 @@ public final class SceneBackgroundRenderer {
     }
 
     private void logResolvedOnce(String backgroundId, BackgroundTexture texture) {
-        if (backgroundId.equals(lastResolvedBackgroundId)) return;
-        lastResolvedBackgroundId = backgroundId;
-        lastMissingBackgroundId = null;
+        if (!resolvedIds.add(backgroundId)) return;
+        missingIds.remove(backgroundId);
         VTT.LOGGER.info("[VTT Background] Rendering {} with texture {} ({}x{})",
                 backgroundId, texture.location(), texture.width(), texture.height());
     }
 
     private void logMissingOnce(String backgroundId) {
-        if (backgroundId.equals(lastMissingBackgroundId)) return;
-        lastMissingBackgroundId = backgroundId;
-        lastResolvedBackgroundId = null;
+        if (!missingIds.add(backgroundId)) return;
+        resolvedIds.remove(backgroundId);
         VTT.LOGGER.warn("[VTT Background] Could not resolve texture for {}", backgroundId);
     }
 

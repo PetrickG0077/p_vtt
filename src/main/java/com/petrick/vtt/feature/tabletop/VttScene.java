@@ -35,6 +35,9 @@ public final class VttScene {
     /** Transform kept separate because the background is not a selectable canvas object. */
     private VttSceneBackgroundTransform backgroundTransform;
 
+    /** Optional camera framing applied when the scene is opened or switched. */
+    private VttSceneCameraView initialCameraView;
+
     /** Canvas object currently used as the persistent player vision origin. */
     private String visionSourceObjectId;
 
@@ -42,6 +45,9 @@ public final class VttScene {
     private List<String> visionSourceObjectIds = new ArrayList<>();
 
     private final List<VttSceneObject> objects = new ArrayList<>();
+
+    /** Locked map instances rendered below regular scene objects. */
+    private List<VttSceneMap> maps = new ArrayList<>();
 
     /** Null is tolerated when loading scene JSON written before walls existed. */
     private List<VttWall> walls = new ArrayList<>();
@@ -107,6 +113,19 @@ public final class VttScene {
                 : backgroundTransform.copy();
     }
 
+    public VttSceneCameraView getInitialCameraView() {
+        if (initialCameraView != null) initialCameraView.normalize();
+        return initialCameraView;
+    }
+
+    public void setInitialCameraView(VttSceneCameraView initialCameraView) {
+        this.initialCameraView = initialCameraView == null ? null : initialCameraView.copy();
+    }
+
+    public void clearInitialCameraView() {
+        initialCameraView = null;
+    }
+
     public int getSchemaVersion() {
         return schemaVersion;
     }
@@ -157,6 +176,20 @@ public final class VttScene {
 
     public List<VttSceneObject> getObjects() {
         return objects;
+    }
+
+    public List<VttSceneMap> getMaps() {
+        if (maps == null) maps = new ArrayList<>();
+        return maps;
+    }
+
+    public void addMap(VttSceneMap map) {
+        if (map != null) getMaps().add(map);
+    }
+
+    public boolean removeMap(String mapId) {
+        return mapId != null && getMaps().removeIf(
+                map -> map != null && mapId.equals(map.getId()));
     }
 
     public void addObject(VttSceneObject object) {

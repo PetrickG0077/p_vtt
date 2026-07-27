@@ -39,6 +39,7 @@ import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
@@ -186,6 +187,7 @@ public final class VTTScreen extends Screen {
     private boolean hudCreationOpen;
 
     private String observedActiveSceneId;
+    private boolean initialCameraApplied;
     private long lastFollowCameraSentAt;
     private double lastFollowCameraX = Double.NaN;
     private double lastFollowCameraY = Double.NaN;
@@ -244,6 +246,10 @@ public final class VTTScreen extends Screen {
         this.renderState = new RenderState(camera, viewport);
 
         session.refreshAssetLibrary();
+        if (!initialCameraApplied) {
+            applyActiveSceneInitialCamera();
+            initialCameraApplied = true;
+        }
     }
 
     @Override
@@ -588,16 +594,10 @@ public final class VTTScreen extends Screen {
             double mouseX, double mouseY, int button
     ) {
         if (!hudSettingsOpen || session.getActiveScene() == null) return false;
-        if (editorSettingsOverlay.contains(mouseX, mouseY, width, height)) {
-            VTT.LOGGER.info(
-                    "[VTT Settings] Click at ({}, {}), button={}, master={}",
-                    mouseX, mouseY, button, session.isLocalMaster());
-        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                 && editorSettingsOverlay.isEditSceneButtonAt(
                 mouseX, mouseY, width, height,
                 session.getActiveScene(), session.isLocalMaster())) {
-            VTT.LOGGER.info("[VTT Scene Edit] Direct Edit Scene button hit");
             beginSceneBackgroundEdit();
             return true;
         }
@@ -619,8 +619,19 @@ public final class VTTScreen extends Screen {
             return true;
         } else if (interaction == EditorSettingsOverlay.Interaction.EDIT_SCENE) {
             inputController.endEditorAction();
-            VTT.LOGGER.info("[VTT Scene Edit] Edit Scene button clicked");
             beginSceneBackgroundEdit();
+            return true;
+        } else if (interaction == EditorSettingsOverlay.Interaction.SET_INITIAL_VIEW) {
+            setCurrentCameraAsInitialView();
+            inputController.endEditorAction();
+            syncInitialCameraView();
+            VttClientEditorNotice.show("Current camera saved as initial scene view");
+            return true;
+        } else if (interaction == EditorSettingsOverlay.Interaction.RESET_INITIAL_VIEW) {
+            session.getActiveScene().clearInitialCameraView();
+            inputController.endEditorAction();
+            syncInitialCameraView();
+            VttClientEditorNotice.show("Initial scene view reset");
             return true;
         }
         if (!editorSettingsOverlay.isDraggingOpacity()) {
@@ -701,10 +712,10 @@ public final class VTTScreen extends Screen {
                 closeHudPopups();
             }
             case UNDO -> {
-                if (inputController.undoEditorAction()) syncSceneBackgroundTransform();
+                if (inputController.undoEditorAction()) syncSceneMetadata();
             }
             case REDO -> {
-                if (inputController.redoEditorAction()) syncSceneBackgroundTransform();
+                if (inputController.redoEditorAction()) syncSceneMetadata();
             }
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
@@ -1960,12 +1971,12 @@ public final class VTTScreen extends Screen {
             } else {
                 changed = inputController.undoEditorAction();
             }
-            if (changed) syncSceneBackgroundTransform();
+            if (changed) syncSceneMetadata();
             return true;
         }
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
-            if (inputController.redoEditorAction()) syncSceneBackgroundTransform();
+            if (inputController.redoEditorAction()) syncSceneMetadata();
             return true;
         }
 
@@ -2460,7 +2471,7 @@ public final class VTTScreen extends Screen {
         if (!sceneBackgroundEditor.isActive()) return;
         sceneBackgroundEditor.confirm();
         inputController.endEditorAction();
-        syncSceneBackgroundTransform();
+        syncSceneMetadata();
         VttClientEditorNotice.show("Scene background transform applied");
     }
 
@@ -2471,12 +2482,38 @@ public final class VTTScreen extends Screen {
         VttClientEditorNotice.show("Scene background edit cancelled");
     }
 
-    private void syncSceneBackgroundTransform() {
+    private void syncSceneMetadata() {
         if (!session.isNetworkAuthorityActive()) {
             session.saveActiveTabletopAndScene();
             return;
         }
         VttClientEnvironmentCommandSync.sendBackgroundTransform(session);
+        VttClientEnvironmentCommandSync.sendInitialCameraView(session);
+    }
+
+    private void syncInitialCameraView() {
+        if (!session.isNetworkAuthorityActive()) {
+            session.saveActiveTabletopAndScene();
+            return;
+        }
+        VttClientEnvironmentCommandSync.sendInitialCameraView(session);
+    }
+
+    private void setCurrentCameraAsInitialView() {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        Vec2d position = camera.getPosition();
+        session.getActiveScene().setInitialCameraView(new VttSceneCameraView(
+                position.x(), position.y(), camera.getZoom()));
+    }
+
+    private void applyActiveSceneInitialCamera() {
+        if (session.getActiveScene() == null
+                || (!session.isLocalMaster()
+                && VttClientPresentationState.isFollowingMasterCamera())) return;
+        VttSceneCameraView view = session.getActiveScene().getInitialCameraView();
+        if (view == null) return;
+        camera.setPosition(new Vec2d(view.getX(), view.getY()));
+        camera.setZoom(view.getZoom());
     }
 
     private void openBackgroundImagePicker(BackgroundPickerTarget target) {
@@ -2895,6 +2932,8 @@ public final class VTTScreen extends Screen {
         closeBackgroundImagePicker();
         tokenImagePickerActive = false;
         closeHudPopups();
+        applyActiveSceneInitialCamera();
+        initialCameraApplied = true;
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);
     }
 

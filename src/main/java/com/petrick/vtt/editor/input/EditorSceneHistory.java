@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
+import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
@@ -233,6 +234,9 @@ public final class EditorSceneHistory {
                 }
                 return "Resize scene background";
             }
+            if (!java.util.Objects.equals(
+                    oldEnvironment.initialCameraView(),
+                    newEnvironment.initialCameraView())) return "Change initial scene view";
             if (!oldEnvironment.grid().equals(newEnvironment.grid())) return "Change grid";
 
             if (layerChanged) return "Change token layer";
@@ -471,6 +475,7 @@ public final class EditorSceneHistory {
             List<Door> doors,
             String backgroundAssetId,
             BackgroundTransform backgroundTransform,
+            InitialCameraView initialCameraView,
             Grid grid,
             boolean fogEnabled,
             boolean fogDefaultHidden,
@@ -487,7 +492,7 @@ public final class EditorSceneHistory {
         private static Environment capture(VttScene scene) {
             if (scene == null) {
                 return new Environment(List.of(), List.of(), null,
-                        BackgroundTransform.defaults(), Grid.defaults(),
+                        BackgroundTransform.defaults(), null, Grid.defaults(),
                         false, false, List.of(), List.of());
             }
             VttFogOfWar fog = scene.getFogOfWar();
@@ -498,6 +503,7 @@ public final class EditorSceneHistory {
                             .map(Door::capture).toList(),
                     scene.getBackgroundAssetId(),
                     BackgroundTransform.capture(scene.getBackgroundTransform()),
+                    InitialCameraView.capture(scene.getInitialCameraView()),
                     Grid.capture(scene),
                     fog.isEnabled(), fog.isDefaultHidden(),
                     fog.getRevealedAreas().stream().filter(java.util.Objects::nonNull)
@@ -514,6 +520,8 @@ public final class EditorSceneHistory {
             doors.stream().map(Door::restore).forEach(scene::addDoor);
             scene.setBackgroundAssetId(backgroundAssetId);
             scene.setBackgroundTransform(backgroundTransform.restore());
+            scene.setInitialCameraView(initialCameraView == null
+                    ? null : initialCameraView.restore());
             scene.setGrid(grid.restore());
 
             VttFogOfWar fog = scene.getFogOfWar();
@@ -537,6 +545,17 @@ public final class EditorSceneHistory {
 
         private VttSceneBackgroundTransform restore() {
             return new VttSceneBackgroundTransform(x, y, scaleX, scaleY);
+        }
+    }
+
+    private record InitialCameraView(double x, double y, double zoom) {
+        private static InitialCameraView capture(VttSceneCameraView view) {
+            return view == null ? null : new InitialCameraView(
+                    view.getX(), view.getY(), view.getZoom());
+        }
+
+        private VttSceneCameraView restore() {
+            return new VttSceneCameraView(x, y, zoom);
         }
     }
 

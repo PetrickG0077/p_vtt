@@ -108,6 +108,9 @@ public final class TabletopStorage {
         VttScene scene = loadWithRecovery(file, VttScene.class, this::validScene,
                 "scene", TabletopSchemaMigrator.DocumentType.SCENE);
         if (scene != null) {
+            scene.getMaps().forEach(map -> {
+                if (map != null) map.getTransform();
+            });
             scene.getWalls().forEach(wall -> {
                 if (wall != null) wall.normalizeLegacyGeometry();
             });
@@ -236,6 +239,15 @@ public final class TabletopStorage {
             scene.getVisionSourceObjectIds();
             scene.getFogOfWar().getHiddenAreas();
             scene.getFogOfWar().getRevealedAreas();
+            for (var map : scene.getMaps()) {
+                if (map == null || map.getId() == null || map.getId().isBlank()
+                        || map.getDisplayName() == null || map.getDisplayName().isBlank()
+                        || map.getAssetId() == null || map.getAssetId().isBlank()
+                        || map.getTransform() == null
+                        || !finite(map.getTransform().getX(), map.getTransform().getY(),
+                        map.getTransform().getScaleX(),
+                        map.getTransform().getScaleY())) return false;
+            }
             for (var object : scene.getObjects()) {
                 if (object == null || object.getId() == null || object.getId().isBlank()
                         || object.getTransform() == null || object.getSize() == null

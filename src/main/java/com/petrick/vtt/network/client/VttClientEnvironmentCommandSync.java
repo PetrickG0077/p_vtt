@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
+import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
@@ -156,6 +157,15 @@ public final class VttClientEnvironmentCommandSync {
                             update.entityJson(), VttSceneBackgroundTransform.class);
                     session.getActiveScene().setBackgroundTransform(transform);
                 }
+                case VttEnvironmentCommandPayload.CAMERA_CONFIG -> {
+                    if (delete) {
+                        session.getActiveScene().clearInitialCameraView();
+                    } else {
+                        VttSceneCameraView view = GSON.fromJson(
+                                update.entityJson(), VttSceneCameraView.class);
+                        session.getActiveScene().setInitialCameraView(view);
+                    }
+                }
                 case VttEnvironmentCommandPayload.VISION -> {
                     if (!delete) applyVision(session,
                             GSON.fromJson(update.entityJson(), VisionState.class));
@@ -246,6 +256,20 @@ public final class VttClientEnvironmentCommandSync {
                 VttEnvironmentCommandPayload.BACKGROUND_CONFIG,
                 "background",
                 GSON.toJson(session.getActiveScene().getBackgroundTransform()));
+    }
+
+    public static void sendInitialCameraView(VTTSession session) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        VttSceneCameraView view = session.getActiveScene().getInitialCameraView();
+        send(view == null
+                        ? VttEnvironmentCommandPayload.DELETE
+                        : VttEnvironmentCommandPayload.UPSERT,
+                VttEnvironmentCommandPayload.CAMERA_CONFIG,
+                "initial_camera",
+                view == null ? "" : GSON.toJson(view));
     }
 
     private static String entityKey(String entityType, String entityId) {

@@ -777,6 +777,9 @@ public final class VttServerTabletopState {
                         && applyGridConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> !delete
                         && applyBackgroundConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.CAMERA_CONFIG -> delete
+                        ? clearInitialCameraView()
+                        : applyInitialCameraView(command.entityJson());
                 case VttEnvironmentCommandPayload.VISION -> delete
                         || applyVisionState(command.entityId(), command.entityJson());
                 default -> false;
@@ -935,6 +938,23 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean applyInitialCameraView(String json) {
+        var view = GSON.fromJson(
+                json, com.petrick.vtt.feature.tabletop.VttSceneCameraView.class);
+        if (view == null || !Double.isFinite(view.getX())
+                || !Double.isFinite(view.getY()) || !Double.isFinite(view.getZoom())
+                || Math.abs(view.getX()) > 10_000_000.0
+                || Math.abs(view.getY()) > 10_000_000.0
+                || view.getZoom() < 0.1 || view.getZoom() > 8.0) return false;
+        activeScene.setInitialCameraView(view);
+        return true;
+    }
+
+    private boolean clearInitialCameraView() {
+        activeScene.clearInitialCameraView();
+        return true;
+    }
+
     private boolean applyVisionState(String id, String json) {
         VisionState vision = GSON.fromJson(json, VisionState.class);
         if (vision == null || !id.equals(vision.objectId()) || !Double.isFinite(vision.innerRadius())
@@ -971,6 +991,12 @@ public final class VttServerTabletopState {
                     GSON.toJson(activeScene.getGrid());
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     GSON.toJson(activeScene.getBackgroundTransform());
+            case VttEnvironmentCommandPayload.CAMERA_CONFIG -> {
+                if (activeScene.getInitialCameraView() == null) {
+                    throw new IllegalStateException("Scene has no initial camera view");
+                }
+                yield GSON.toJson(activeScene.getInitialCameraView());
+            }
             case VttEnvironmentCommandPayload.VISION -> {
                 VttSceneObject object = activeScene.getObjects().stream()
                         .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow();

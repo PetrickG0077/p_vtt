@@ -10,7 +10,7 @@ import java.util.Locale;
 /** Extensible settings window for the active scene. */
 public final class EditorSettingsOverlay {
     private static final int WIDTH = 340;
-    private static final int HEIGHT = 190;
+    private static final int HEIGHT = 230;
     private static final int CATEGORY_WIDTH = 92;
     private static final int PANEL_BACKGROUND = 0xF0101014;
     private static final int PANEL_BORDER = 0xFFE8E8E8;
@@ -105,6 +105,13 @@ public final class EditorSettingsOverlay {
             if (scene.getBackgroundAssetId() != null
                     && editSceneBounds(panel).contains(mouseX, mouseY)) {
                 return Interaction.EDIT_SCENE;
+            }
+            if (setInitialViewBounds(panel).contains(mouseX, mouseY)) {
+                return Interaction.SET_INITIAL_VIEW;
+            }
+            if (scene.getInitialCameraView() != null
+                    && resetInitialViewBounds(panel).contains(mouseX, mouseY)) {
+                return Interaction.RESET_INITIAL_VIEW;
             }
             return Interaction.CONSUMED;
         }
@@ -254,6 +261,22 @@ public final class EditorSettingsOverlay {
                 "Edit Scene", editable && scene.getBackgroundAssetId() != null);
         renderSceneButton(context, font, removeBackgroundBounds(panel),
                 "Remove", editable && scene.getBackgroundAssetId() != null);
+
+        context.graphics().drawString(
+                font, "Initial View", contentX, panel.y() + 158, MUTED, false);
+        String initialView = scene.getInitialCameraView() == null
+                ? "Not configured"
+                : String.format(Locale.ROOT, "x %.0f  y %.0f  zoom %.2f",
+                scene.getInitialCameraView().getX(),
+                scene.getInitialCameraView().getY(),
+                scene.getInitialCameraView().getZoom());
+        context.graphics().drawString(font, initialView,
+                contentX, panel.y() + 171,
+                scene.getInitialCameraView() == null ? MUTED : TEXT, false);
+        renderSceneButton(context, font, setInitialViewBounds(panel),
+                "Set Current View", editable);
+        renderSceneButton(context, font, resetInitialViewBounds(panel),
+                "Reset", editable && scene.getInitialCameraView() != null);
     }
 
     private void renderSceneButton(
@@ -435,6 +458,14 @@ public final class EditorSettingsOverlay {
         return new Bounds(panel.x() + CATEGORY_WIDTH + 96, panel.y() + 125, 84, 22);
     }
 
+    private Bounds setInitialViewBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 20, panel.y() + 188, 142, 22);
+    }
+
+    private Bounds resetInitialViewBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 166, panel.y() + 188, 66, 22);
+    }
+
     private Bounds colorBounds(Bounds panel, int index) {
         return new Bounds(
                 panel.x() + CATEGORY_WIDTH + 20 + index * 17,
@@ -478,7 +509,9 @@ public final class EditorSettingsOverlay {
         CHANGED,
         CHOOSE_BACKGROUND,
         REMOVE_BACKGROUND,
-        EDIT_SCENE
+        EDIT_SCENE,
+        SET_INITIAL_VIEW,
+        RESET_INITIAL_VIEW
     }
 
     private enum Category {

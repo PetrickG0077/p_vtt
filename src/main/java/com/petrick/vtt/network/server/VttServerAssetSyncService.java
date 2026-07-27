@@ -185,6 +185,10 @@ public final class VttServerAssetSyncService {
         Map<String, SyncFile> result = new LinkedHashMap<>();
         long[] totalBytes = {0L};
         addAsset(scope == null ? null : scope.backgroundAssetId(), assetsRoot, result, totalBytes);
+        if (scope != null) {
+            scope.mapAssetIds().forEach(
+                    assetId -> addAsset(assetId, assetsRoot, result, totalBytes));
+        }
 
         if (Files.isDirectory(tokensRoot)) {
             try (Stream<Path> stream = Files.list(tokensRoot)) {
@@ -722,18 +726,29 @@ public final class VttServerAssetSyncService {
             String relativePath, long size, String lastModified, String fileKey, String sha256
     ) {}
 
-    private record AssetScope(String backgroundAssetId, Set<String> definitionIds) {
+    private record AssetScope(
+            String backgroundAssetId,
+            Set<String> mapAssetIds,
+            Set<String> definitionIds
+    ) {
         private AssetScope {
+            mapAssetIds = mapAssetIds == null ? Set.of() : Set.copyOf(mapAssetIds);
             definitionIds = definitionIds == null ? Set.of() : Set.copyOf(definitionIds);
         }
 
         private static AssetScope fromScene(VttScene scene) {
-            return new AssetScope(scene == null ? null : scene.getBackgroundAssetId(),
+            return new AssetScope(
+                    scene == null ? null : scene.getBackgroundAssetId(),
+                    scene == null ? Set.of() : scene.getMaps().stream()
+                            .filter(java.util.Objects::nonNull)
+                            .map(com.petrick.vtt.feature.tabletop.VttSceneMap::getAssetId)
+                            .filter(java.util.Objects::nonNull)
+                            .collect(java.util.stream.Collectors.toSet()),
                     scene == null ? Set.of() : definitionIds(scene.getObjects()));
         }
 
         private static AssetScope fromObjects(List<VttSceneObject> objects) {
-            return new AssetScope(null, definitionIds(objects));
+            return new AssetScope(null, Set.of(), definitionIds(objects));
         }
 
         private static Set<String> definitionIds(List<VttSceneObject> objects) {

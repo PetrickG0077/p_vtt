@@ -7,6 +7,8 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
+import com.petrick.vtt.feature.map.MapDefinitionRegistry;
+import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
 import com.petrick.vtt.feature.asset.library.AssetLibraryService;
@@ -48,6 +50,8 @@ public final class VTTSession {
     private final AssetRegistry assetRegistry;
 
     private final TokenDefinitionRegistry tokenDefinitionRegistry;
+
+    private final MapDefinitionRegistry mapDefinitionRegistry;
 
     private final TabletopStoragePaths tabletopStoragePaths;
 
@@ -108,6 +112,7 @@ public final class VTTSession {
 
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
+        this.mapDefinitionRegistry = new MapDefinitionRegistry();
 
         this.tabletopStoragePaths = new TabletopStoragePaths(
                 Minecraft.getInstance().gameDirectory.toPath()
@@ -124,6 +129,7 @@ public final class VTTSession {
                 tokenDefinitionRegistry,
                 assetRegistry
         );
+        CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
         loadActiveSceneToCanvasScene();
@@ -689,6 +695,10 @@ public final class VTTSession {
 
     public TokenDefinitionRegistry getTokenDefinitionRegistry() {
         return tokenDefinitionRegistry;
+    }
+
+    public MapDefinitionRegistry getMapDefinitionRegistry() {
+        return mapDefinitionRegistry;
     }
 
     public AssetThumbnailRegistry getAssetThumbnailRegistry() {
