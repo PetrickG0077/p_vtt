@@ -102,6 +102,10 @@ public final class EditorSettingsOverlay {
                     && removeBackgroundBounds(panel).contains(mouseX, mouseY)) {
                 return Interaction.REMOVE_BACKGROUND;
             }
+            if (scene.getBackgroundAssetId() != null
+                    && editSceneBounds(panel).contains(mouseX, mouseY)) {
+                return Interaction.EDIT_SCENE;
+            }
             return Interaction.CONSUMED;
         }
 
@@ -178,6 +182,19 @@ public final class EditorSettingsOverlay {
         return bounds(screenWidth, screenHeight).contains(mouseX, mouseY);
     }
 
+    public boolean isEditSceneButtonAt(
+            double mouseX,
+            double mouseY,
+            int screenWidth,
+            int screenHeight,
+            VttScene scene,
+            boolean editable
+    ) {
+        return editable && scene != null && scene.getBackgroundAssetId() != null
+                && selectedCategory == Category.SCENE
+                && editSceneBounds(bounds(screenWidth, screenHeight)).contains(mouseX, mouseY);
+    }
+
     public void cancelDrag() {
         draggingOpacity = false;
     }
@@ -231,8 +248,10 @@ public final class EditorSettingsOverlay {
                 scene.getBackgroundAssetId() == null ? MUTED : TEXT, false);
 
         renderSceneButton(context, font, chooseBackgroundBounds(panel),
-                scene.getBackgroundAssetId() == null ? "Choose Background" : "Change Background",
+                scene.getBackgroundAssetId() == null ? "Choose" : "Change",
                 editable);
+        renderSceneButton(context, font, editSceneBounds(panel),
+                "Edit Scene", editable && scene.getBackgroundAssetId() != null);
         renderSceneButton(context, font, removeBackgroundBounds(panel),
                 "Remove", editable && scene.getBackgroundAssetId() != null);
     }
@@ -405,11 +424,15 @@ public final class EditorSettingsOverlay {
     }
 
     private Bounds chooseBackgroundBounds(Bounds panel) {
-        return new Bounds(panel.x() + CATEGORY_WIDTH + 20, panel.y() + 125, 144, 22);
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 20, panel.y() + 125, 72, 22);
     }
 
     private Bounds removeBackgroundBounds(Bounds panel) {
-        return new Bounds(panel.x() + CATEGORY_WIDTH + 170, panel.y() + 125, 62, 22);
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 184, panel.y() + 125, 48, 22);
+    }
+
+    private Bounds editSceneBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 96, panel.y() + 125, 84, 22);
     }
 
     private Bounds colorBounds(Bounds panel, int index) {
@@ -454,7 +477,8 @@ public final class EditorSettingsOverlay {
         CONSUMED,
         CHANGED,
         CHOOSE_BACKGROUND,
-        REMOVE_BACKGROUND
+        REMOVE_BACKGROUND,
+        EDIT_SCENE
     }
 
     private enum Category {

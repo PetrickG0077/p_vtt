@@ -6,6 +6,7 @@ import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
@@ -222,6 +223,16 @@ public final class EditorSceneHistory {
             if (fog != null) return fog;
             if (!java.util.Objects.equals(oldEnvironment.backgroundAssetId(),
                     newEnvironment.backgroundAssetId())) return "Change background";
+            if (!oldEnvironment.backgroundTransform().equals(
+                    newEnvironment.backgroundTransform())) {
+                if (Double.compare(oldEnvironment.backgroundTransform().x(),
+                        newEnvironment.backgroundTransform().x()) != 0
+                        || Double.compare(oldEnvironment.backgroundTransform().y(),
+                        newEnvironment.backgroundTransform().y()) != 0) {
+                    return "Move scene background";
+                }
+                return "Resize scene background";
+            }
             if (!oldEnvironment.grid().equals(newEnvironment.grid())) return "Change grid";
 
             if (layerChanged) return "Change token layer";
@@ -459,6 +470,7 @@ public final class EditorSceneHistory {
             List<Wall> walls,
             List<Door> doors,
             String backgroundAssetId,
+            BackgroundTransform backgroundTransform,
             Grid grid,
             boolean fogEnabled,
             boolean fogDefaultHidden,
@@ -474,7 +486,8 @@ public final class EditorSceneHistory {
 
         private static Environment capture(VttScene scene) {
             if (scene == null) {
-                return new Environment(List.of(), List.of(), null, Grid.defaults(),
+                return new Environment(List.of(), List.of(), null,
+                        BackgroundTransform.defaults(), Grid.defaults(),
                         false, false, List.of(), List.of());
             }
             VttFogOfWar fog = scene.getFogOfWar();
@@ -484,6 +497,7 @@ public final class EditorSceneHistory {
                     scene.getDoors().stream().filter(java.util.Objects::nonNull)
                             .map(Door::capture).toList(),
                     scene.getBackgroundAssetId(),
+                    BackgroundTransform.capture(scene.getBackgroundTransform()),
                     Grid.capture(scene),
                     fog.isEnabled(), fog.isDefaultHidden(),
                     fog.getRevealedAreas().stream().filter(java.util.Objects::nonNull)
@@ -499,6 +513,7 @@ public final class EditorSceneHistory {
             scene.getDoors().clear();
             doors.stream().map(Door::restore).forEach(scene::addDoor);
             scene.setBackgroundAssetId(backgroundAssetId);
+            scene.setBackgroundTransform(backgroundTransform.restore());
             scene.setGrid(grid.restore());
 
             VttFogOfWar fog = scene.getFogOfWar();
@@ -507,6 +522,21 @@ public final class EditorSceneHistory {
             fog.clearAreas();
             revealedFog.stream().map(FogArea::restore).forEach(fog::addRevealedArea);
             hiddenFog.stream().map(FogArea::restore).forEach(fog::addHiddenArea);
+        }
+    }
+
+    private record BackgroundTransform(double x, double y, double scaleX, double scaleY) {
+        private static BackgroundTransform capture(VttSceneBackgroundTransform transform) {
+            return new BackgroundTransform(transform.getX(), transform.getY(),
+                    transform.getScaleX(), transform.getScaleY());
+        }
+
+        private static BackgroundTransform defaults() {
+            return new BackgroundTransform(0.0, 0.0, 1.0, 1.0);
+        }
+
+        private VttSceneBackgroundTransform restore() {
+            return new VttSceneBackgroundTransform(x, y, scaleX, scaleY);
         }
     }
 

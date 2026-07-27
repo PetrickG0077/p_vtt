@@ -25,6 +25,7 @@ import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
+import com.petrick.vtt.editor.scene.SceneBackgroundEditor;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.VttOwnedTokenOption;
 import com.petrick.vtt.editor.token.VttPlayerOption;
@@ -52,6 +53,7 @@ import com.petrick.vtt.network.client.VttClientEditorNotice;
 import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
 import com.petrick.vtt.network.client.VttClientPresentationState;
+import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import net.minecraft.client.gui.GuiGraphics;
@@ -100,6 +102,8 @@ public final class VTTScreen extends Screen {
     private final EditorHudOverlay editorHudOverlay;
 
     private final EditorSettingsOverlay editorSettingsOverlay;
+
+    private final SceneBackgroundEditor sceneBackgroundEditor;
 
     private final EditorPanelVisibility panelVisibility;
 
@@ -210,6 +214,8 @@ public final class VTTScreen extends Screen {
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
         this.editorSettingsOverlay = new EditorSettingsOverlay();
+        this.sceneBackgroundEditor = new SceneBackgroundEditor(
+                assetRegistry, session.getAssetThumbnailRegistry());
 
         this.panelVisibility = new EditorPanelVisibility();
 
@@ -279,6 +285,13 @@ public final class VTTScreen extends Screen {
                 session.shouldMaskWhenNetworkVisionEmpty(),
                 authoritativePlayerView
                         ? session.getNetworkVisibleObjectIds() : null);
+        if (sceneBackgroundEditor.isActive()) {
+            sceneBackgroundEditor.render(context, this.font, session.getActiveScene());
+            renderEditorNotice(context);
+            VttAssetSyncHudOverlay.render(graphics);
+            renderPresentationCurtain(context);
+            return;
+        }
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
         renderTitle(context);
 
@@ -575,6 +588,19 @@ public final class VTTScreen extends Screen {
             double mouseX, double mouseY, int button
     ) {
         if (!hudSettingsOpen || session.getActiveScene() == null) return false;
+        if (editorSettingsOverlay.contains(mouseX, mouseY, width, height)) {
+            VTT.LOGGER.info(
+                    "[VTT Settings] Click at ({}, {}), button={}, master={}",
+                    mouseX, mouseY, button, session.isLocalMaster());
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && editorSettingsOverlay.isEditSceneButtonAt(
+                mouseX, mouseY, width, height,
+                session.getActiveScene(), session.isLocalMaster())) {
+            VTT.LOGGER.info("[VTT Scene Edit] Direct Edit Scene button hit");
+            beginSceneBackgroundEdit();
+            return true;
+        }
         inputController.beginEditorAction();
         EditorSettingsOverlay.Interaction interaction = editorSettingsOverlay.mouseClicked(
                 mouseX, mouseY, button, width, height,
@@ -590,6 +616,11 @@ public final class VTTScreen extends Screen {
                 VttClientEditorNotice.show("Scene background removed");
             }
             inputController.endEditorAction();
+            return true;
+        } else if (interaction == EditorSettingsOverlay.Interaction.EDIT_SCENE) {
+            inputController.endEditorAction();
+            VTT.LOGGER.info("[VTT Scene Edit] Edit Scene button clicked");
+            beginSceneBackgroundEdit();
             return true;
         }
         if (!editorSettingsOverlay.isDraggingOpacity()) {
@@ -669,8 +700,12 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
-            case UNDO -> inputController.undoEditorAction();
-            case REDO -> inputController.redoEditorAction();
+            case UNDO -> {
+                if (inputController.undoEditorAction()) syncSceneBackgroundTransform();
+            }
+            case REDO -> {
+                if (inputController.redoEditorAction()) syncSceneBackgroundTransform();
+            }
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
                 closeHudPopups();
@@ -876,6 +911,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (sceneBackgroundEditor.isActive()) {
+            CursorManager.reset();
+            return;
+        }
+
         if (tokenCreationDraft != null) {
             CursorManager.reset();
             return;
@@ -924,6 +964,10 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (sceneBackgroundEditor.isActive()) {
+            return sceneBackgroundEditor.mouseClicked(
+                    session.getActiveScene(), renderState, mouseX, mouseY, button);
+        }
         if (playerViewPreview) {
             if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
             if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
@@ -1456,6 +1500,9 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (sceneBackgroundEditor.isActive()) {
+            return sceneBackgroundEditor.mouseReleased(button);
+        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseReleased(
                 mouseX, button, this.width, this.height,
@@ -1517,6 +1564,11 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (sceneBackgroundEditor.isActive()) {
+            return sceneBackgroundEditor.mouseDragged(
+                    session.getActiveScene(), renderState, mouseX, mouseY,
+                    getKeyboardModifiers());
+        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseDragged(
                 mouseX, this.width, this.height,
@@ -1571,6 +1623,10 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (sceneBackgroundEditor.isActive()) {
+            return renderState == null || inputController.mouseScrolled(
+                    mouseX, mouseY, scrollX, scrollY, renderState);
+        }
         if (!backgroundImagePickerActive
                 && hudSettingsOpen && editorSettingsOverlay.contains(
                 mouseX, mouseY, this.width, this.height)) return true;
@@ -1660,6 +1716,16 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (sceneBackgroundEditor.isActive()) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                confirmSceneBackgroundEdit();
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                cancelSceneBackgroundEdit();
+            } else if (keyCode == GLFW.GLFW_KEY_R) {
+                sceneBackgroundEditor.reset(session.getActiveScene());
+            }
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_P
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0
                 && session.isLocalMaster()) {
@@ -1888,16 +1954,18 @@ public final class VTTScreen extends Screen {
 
         boolean controlDown = (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
         if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
+            boolean changed;
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inputController.redoEditorAction();
+                changed = inputController.redoEditorAction();
             } else {
-                inputController.undoEditorAction();
+                changed = inputController.undoEditorAction();
             }
+            if (changed) syncSceneBackgroundTransform();
             return true;
         }
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
-            inputController.redoEditorAction();
+            if (inputController.redoEditorAction()) syncSceneBackgroundTransform();
             return true;
         }
 
@@ -2366,6 +2434,51 @@ public final class VTTScreen extends Screen {
         return false;
     }
 
+    private void beginSceneBackgroundEdit() {
+        if (!session.isLocalMaster()) {
+            VTT.LOGGER.warn("[VTT Scene Edit] Rejected because local user is not master");
+            VttClientEditorNotice.show("Only masters can edit the scene background");
+            return;
+        }
+        if (session.getActiveScene() == null
+                || session.getActiveScene().getBackgroundAssetId() == null) {
+            VTT.LOGGER.warn("[VTT Scene Edit] Rejected because the scene has no background");
+            VttClientEditorNotice.show("Choose a scene background first");
+            return;
+        }
+        closeHudPopups();
+        selectionManager.clearSelection();
+        if (!sceneBackgroundEditor.begin(session.getActiveScene())) {
+            VttClientEditorNotice.show("Could not resolve the background image size");
+            return;
+        }
+        inputController.beginEditorAction();
+        VttClientEditorNotice.show("Scene background edit mode enabled");
+    }
+
+    private void confirmSceneBackgroundEdit() {
+        if (!sceneBackgroundEditor.isActive()) return;
+        sceneBackgroundEditor.confirm();
+        inputController.endEditorAction();
+        syncSceneBackgroundTransform();
+        VttClientEditorNotice.show("Scene background transform applied");
+    }
+
+    private void cancelSceneBackgroundEdit() {
+        if (!sceneBackgroundEditor.isActive()) return;
+        sceneBackgroundEditor.cancel(session.getActiveScene());
+        inputController.endEditorAction();
+        VttClientEditorNotice.show("Scene background edit cancelled");
+    }
+
+    private void syncSceneBackgroundTransform() {
+        if (!session.isNetworkAuthorityActive()) {
+            session.saveActiveTabletopAndScene();
+            return;
+        }
+        VttClientEnvironmentCommandSync.sendBackgroundTransform(session);
+    }
+
     private void openBackgroundImagePicker(BackgroundPickerTarget target) {
         backgroundPickerTarget = target;
         backgroundImagePickerActive = true;
@@ -2383,6 +2496,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (sceneBackgroundEditor.isActive()) return true;
         if (renamingSceneId != null) {
             if (isAllowedRenameCharacter(codePoint) && sceneRenameBuffer.length() < 48) {
                 sceneRenameBuffer += codePoint;
@@ -2764,6 +2878,7 @@ public final class VTTScreen extends Screen {
         String activeSceneId = session.getActiveScene() == null
                 ? null : session.getActiveScene().getId();
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
+        if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
         inputController.clearEditorHistory();
@@ -2994,6 +3109,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public void removed() {
+        if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
         if (session.isLocalMaster()
                 && VttClientPresentationState.isFollowingMasterCamera()) {
             sendPresentationCommand(VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW);

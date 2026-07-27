@@ -775,6 +775,8 @@ public final class VttServerTabletopState {
                         && applyFogConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.GRID_CONFIG -> !delete
                         && applyGridConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> !delete
+                        && applyBackgroundConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.VISION -> delete
                         || applyVisionState(command.entityId(), command.entityJson());
                 default -> false;
@@ -916,6 +918,23 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean applyBackgroundConfig(String json) {
+        var transform = GSON.fromJson(
+                json, com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform.class);
+        if (transform == null || !Double.isFinite(transform.getX())
+                || !Double.isFinite(transform.getY())
+                || !Double.isFinite(transform.getScaleX())
+                || !Double.isFinite(transform.getScaleY())
+                || Math.abs(transform.getX()) > 10_000_000.0
+                || Math.abs(transform.getY()) > 10_000_000.0
+                || transform.getScaleX() < 0.01 || transform.getScaleX() > 1_000.0
+                || transform.getScaleY() < 0.01 || transform.getScaleY() > 1_000.0) {
+            return false;
+        }
+        activeScene.setBackgroundTransform(transform);
+        return true;
+    }
+
     private boolean applyVisionState(String id, String json) {
         VisionState vision = GSON.fromJson(json, VisionState.class);
         if (vision == null || !id.equals(vision.objectId()) || !Double.isFinite(vision.innerRadius())
@@ -950,6 +969,8 @@ public final class VttServerTabletopState {
                     activeScene.getFogOfWar().isEnabled(), activeScene.getFogOfWar().isDefaultHidden()));
             case VttEnvironmentCommandPayload.GRID_CONFIG ->
                     GSON.toJson(activeScene.getGrid());
+            case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
+                    GSON.toJson(activeScene.getBackgroundTransform());
             case VttEnvironmentCommandPayload.VISION -> {
                 VttSceneObject object = activeScene.getObjects().stream()
                         .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow();

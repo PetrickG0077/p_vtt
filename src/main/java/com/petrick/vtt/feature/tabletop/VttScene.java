@@ -32,6 +32,9 @@ public final class VttScene {
      */
     private String backgroundAssetId;
 
+    /** Transform kept separate because the background is not a selectable canvas object. */
+    private VttSceneBackgroundTransform backgroundTransform;
+
     /** Canvas object currently used as the persistent player vision origin. */
     private String visionSourceObjectId;
 
@@ -88,6 +91,20 @@ public final class VttScene {
         }
 
         this.backgroundAssetId = backgroundAssetId;
+    }
+
+    public VttSceneBackgroundTransform getBackgroundTransform() {
+        if (backgroundTransform == null) {
+            backgroundTransform = new VttSceneBackgroundTransform();
+        }
+        backgroundTransform.normalize();
+        return backgroundTransform;
+    }
+
+    public void setBackgroundTransform(VttSceneBackgroundTransform backgroundTransform) {
+        this.backgroundTransform = backgroundTransform == null
+                ? new VttSceneBackgroundTransform()
+                : backgroundTransform.copy();
     }
 
     public int getSchemaVersion() {

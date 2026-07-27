@@ -34,10 +34,14 @@ public final class SceneBackgroundRenderer {
 
         logResolvedOnce(scene.getBackgroundAssetId(), texture);
 
-        Vec2d center = context.renderState().worldToScreen(Vec2d.ZERO);
+        var transform = scene.getBackgroundTransform();
+        Vec2d center = context.renderState().worldToScreen(
+                new Vec2d(transform.getX(), transform.getY()));
         double zoom = context.renderState().getCamera().getZoom();
-        int width = Math.max(1, (int) Math.round(texture.width() * zoom));
-        int height = Math.max(1, (int) Math.round(texture.height() * zoom));
+        int width = Math.max(1, (int) Math.round(
+                texture.width() * transform.getScaleX() * zoom));
+        int height = Math.max(1, (int) Math.round(
+                texture.height() * transform.getScaleY() * zoom));
         int left = (int) Math.round(center.x() - width / 2.0);
         int top = (int) Math.round(center.y() - height / 2.0);
 

@@ -7,6 +7,7 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
@@ -150,6 +151,11 @@ public final class VttClientEnvironmentCommandSync {
                     observedGridConfigJson = lastGridConfigJson;
                     stableGridConfigTicks = 0;
                 }
+                case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> {
+                    VttSceneBackgroundTransform transform = GSON.fromJson(
+                            update.entityJson(), VttSceneBackgroundTransform.class);
+                    session.getActiveScene().setBackgroundTransform(transform);
+                }
                 case VttEnvironmentCommandPayload.VISION -> {
                     if (!delete) applyVision(session,
                             GSON.fromJson(update.entityJson(), VisionState.class));
@@ -229,6 +235,17 @@ public final class VttClientEnvironmentCommandSync {
         PacketDistributor.sendToServer(new VttEnvironmentCommandPayload(
                 authorityRevision, clientSequence, operation, activeSceneId,
                 entityType, entityId, json == null ? "" : json));
+    }
+
+    public static void sendBackgroundTransform(VTTSession session) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        send(VttEnvironmentCommandPayload.UPSERT,
+                VttEnvironmentCommandPayload.BACKGROUND_CONFIG,
+                "background",
+                GSON.toJson(session.getActiveScene().getBackgroundTransform()));
     }
 
     private static String entityKey(String entityType, String entityId) {
