@@ -83,6 +83,15 @@ public final class EditorHudOverlay {
         int size = buttonSize(screenHeight);
         List<Button> result = new ArrayList<>();
 
+        if (state.sceneEditing()) {
+            int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
+            int mapsX = (screenWidth - bottomWidth) / 2 + PADDING + size + GAP;
+            int bottomY = screenHeight - MARGIN - PADDING - size;
+            result.add(button(Action.MAPS, mapsX, bottomY, size, "", "Maps", true,
+                    state.mapsOpen()));
+            return result;
+        }
+
         int topX = MARGIN + PADDING;
         int topY = MARGIN + PADDING;
         result.add(button(Action.CLOSE, topX, topY, size, "", "Close VTT", true, false));
@@ -146,6 +155,14 @@ public final class EditorHudOverlay {
         int screenWidth = context.screenWidth();
         int screenHeight = context.screenHeight();
         int size = buttonSize(screenHeight);
+        if (state.sceneEditing()) {
+            int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
+            int mapsX = (screenWidth - bottomWidth) / 2 + size + GAP;
+            renderPanel(context, mapsX,
+                    screenHeight - MARGIN - PADDING * 2 - size,
+                    size + PADDING * 2, size + PADDING * 2);
+            return;
+        }
         int topCount = state.master() ? 3 : 2;
         renderPanel(context, MARGIN, MARGIN,
                 PADDING * 2 + topCount * size + (topCount - 1) * GAP, PADDING * 2 + size);
@@ -636,10 +653,6 @@ public final class EditorHudOverlay {
     }
 
     private ResourceLocation icon(Action action) {
-        if (action == Action.MAPS) {
-            return ResourceLocation.fromNamespaceAndPath(
-                    VTT.MOD_ID, "textures/gui/editor_hud/scenes.png");
-        }
         String fileName = action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
@@ -694,6 +707,7 @@ public final class EditorHudOverlay {
     public record State(
             boolean master,
             boolean spectator,
+            boolean sceneEditing,
             String activeToolId,
             boolean canUndo,
             boolean canRedo,

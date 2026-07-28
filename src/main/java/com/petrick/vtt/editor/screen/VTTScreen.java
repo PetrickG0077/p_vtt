@@ -327,7 +327,19 @@ public final class VTTScreen extends Screen {
                         ? session.getNetworkVisibleObjectIds() : null);
         if (sceneBackgroundEditor.isActive()) {
             sceneBackgroundEditor.render(context, this.font, session.getActiveScene());
+            if (panelVisibility.isMapCatalogVisible()) {
+                mapCatalogOverlay.render(
+                        context, this.font, mapDefinitionRegistry, mapCatalogSelection,
+                        assetRegistry, session.getAssetThumbnailRegistry(),
+                        mapCatalogScrollOffset);
+            }
+            if (draggingMapDefinition != null
+                    && mapDragDistance(mouseX, mouseY) >= 6.0) {
+                mapCatalogOverlay.renderDragPreview(
+                        context, this.font, draggingMapDefinition, mouseX, mouseY);
+            }
             renderEditorNotice(context);
+            renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
             return;
@@ -603,6 +615,7 @@ public final class VTTScreen extends Screen {
                 && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
                 session.isLocalMaster(), session.isLocalSpectator(),
+                sceneBackgroundEditor.isActive(),
                 inputController.getActiveToolId(),
                 inputController.canUndoEditorAction(),
                 inputController.canRedoEditorAction(),
@@ -1041,6 +1054,8 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (sceneBackgroundEditor.isActive()) {
+            if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
+            if (handleMapCatalogPlacementMouseClicked(mouseX, mouseY, button)) return true;
             return sceneBackgroundEditor.mouseClicked(
                     session.getActiveScene(), renderState, mouseX, mouseY, button);
         }
@@ -1156,29 +1171,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            if (panelVisibility.isMapCatalogVisible()) {
-                if (mapCatalogOverlay.isScrollbarAt(
-                        mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)) {
-                    draggingMapCatalogScrollbar = true;
-                    mapCatalogScrollOffset = mapCatalogOverlay.scrollOffsetFromMouse(
-                            mapDefinitionRegistry, this.height, mouseY);
-                    return true;
-                }
-                MapDefinition clickedMap = mapCatalogOverlay.findMapAt(
-                        mapDefinitionRegistry, this.width, this.height,
-                        mouseX, mouseY, mapCatalogScrollOffset);
-                if (clickedMap != null) {
-                    mapCatalogSelection.select(clickedMap.id());
-                    draggingMapDefinition = clickedMap;
-                    mapDragStartX = mouseX;
-                    mapDragStartY = mouseY;
-                    return true;
-                }
-                if (mapCatalogOverlay.contains(
-                        mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)) {
-                    return true;
-                }
-            }
+            if (handleMapCatalogPlacementMouseClicked(mouseX, mouseY, button)) return true;
 
             TokenCatalogClickResult tokenCatalogClickResult =
                     tokenCatalogController.mouseClicked(
@@ -1606,6 +1599,7 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (sceneBackgroundEditor.isActive()) {
+            if (releaseMapCatalogInteraction(mouseX, mouseY, button)) return true;
             return sceneBackgroundEditor.mouseReleased(button);
         }
         if (hudSettingsOpen && session.getActiveScene() != null
@@ -1623,21 +1617,7 @@ public final class VTTScreen extends Screen {
         if (assetCatalogController.mouseReleased()) return true;
         if (tokenCreationDialog.mouseReleased()) return true;
         if (tokenCatalogController.releaseScrollbar()) return true;
-        if (draggingMapCatalogScrollbar) {
-            draggingMapCatalogScrollbar = false;
-            return true;
-        }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingMapDefinition != null) {
-            MapDefinition definition = draggingMapDefinition;
-            boolean place = mapDragDistance(mouseX, mouseY) >= 6.0
-                    && !mapCatalogOverlay.contains(
-                    mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)
-                    && !editorHudOverlay.containsHud(
-                    mouseX, mouseY, this.width, this.height, editorHudState());
-            draggingMapDefinition = null;
-            if (place) placeMapDefinition(definition, mouseX, mouseY);
-            return true;
-        }
+        if (releaseMapCatalogInteraction(mouseX, mouseY, button)) return true;
         if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
         if (backgroundImagePickerActive) {
             return true;
@@ -1687,6 +1667,12 @@ public final class VTTScreen extends Screen {
             double dragY
     ) {
         if (sceneBackgroundEditor.isActive()) {
+            if (draggingMapCatalogScrollbar) {
+                mapCatalogScrollOffset = mapCatalogOverlay.scrollOffsetFromMouse(
+                        mapDefinitionRegistry, this.height, mouseY);
+                return true;
+            }
+            if (draggingMapDefinition != null) return true;
             return sceneBackgroundEditor.mouseDragged(
                     session.getActiveScene(), renderState, mouseX, mouseY,
                     getKeyboardModifiers());
@@ -1753,6 +1739,17 @@ public final class VTTScreen extends Screen {
             double scrollY
     ) {
         if (sceneBackgroundEditor.isActive()) {
+            if (panelVisibility.isMapCatalogVisible()
+                    && mapCatalogOverlay.contains(
+                    mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)) {
+                mapCatalogScrollOffset = mapCatalogOverlay.clampScrollOffset(
+                        mapDefinitionRegistry,
+                        mapCatalogScrollOffset
+                                + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0));
+                return true;
+            }
+            if (editorHudOverlay.containsHud(
+                    mouseX, mouseY, this.width, this.height, editorHudState())) return true;
             return renderState == null || inputController.mouseScrolled(
                     mouseX, mouseY, scrollX, scrollY, renderState);
         }
@@ -3133,6 +3130,53 @@ public final class VTTScreen extends Screen {
         return Math.hypot(mouseX - mapDragStartX, mouseY - mapDragStartY);
     }
 
+    private boolean handleMapCatalogPlacementMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT
+                || !panelVisibility.isMapCatalogVisible()) return false;
+        if (mapCatalogOverlay.isScrollbarAt(
+                mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)) {
+            draggingMapCatalogScrollbar = true;
+            mapCatalogScrollOffset = mapCatalogOverlay.scrollOffsetFromMouse(
+                    mapDefinitionRegistry, this.height, mouseY);
+            return true;
+        }
+        MapDefinition clickedMap = mapCatalogOverlay.findMapAt(
+                mapDefinitionRegistry, this.width, this.height,
+                mouseX, mouseY, mapCatalogScrollOffset);
+        if (clickedMap != null) {
+            mapCatalogSelection.select(clickedMap.id());
+            draggingMapDefinition = clickedMap;
+            mapDragStartX = mouseX;
+            mapDragStartY = mouseY;
+            return true;
+        }
+        return mapCatalogOverlay.contains(
+                mapDefinitionRegistry, this.width, this.height, mouseX, mouseY);
+    }
+
+    private boolean releaseMapCatalogInteraction(
+            double mouseX, double mouseY, int button
+    ) {
+        if (draggingMapCatalogScrollbar) {
+            draggingMapCatalogScrollbar = false;
+            return true;
+        }
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || draggingMapDefinition == null) {
+            return false;
+        }
+        MapDefinition definition = draggingMapDefinition;
+        boolean place = mapDragDistance(mouseX, mouseY) >= 6.0
+                && !mapCatalogOverlay.contains(
+                mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)
+                && !editorHudOverlay.containsHud(
+                mouseX, mouseY, this.width, this.height, editorHudState());
+        draggingMapDefinition = null;
+        if (place) placeMapDefinition(definition, mouseX, mouseY);
+        return true;
+    }
+
     private void placeMapDefinition(
             MapDefinition definition, double screenX, double screenY
     ) {
@@ -3150,7 +3194,8 @@ public final class VTTScreen extends Screen {
             return;
         }
         String id = "map_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        inputController.beginEditorAction();
+        boolean sceneEditActive = sceneBackgroundEditor.isActive();
+        if (!sceneEditActive) inputController.beginEditorAction();
         VttSceneMap map = new VttSceneMap(
                 id, definition.displayName(), definition.id(), definition.assetId(),
                 definition.textureMode());
@@ -3162,8 +3207,12 @@ public final class VTTScreen extends Screen {
                 .max().orElse(-1) + 1;
         map.setLayerIndex(topLayer);
         session.getActiveScene().addMap(map);
-        inputController.endEditorAction();
-        if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
+        if (sceneEditActive) {
+            sceneBackgroundEditor.selectMap(session.getActiveScene(), map.getId());
+        } else {
+            inputController.endEditorAction();
+            if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
+        }
         VttClientEditorNotice.show("Map placed: " + definition.displayName());
     }
 

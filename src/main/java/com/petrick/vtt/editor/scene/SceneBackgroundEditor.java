@@ -102,6 +102,8 @@ public final class SceneBackgroundEditor {
         if (active && scene != null && scene.getId().equals(editedSceneId)
                 && originalTransform != null) {
             scene.setBackgroundTransform(originalTransform);
+            scene.getMaps().removeIf(map -> map != null
+                    && !originalMaps.containsKey(map.getId()));
             for (VttSceneMap map : scene.getMaps()) {
                 OriginalMapState original = map == null ? null : originalMaps.get(map.getId());
                 if (original != null) {
@@ -198,6 +200,14 @@ public final class SceneBackgroundEditor {
             }
         }
         selected.setLayerIndex(target);
+    }
+
+    public void selectMap(VttScene scene, String mapId) {
+        if (!active || scene == null || mapId == null) return;
+        scene.getMaps().stream()
+                .filter(map -> map != null && mapId.equals(map.getId()))
+                .findFirst()
+                .ifPresent(map -> selectMap(scene, map));
     }
 
     public void render(VRenderContext context, Font font, VttScene scene) {
