@@ -47,12 +47,24 @@ public final class VttSceneMap {
         return displayName;
     }
 
+    public void setDisplayName(String displayName) {
+        if (displayName != null && !displayName.isBlank()) {
+            this.displayName = displayName.trim();
+        }
+    }
+
     public String getSourceMapDefinitionId() {
         return sourceMapDefinitionId;
     }
 
     public String getAssetId() {
         return assetId;
+    }
+
+    public void setAssetId(String assetId) {
+        if (assetId != null && !assetId.isBlank()) {
+            this.assetId = assetId;
+        }
     }
 
     public VttSceneBackgroundTransform getTransform() {

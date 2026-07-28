@@ -53,12 +53,58 @@ public final class CreatedMapStorage {
                 + UUID.randomUUID().toString().substring(0, 8);
         MapDefinition definition = new MapDefinition(
                 id, name, assetId, imageWidth, imageHeight, textureMode);
-        save(definition);
+        if (!save(definition)) {
+            throw new IllegalStateException("Could not persist map definition");
+        }
         return definition;
     }
 
-    public static void save(MapDefinition definition) {
-        if (definition == null) return;
+    public static MapDefinition updateAndSave(
+            MapDefinition existing,
+            String displayName,
+            String assetId,
+            int imageWidth,
+            int imageHeight,
+            MapTextureMode textureMode
+    ) {
+        if (!isUserCreatedMap(existing)) {
+            throw new IllegalArgumentException("Only user-created maps can be edited");
+        }
+        Path previousFile = getMapsFolder().resolve(fileName(existing));
+        MapDefinition updated = new MapDefinition(
+                existing.id(), normalizeName(displayName), assetId,
+                imageWidth, imageHeight, textureMode);
+        if (!save(updated)) {
+            throw new IllegalStateException("Could not persist edited map definition");
+        }
+        Path updatedFile = getMapsFolder().resolve(fileName(updated));
+        if (!previousFile.equals(updatedFile)) {
+            try {
+                Files.deleteIfExists(previousFile);
+            } catch (IOException exception) {
+                VTT.LOGGER.warn("Could not remove renamed VTT map file: {}", previousFile,
+                        exception);
+            }
+        }
+        return updated;
+    }
+
+    public static boolean delete(MapDefinition definition) {
+        if (!isUserCreatedMap(definition)) return false;
+        try {
+            return Files.deleteIfExists(getMapsFolder().resolve(fileName(definition)));
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to delete created VTT map: {}", definition.id(), exception);
+            return false;
+        }
+    }
+
+    public static boolean isUserCreatedMap(MapDefinition definition) {
+        return definition != null && definition.id().startsWith(USER_MAP_ID_PREFIX);
+    }
+
+    public static boolean save(MapDefinition definition) {
+        if (definition == null) return false;
         Path folder = getMapsFolder();
         Path target = folder.resolve(fileName(definition));
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
@@ -79,12 +125,14 @@ public final class CreatedMapStorage {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
             VTT.LOGGER.info("Saved created VTT map: {}", definition.id());
+            return true;
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to save created VTT map: {}", definition.id(), exception);
             try {
                 Files.deleteIfExists(temporary);
             } catch (IOException ignored) {
             }
+            return false;
         }
     }
 

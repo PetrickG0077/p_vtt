@@ -84,6 +84,8 @@ public final class EditorHudOverlay {
         List<Button> result = new ArrayList<>();
 
         if (state.sceneEditing()) {
+            result.add(button(Action.OUTLINER, MARGIN + PADDING, MARGIN + PADDING,
+                    size, "", "Scene Outliner", true, state.outlinerOpen()));
             int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
             int mapsX = (screenWidth - bottomWidth) / 2 + PADDING + size + GAP;
             int bottomY = screenHeight - MARGIN - PADDING - size;
@@ -156,6 +158,8 @@ public final class EditorHudOverlay {
         int screenHeight = context.screenHeight();
         int size = buttonSize(screenHeight);
         if (state.sceneEditing()) {
+            renderPanel(context, MARGIN, MARGIN,
+                    size + PADDING * 2, size + PADDING * 2);
             int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
             int mapsX = (screenWidth - bottomWidth) / 2 + size + GAP;
             renderPanel(context, mapsX,
@@ -499,12 +503,20 @@ public final class EditorHudOverlay {
                 TEXT, false);
         renderMenuRow(context, font, bounds, 0, "Create Scene", true, false);
         renderMenuRow(context, font, bounds, 1, "Create Map", true, false);
-        renderMenuRow(context, font, bounds, 2, "Create Token", true, false);
-        renderMenuRow(context, font, bounds, 3,
+        renderMenuRow(context, font, bounds, 2,
+                state.selectedMapName().isBlank() ? "Edit Selected Map"
+                        : "Edit Map: " + trim(state.selectedMapName(), 18),
+                state.canEditSelectedMap(), false);
+        renderMenuRow(context, font, bounds, 3, "Create Token", true, false);
+        renderMenuRow(context, font, bounds, 4,
                 state.activeSceneName().isBlank() ? "Delete Active Scene"
                         : "Delete Scene: " + trim(state.activeSceneName(), 18),
                 state.canDeleteActiveScene(), true);
-        renderMenuRow(context, font, bounds, 4,
+        renderMenuRow(context, font, bounds, 5,
+                state.selectedMapName().isBlank() ? "Delete Selected Map"
+                        : "Delete Map: " + trim(state.selectedMapName(), 18),
+                state.canEditSelectedMap(), true);
+        renderMenuRow(context, font, bounds, 6,
                 state.selectedTokenName().isBlank() ? "Delete Selected Token"
                         : "Delete Token: " + trim(state.selectedTokenName(), 18),
                 state.canDeleteSelectedToken(), true);
@@ -528,15 +540,19 @@ public final class EditorHudOverlay {
             double mouseX, double mouseY, int screenWidth, int screenHeight, State state
     ) {
         Bounds bounds = creationBounds(screenWidth, screenHeight);
-        for (int index = 0; index < 5; index++) {
+        for (int index = 0; index < 7; index++) {
             if (creationRow(bounds, index).contains(mouseX, mouseY)) {
                 return switch (index) {
                     case 0 -> Action.CREATE_SCENE;
                     case 1 -> Action.CREATE_MAP;
-                    case 2 -> Action.CREATE_TOKEN;
-                    case 3 -> state.canDeleteActiveScene()
+                    case 2 -> state.canEditSelectedMap()
+                            ? Action.EDIT_SELECTED_MAP : Action.NONE;
+                    case 3 -> Action.CREATE_TOKEN;
+                    case 4 -> state.canDeleteActiveScene()
                             ? Action.DELETE_ACTIVE_SCENE : Action.NONE;
-                    case 4 -> state.canDeleteSelectedToken()
+                    case 5 -> state.canEditSelectedMap()
+                            ? Action.DELETE_SELECTED_MAP : Action.NONE;
+                    case 6 -> state.canDeleteSelectedToken()
                             ? Action.DELETE_SELECTED_TOKEN : Action.NONE;
                     default -> Action.NONE;
                 };
@@ -561,9 +577,10 @@ public final class EditorHudOverlay {
     private Bounds creationBounds(int screenWidth, int screenHeight) {
         int width = 230;
         int bottomPanelY = screenHeight - MARGIN - PADDING * 2 - buttonSize(screenHeight);
-        int y = Math.max(topPopupY(screenHeight), bottomPanelY - GAP - 139);
+        int height = 185;
+        int y = Math.max(topPopupY(screenHeight), bottomPanelY - GAP - height);
         return new Bounds((screenWidth - width) / 2, y,
-                width, 139);
+                width, height);
     }
 
     private int topPopupY(int screenHeight) {
@@ -695,8 +712,10 @@ public final class EditorHudOverlay {
         CREATION,
         CREATE_SCENE,
         CREATE_MAP,
+        EDIT_SELECTED_MAP,
         CREATE_TOKEN,
         DELETE_ACTIVE_SCENE,
+        DELETE_SELECTED_MAP,
         DELETE_SELECTED_TOKEN;
 
         private boolean isPopup() {
@@ -728,6 +747,8 @@ public final class EditorHudOverlay {
             String selectedSceneTokenOwnerId,
             String activeSceneName,
             boolean canDeleteActiveScene,
+            String selectedMapName,
+            boolean canEditSelectedMap,
             String selectedTokenName,
             boolean canDeleteSelectedToken
     ) {
@@ -743,6 +764,7 @@ public final class EditorHudOverlay {
             selectedSceneTokenOwnerId =
                     selectedSceneTokenOwnerId == null ? "" : selectedSceneTokenOwnerId;
             activeSceneName = activeSceneName == null ? "" : activeSceneName;
+            selectedMapName = selectedMapName == null ? "" : selectedMapName;
             selectedTokenName = selectedTokenName == null ? "" : selectedTokenName;
         }
     }

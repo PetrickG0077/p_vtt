@@ -17,6 +17,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Modal editor for the active scene background. */
@@ -74,8 +75,7 @@ public final class SceneBackgroundEditor {
         originalMaps.clear();
         for (VttSceneMap map : scene.getMaps()) {
             if (map != null) {
-                originalMaps.put(map.getId(), new OriginalMapState(
-                        map.getTransform().copy(), map.getLayerIndex()));
+                originalMaps.put(map.getId(), OriginalMapState.capture(map));
             }
         }
         dragMode = DragMode.NONE;
@@ -90,6 +90,10 @@ public final class SceneBackgroundEditor {
         return active;
     }
 
+    public String getSelectedMapId() {
+        return selectedMapId;
+    }
+
     public void confirm() {
         active = false;
         editedSceneId = null;
@@ -102,15 +106,10 @@ public final class SceneBackgroundEditor {
         if (active && scene != null && scene.getId().equals(editedSceneId)
                 && originalTransform != null) {
             scene.setBackgroundTransform(originalTransform);
-            scene.getMaps().removeIf(map -> map != null
-                    && !originalMaps.containsKey(map.getId()));
-            for (VttSceneMap map : scene.getMaps()) {
-                OriginalMapState original = map == null ? null : originalMaps.get(map.getId());
-                if (original != null) {
-                    map.setTransform(original.transform());
-                    map.setLayerIndex(original.layerIndex());
-                }
-            }
+            scene.getMaps().clear();
+            originalMaps.values().stream()
+                    .map(OriginalMapState::restore)
+                    .forEach(scene::addMap);
         }
         active = false;
         editedSceneId = null;
@@ -120,7 +119,9 @@ public final class SceneBackgroundEditor {
     }
 
     public void reset(VttScene scene) {
-        if (active && scene != null) selectedTransform(scene).reset();
+        if (active && scene != null && selectedAssetId(scene) != null) {
+            selectedTransform(scene).reset();
+        }
     }
 
     public boolean mouseClicked(
@@ -132,6 +133,7 @@ public final class SceneBackgroundEditor {
     ) {
         if (!active) return false;
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || scene == null) return true;
+        if (selectedAssetId(scene) == null) return true;
         Vec2d mouseScreen = new Vec2d(mouseX, mouseY);
         Corner corner = findCorner(renderState, scene, mouseScreen);
         if (corner != null) {
@@ -210,8 +212,33 @@ public final class SceneBackgroundEditor {
                 .ifPresent(map -> selectMap(scene, map));
     }
 
+    public boolean deleteSelectedMap(VttScene scene) {
+        VttSceneMap selected = selectedMap(scene);
+        if (!active || scene == null || selected == null) return false;
+        if (!scene.removeMap(selected.getId())) return false;
+        normalizeLayers(scene);
+        VttSceneMap next = scene.getMaps().stream()
+                .filter(map -> map != null)
+                .max(Comparator.comparingInt(VttSceneMap::getLayerIndex))
+                .orElse(null);
+        if (next == null) {
+            selectedMapId = null;
+            sourceWidth = 0;
+            sourceHeight = 0;
+            clearDrag();
+        } else {
+            selectMap(scene, next);
+        }
+        return true;
+    }
+
     public void render(VRenderContext context, Font font, VttScene scene) {
         if (!active || scene == null) return;
+        if (selectedAssetId(scene) == null) {
+            renderHeader(context, font, scene,
+                    "No map selected - drag one from Map Catalog");
+            return;
+        }
         Corners corners = corners(scene);
         Vec2d topLeft = context.renderState().worldToScreen(corners.topLeft());
         Vec2d topRight = context.renderState().worldToScreen(corners.topRight());
@@ -227,9 +254,15 @@ public final class SceneBackgroundEditor {
         handle(context, bottomLeft);
         handle(context, bottomRight);
 
+        renderHeader(context, font, scene,
+                "Click: select  |  Drag: move  |  Corners: resize  |  Delete: remove  |  Middle drag: camera  |  Enter: apply");
+    }
+
+    private void renderHeader(
+            VRenderContext context, Font font, VttScene scene, String help
+    ) {
         String title = "EDIT SCENE MAP"
                 + (selectedMap(scene) == null ? "" : " - " + selectedMap(scene).getDisplayName());
-        String help = "Click: select  |  Drag: move  |  Corners: resize  |  PgUp/PgDn: layer  |  Home/End: top/bottom  |  R: reset  |  Enter: apply";
         int boxWidth = Math.max(font.width(title), font.width(help)) + 16;
         int boxX = (context.screenWidth() - boxWidth) / 2;
         context.graphics().fill(boxX, 8, boxX + boxWidth, 40, 0xE0101014);
@@ -237,6 +270,16 @@ public final class SceneBackgroundEditor {
                 font, title, context.screenWidth() / 2, 13, BORDER_COLOR);
         context.graphics().drawCenteredString(
                 font, help, context.screenWidth() / 2, 27, 0xFFFFFFFF);
+    }
+
+    private void normalizeLayers(VttScene scene) {
+        List<VttSceneMap> ordered = scene.getMaps().stream()
+                .filter(map -> map != null)
+                .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex))
+                .toList();
+        for (int index = 0; index < ordered.size(); index++) {
+            ordered.get(index).setLayerIndex(index);
+        }
     }
 
     private void beginResize(VttScene scene, Corner corner) {
@@ -412,5 +455,30 @@ public final class SceneBackgroundEditor {
     private enum Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
     private record ImageSize(int width, int height) {}
     private record Corners(Vec2d topLeft, Vec2d topRight, Vec2d bottomLeft, Vec2d bottomRight) {}
-    private record OriginalMapState(VttSceneBackgroundTransform transform, int layerIndex) {}
+    private record OriginalMapState(
+            String id,
+            String displayName,
+            String sourceMapDefinitionId,
+            String assetId,
+            VttSceneBackgroundTransform transform,
+            int layerIndex,
+            boolean visible,
+            com.petrick.vtt.feature.map.MapTextureMode textureMode
+    ) {
+        private static OriginalMapState capture(VttSceneMap map) {
+            return new OriginalMapState(
+                    map.getId(), map.getDisplayName(), map.getSourceMapDefinitionId(),
+                    map.getAssetId(), map.getTransform().copy(), map.getLayerIndex(),
+                    map.isVisible(), map.getTextureMode());
+        }
+
+        private VttSceneMap restore() {
+            VttSceneMap map = new VttSceneMap(
+                    id, displayName, sourceMapDefinitionId, assetId, textureMode);
+            map.setTransform(transform);
+            map.setLayerIndex(layerIndex);
+            map.setVisible(visible);
+            return map;
+        }
+    }
 }
