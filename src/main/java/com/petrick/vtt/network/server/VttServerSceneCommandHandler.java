@@ -43,7 +43,7 @@ public final class VttServerSceneCommandHandler {
         String previousSceneId = state.activeScene().getId();
         boolean changed = switch (request.operation()) {
             case VttSceneCommandPayload.CREATE -> state.createAndActivateScene(
-                    request.value(), request.backgroundAssetId());
+                    request.value(), request.targetId(), request.backgroundAssetId());
             case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.targetId());
             case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
             case VttSceneCommandPayload.RENAME -> state.renameScene(request.targetId(), request.value());

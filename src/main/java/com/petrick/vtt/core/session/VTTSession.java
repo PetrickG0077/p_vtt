@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
+import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
@@ -19,6 +20,7 @@ import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
@@ -494,6 +496,33 @@ public final class VTTSession {
                 networkAuthorityRevision, VttSceneCommandPayload.CREATE, "",
                 displayName.trim(), backgroundAssetId == null ? "" : backgroundAssetId));
         return true;
+    }
+
+    public boolean requestCreateScene(String displayName, MapDefinition initialMap) {
+        if (!networkAuthorityActive) {
+            VttScene created = createScene(displayName, null);
+            if (created == null) return false;
+            if (initialMap != null) {
+                created.addMap(createInitialSceneMap(initialMap));
+                tabletopStorage.saveScene(activeTabletop.getId(), created);
+            }
+            return true;
+        }
+        if (!isLocalMaster() || displayName == null || displayName.isBlank()
+                || displayName.length() > 48
+                || initialMap != null && (initialMap.id().length() > 128
+                || initialMap.assetId().length() > 512)) return false;
+        PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                networkAuthorityRevision, VttSceneCommandPayload.CREATE,
+                initialMap == null ? "" : initialMap.id(),
+                displayName.trim(), initialMap == null ? "" : initialMap.assetId()));
+        return true;
+    }
+
+    private VttSceneMap createInitialSceneMap(MapDefinition definition) {
+        return new VttSceneMap(
+                "map_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12),
+                definition.displayName(), definition.id(), definition.assetId());
     }
 
     public boolean setActiveSceneBackground(String assetId) {

@@ -29,6 +29,8 @@ public final class VttSceneLimits {
     public static Violation environmentUpsert(VttScene scene, String entityType, String entityId) {
         if (scene == null || entityType == null || entityId == null || entityId.isBlank()) return null;
         return switch (entityType) {
+            case "MAP" -> containsMap(scene, entityId) ? null
+                    : countViolation("maps", scene.getMaps().size(), MAX_MAPS);
             case "WALL" -> containsWall(scene, entityId) ? null
                     : countViolation("walls", scene.getWalls().size(), MAX_WALLS);
             case "DOOR" -> containsDoor(scene, entityId) ? null
@@ -108,6 +110,11 @@ public final class VttSceneLimits {
 
     private static boolean containsWall(VttScene scene, String id) {
         return scene.getWalls().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+    }
+
+    private static boolean containsMap(VttScene scene, String id) {
+        return scene.getMaps().stream().anyMatch(
                 value -> value != null && id.equals(value.getId()));
     }
 

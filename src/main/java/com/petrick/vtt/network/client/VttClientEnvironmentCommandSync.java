@@ -10,6 +10,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
+import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
@@ -25,6 +26,7 @@ import java.util.function.Function;
 public final class VttClientEnvironmentCommandSync {
     private static final Gson GSON = new GsonBuilder().create();
     private static final Map<String, String> lastWalls = new LinkedHashMap<>();
+    private static final Map<String, String> lastMaps = new LinkedHashMap<>();
     private static final Map<String, String> lastDoors = new LinkedHashMap<>();
     private static final Map<String, String> lastHiddenFog = new LinkedHashMap<>();
     private static final Map<String, String> lastRevealedFog = new LinkedHashMap<>();
@@ -45,6 +47,7 @@ public final class VttClientEnvironmentCommandSync {
         if (session == null || !session.hasNetworkSnapshot() || !session.isLocalMaster()) return;
         activeSceneId = session.getActiveScene().getId();
         Map<String, String> walls = jsonById(session.getActiveScene().getWalls(), VttWall::getId);
+        Map<String, String> maps = jsonById(session.getActiveScene().getMaps(), VttSceneMap::getId);
         Map<String, String> doors = jsonById(session.getActiveScene().getDoors(), VttDoor::getId);
         Map<String, String> hiddenFog = jsonById(
                 session.getActiveScene().getFogOfWar().getHiddenAreas(), VttFogArea::getId);
@@ -62,6 +65,7 @@ public final class VttClientEnvironmentCommandSync {
                 latestRevisions.clear();
             }
             replace(lastWalls, walls);
+            replace(lastMaps, maps);
             replace(lastDoors, doors);
             replace(lastHiddenFog, hiddenFog);
             replace(lastRevealedFog, revealedFog);
@@ -73,6 +77,7 @@ public final class VttClientEnvironmentCommandSync {
             return;
         }
 
+        syncMap(VttEnvironmentCommandPayload.MAP, maps, lastMaps);
         syncMap(VttEnvironmentCommandPayload.WALL, walls, lastWalls);
         syncMap(VttEnvironmentCommandPayload.DOOR, doors, lastDoors);
         syncMap(VttEnvironmentCommandPayload.FOG_HIDDEN, hiddenFog, lastHiddenFog);
@@ -108,6 +113,12 @@ public final class VttClientEnvironmentCommandSync {
         try {
             boolean delete = VttEnvironmentCommandPayload.DELETE.equals(update.operation());
             switch (update.entityType()) {
+                case VttEnvironmentCommandPayload.MAP -> {
+                    session.getActiveScene().removeMap(update.entityId());
+                    if (!delete) session.getActiveScene().addMap(
+                            GSON.fromJson(update.entityJson(), VttSceneMap.class));
+                    updateLast(lastMaps, update, delete);
+                }
                 case VttEnvironmentCommandPayload.WALL -> {
                     if (delete) {
                         session.getActiveScene().removeWall(update.entityId());
@@ -181,6 +192,7 @@ public final class VttClientEnvironmentCommandSync {
     public static void reset() {
         snapshotVersion = -1L;
         lastWalls.clear();
+        lastMaps.clear();
         lastDoors.clear();
         lastHiddenFog.clear();
         lastRevealedFog.clear();

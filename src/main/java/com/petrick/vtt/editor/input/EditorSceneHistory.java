@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttFogOfWar;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
+import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttSceneSize;
@@ -215,6 +216,9 @@ public final class EditorSceneHistory {
 
             Environment oldEnvironment = before.environment();
             Environment newEnvironment = after.environment();
+            String map = describeCollectionChange(oldEnvironment.maps(), newEnvironment.maps(),
+                    SceneMap::id, "map");
+            if (map != null) return map;
             String wall = describeCollectionChange(oldEnvironment.walls(), newEnvironment.walls(),
                     Wall::id, "wall");
             if (wall != null) return wall;
@@ -475,6 +479,7 @@ public final class EditorSceneHistory {
             List<Door> doors,
             String backgroundAssetId,
             BackgroundTransform backgroundTransform,
+            List<SceneMap> maps,
             InitialCameraView initialCameraView,
             Grid grid,
             boolean fogEnabled,
@@ -485,6 +490,7 @@ public final class EditorSceneHistory {
         private Environment {
             walls = List.copyOf(walls);
             doors = List.copyOf(doors);
+            maps = List.copyOf(maps);
             revealedFog = List.copyOf(revealedFog);
             hiddenFog = List.copyOf(hiddenFog);
         }
@@ -492,7 +498,7 @@ public final class EditorSceneHistory {
         private static Environment capture(VttScene scene) {
             if (scene == null) {
                 return new Environment(List.of(), List.of(), null,
-                        BackgroundTransform.defaults(), null, Grid.defaults(),
+                        BackgroundTransform.defaults(), List.of(), null, Grid.defaults(),
                         false, false, List.of(), List.of());
             }
             VttFogOfWar fog = scene.getFogOfWar();
@@ -503,6 +509,8 @@ public final class EditorSceneHistory {
                             .map(Door::capture).toList(),
                     scene.getBackgroundAssetId(),
                     BackgroundTransform.capture(scene.getBackgroundTransform()),
+                    scene.getMaps().stream().filter(java.util.Objects::nonNull)
+                            .map(SceneMap::capture).toList(),
                     InitialCameraView.capture(scene.getInitialCameraView()),
                     Grid.capture(scene),
                     fog.isEnabled(), fog.isDefaultHidden(),
@@ -520,6 +528,8 @@ public final class EditorSceneHistory {
             doors.stream().map(Door::restore).forEach(scene::addDoor);
             scene.setBackgroundAssetId(backgroundAssetId);
             scene.setBackgroundTransform(backgroundTransform.restore());
+            scene.getMaps().clear();
+            maps.stream().map(SceneMap::restore).forEach(scene::addMap);
             scene.setInitialCameraView(initialCameraView == null
                     ? null : initialCameraView.restore());
             scene.setGrid(grid.restore());
@@ -530,6 +540,31 @@ public final class EditorSceneHistory {
             fog.clearAreas();
             revealedFog.stream().map(FogArea::restore).forEach(fog::addRevealedArea);
             hiddenFog.stream().map(FogArea::restore).forEach(fog::addHiddenArea);
+        }
+    }
+
+    private record SceneMap(
+            String id,
+            String displayName,
+            String sourceMapDefinitionId,
+            String assetId,
+            BackgroundTransform transform,
+            int layerIndex,
+            boolean visible
+    ) {
+        private static SceneMap capture(VttSceneMap map) {
+            return new SceneMap(
+                    map.getId(), map.getDisplayName(), map.getSourceMapDefinitionId(),
+                    map.getAssetId(), BackgroundTransform.capture(map.getTransform()),
+                    map.getLayerIndex(), map.isVisible());
+        }
+
+        private VttSceneMap restore() {
+            VttSceneMap map = new VttSceneMap(id, displayName, sourceMapDefinitionId, assetId);
+            map.setTransform(transform.restore());
+            map.setLayerIndex(layerIndex);
+            map.setVisible(visible);
+            return map;
         }
     }
 

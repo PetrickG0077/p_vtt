@@ -42,6 +42,7 @@ import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
+import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
@@ -75,6 +76,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Tela principal do Virtual Tabletop.
@@ -137,6 +139,9 @@ public final class VTTScreen extends Screen {
     private final MapCatalogSelection mapCatalogSelection;
     private int mapCatalogScrollOffset;
     private boolean draggingMapCatalogScrollbar;
+    private MapDefinition draggingMapDefinition;
+    private double mapDragStartX;
+    private double mapDragStartY;
 
     private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
@@ -181,6 +186,12 @@ public final class VTTScreen extends Screen {
     private ResourceLocation newSceneBackgroundPreviewTexture;
     private int newSceneBackgroundPreviewWidth;
     private int newSceneBackgroundPreviewHeight;
+    private MapDefinition newSceneMapDefinition;
+
+    private boolean mapPickerActive;
+    private MapPickerTarget mapPickerTarget = MapPickerTarget.NONE;
+    private long lastMapPickerClickTime;
+    private String lastMapPickerClickedId;
 
     private String newMapNameBuffer;
     private String newMapAssetId;
@@ -372,6 +383,15 @@ public final class VTTScreen extends Screen {
                     context, this.font, mapDefinitionRegistry, mapCatalogSelection,
                     assetRegistry, session.getAssetThumbnailRegistry(), mapCatalogScrollOffset);
         }
+        if (mapPickerActive) {
+            mapCatalogOverlay.render(
+                    context, this.font, mapDefinitionRegistry, mapCatalogSelection,
+                    assetRegistry, session.getAssetThumbnailRegistry(), mapCatalogScrollOffset);
+        }
+        if (draggingMapDefinition != null && mapDragDistance(mouseX, mouseY) >= 6.0) {
+            mapCatalogOverlay.renderDragPreview(
+                    context, this.font, draggingMapDefinition, mouseX, mouseY);
+        }
 
         if (session.isLocalMaster() && panelVisibility.isSceneOutlinerVisible()) {
             sceneOutlinerOverlay.render(context, this.font, scene, selectionManager);
@@ -426,7 +446,7 @@ public final class VTTScreen extends Screen {
             renderRenameDialog(context);
         }
 
-        if (newSceneNameBuffer != null && !backgroundImagePickerActive) {
+        if (newSceneNameBuffer != null && !mapPickerActive) {
             renderNewSceneDialog(context);
         }
         if (newMapNameBuffer != null && !backgroundImagePickerActive) {
@@ -549,7 +569,7 @@ public final class VTTScreen extends Screen {
         }
         editorHudOverlay.render(context, this.font, editorHudState());
         if (hudSettingsOpen && session.getActiveScene() != null
-                && backgroundPickerTarget != BackgroundPickerTarget.ACTIVE_SCENE) {
+                && mapPickerTarget != MapPickerTarget.ACTIVE_SCENE) {
             editorSettingsOverlay.render(
                     context, this.font, session.getActiveScene(), master);
         }
@@ -639,11 +659,15 @@ public final class VTTScreen extends Screen {
             persistGridSettings();
         } else if (interaction == EditorSettingsOverlay.Interaction.CHOOSE_BACKGROUND) {
             inputController.endEditorAction();
-            openBackgroundImagePicker(BackgroundPickerTarget.ACTIVE_SCENE);
+            openMapPicker(MapPickerTarget.ACTIVE_SCENE);
             return true;
         } else if (interaction == EditorSettingsOverlay.Interaction.REMOVE_BACKGROUND) {
-            if (session.setActiveSceneBackground(null)) {
-                VttClientEditorNotice.show("Scene background removed");
+            if (!session.getActiveScene().getMaps().isEmpty()) {
+                session.getActiveScene().getMaps().clear();
+                if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
+                VttClientEditorNotice.show("Scene maps cleared");
+            } else if (session.setActiveSceneBackground(null)) {
+                VttClientEditorNotice.show("Legacy background removed");
             }
             inputController.endEditorAction();
             return true;
@@ -1024,7 +1048,7 @@ public final class VTTScreen extends Screen {
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
         if (newSceneNameBuffer != null) {
-            if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) return true;
+            if (handleMapPickerMouseClicked(mouseX, mouseY, button)) return true;
             return handleNewSceneDialogMouseClicked(mouseX, mouseY, button);
         }
         if (newMapNameBuffer != null) {
@@ -1036,6 +1060,7 @@ public final class VTTScreen extends Screen {
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
+        if (handleMapPickerMouseClicked(mouseX, mouseY, button)) return true;
 
         if (handleTokenCreationMouseClicked(mouseX, mouseY, button)) {
             return true;
@@ -1141,6 +1166,9 @@ public final class VTTScreen extends Screen {
                         mouseX, mouseY, mapCatalogScrollOffset);
                 if (clickedMap != null) {
                     mapCatalogSelection.select(clickedMap.id());
+                    draggingMapDefinition = clickedMap;
+                    mapDragStartX = mouseX;
+                    mapDragStartY = mouseY;
                     return true;
                 }
                 if (mapCatalogOverlay.contains(
@@ -1596,10 +1624,22 @@ public final class VTTScreen extends Screen {
             draggingMapCatalogScrollbar = false;
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingMapDefinition != null) {
+            MapDefinition definition = draggingMapDefinition;
+            boolean place = mapDragDistance(mouseX, mouseY) >= 6.0
+                    && !mapCatalogOverlay.contains(
+                    mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)
+                    && !editorHudOverlay.containsHud(
+                    mouseX, mouseY, this.width, this.height, editorHudState());
+            draggingMapDefinition = null;
+            if (place) placeMapDefinition(definition, mouseX, mouseY);
+            return true;
+        }
         if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
         if (backgroundImagePickerActive) {
             return true;
         }
+        if (mapPickerActive) return true;
         if (newSceneNameBuffer != null) return true;
         if (newMapNameBuffer != null) return true;
 
@@ -1670,6 +1710,7 @@ public final class VTTScreen extends Screen {
                     mapDefinitionRegistry, this.height, mouseY);
             return true;
         }
+        if (draggingMapDefinition != null) return true;
         if (sceneOutlinerOverlay.mouseDraggedScrollbar(scene, mouseY)) return true;
         if (backgroundImagePickerActive) {
             return true;
@@ -1712,7 +1753,7 @@ public final class VTTScreen extends Screen {
             return renderState == null || inputController.mouseScrolled(
                     mouseX, mouseY, scrollX, scrollY, renderState);
         }
-        if (!backgroundImagePickerActive
+        if (!backgroundImagePickerActive && !mapPickerActive
                 && hudSettingsOpen && editorSettingsOverlay.contains(
                 mouseX, mouseY, this.width, this.height)) return true;
         if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
@@ -1724,6 +1765,12 @@ public final class VTTScreen extends Screen {
         if (backgroundImagePickerActive) {
             assetCatalogController.mouseScrolled(assetCatalogOverlay, assetRegistry,
                     session.getAssetLibraryScanResult(), true, this.height, mouseX, mouseY, scrollY);
+            return true;
+        }
+        if (mapPickerActive) {
+            mapCatalogScrollOffset = mapCatalogOverlay.clampScrollOffset(
+                    mapDefinitionRegistry,
+                    mapCatalogScrollOffset + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0));
             return true;
         }
         if (newSceneNameBuffer != null) return true;
@@ -1818,6 +1865,18 @@ public final class VTTScreen extends Screen {
                 cancelSceneBackgroundEdit();
             } else if (keyCode == GLFW.GLFW_KEY_R) {
                 sceneBackgroundEditor.reset(session.getActiveScene());
+            } else if (keyCode == GLFW.GLFW_KEY_PAGE_UP) {
+                sceneBackgroundEditor.moveSelectedLayer(
+                        session.getActiveScene(), SceneBackgroundEditor.LayerMove.UP);
+            } else if (keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
+                sceneBackgroundEditor.moveSelectedLayer(
+                        session.getActiveScene(), SceneBackgroundEditor.LayerMove.DOWN);
+            } else if (keyCode == GLFW.GLFW_KEY_HOME) {
+                sceneBackgroundEditor.moveSelectedLayer(
+                        session.getActiveScene(), SceneBackgroundEditor.LayerMove.TOP);
+            } else if (keyCode == GLFW.GLFW_KEY_END) {
+                sceneBackgroundEditor.moveSelectedLayer(
+                        session.getActiveScene(), SceneBackgroundEditor.LayerMove.BOTTOM);
             }
             return true;
         }
@@ -1850,13 +1909,11 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
-        if (newSceneNameBuffer != null && backgroundImagePickerActive) {
+        if (newSceneNameBuffer != null && mapPickerActive) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                closeBackgroundImagePicker();
+                closeMapPicker();
                 return true;
             }
-            if (assetCatalogController.keyPressed(
-                    keyCode, getKeyboardModifiers())) return true;
             return true;
         }
 
@@ -1935,6 +1992,10 @@ public final class VTTScreen extends Screen {
                 return true;
             }
             if (assetCatalogController.keyPressed(keyCode, getKeyboardModifiers())) return true;
+            return true;
+        }
+        if (mapPickerActive) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) closeMapPicker();
             return true;
         }
 
@@ -2557,23 +2618,24 @@ public final class VTTScreen extends Screen {
     private void beginSceneBackgroundEdit() {
         if (!session.isLocalMaster()) {
             VTT.LOGGER.warn("[VTT Scene Edit] Rejected because local user is not master");
-            VttClientEditorNotice.show("Only masters can edit the scene background");
+            VttClientEditorNotice.show("Only masters can edit scene maps");
             return;
         }
         if (session.getActiveScene() == null
-                || session.getActiveScene().getBackgroundAssetId() == null) {
-            VTT.LOGGER.warn("[VTT Scene Edit] Rejected because the scene has no background");
-            VttClientEditorNotice.show("Choose a scene background first");
+                || session.getActiveScene().getMaps().isEmpty()
+                && session.getActiveScene().getBackgroundAssetId() == null) {
+            VTT.LOGGER.warn("[VTT Scene Edit] Rejected because the scene has no maps");
+            VttClientEditorNotice.show("Add a map to the scene first");
             return;
         }
         closeHudPopups();
         selectionManager.clearSelection();
         if (!sceneBackgroundEditor.begin(session.getActiveScene())) {
-            VttClientEditorNotice.show("Could not resolve the background image size");
+            VttClientEditorNotice.show("Could not resolve the selected map size");
             return;
         }
         inputController.beginEditorAction();
-        VttClientEditorNotice.show("Scene background edit mode enabled");
+        VttClientEditorNotice.show("Scene map edit mode enabled");
     }
 
     private void confirmSceneBackgroundEdit() {
@@ -2581,14 +2643,14 @@ public final class VTTScreen extends Screen {
         sceneBackgroundEditor.confirm();
         inputController.endEditorAction();
         syncSceneMetadata();
-        VttClientEditorNotice.show("Scene background transform applied");
+        VttClientEditorNotice.show("Scene map changes applied");
     }
 
     private void cancelSceneBackgroundEdit() {
         if (!sceneBackgroundEditor.isActive()) return;
         sceneBackgroundEditor.cancel(session.getActiveScene());
         inputController.endEditorAction();
-        VttClientEditorNotice.show("Scene background edit cancelled");
+        VttClientEditorNotice.show("Scene map edit cancelled");
     }
 
     private void syncSceneMetadata() {
@@ -2633,6 +2695,86 @@ public final class VTTScreen extends Screen {
         lastBackgroundImagePickerClickTime = 0L;
     }
 
+    private void openMapPicker(MapPickerTarget target) {
+        mapPickerTarget = target;
+        mapPickerActive = true;
+        panelVisibility.hideBottomCatalogs();
+        mapCatalogSelection.clear();
+        lastMapPickerClickedId = null;
+        lastMapPickerClickTime = 0L;
+        draggingMapDefinition = null;
+        draggingMapCatalogScrollbar = false;
+    }
+
+    private void closeMapPicker() {
+        mapPickerActive = false;
+        mapPickerTarget = MapPickerTarget.NONE;
+        lastMapPickerClickedId = null;
+        lastMapPickerClickTime = 0L;
+        draggingMapDefinition = null;
+        draggingMapCatalogScrollbar = false;
+    }
+
+    private boolean handleMapPickerMouseClicked(double mouseX, double mouseY, int button) {
+        if (!mapPickerActive) return false;
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
+        if (mapCatalogOverlay.isScrollbarAt(
+                mapDefinitionRegistry, this.width, this.height, mouseX, mouseY)) {
+            draggingMapCatalogScrollbar = true;
+            mapCatalogScrollOffset = mapCatalogOverlay.scrollOffsetFromMouse(
+                    mapDefinitionRegistry, this.height, mouseY);
+            return true;
+        }
+        MapDefinition clicked = mapCatalogOverlay.findMapAt(
+                mapDefinitionRegistry, this.width, this.height,
+                mouseX, mouseY, mapCatalogScrollOffset);
+        if (clicked == null) return true;
+        mapCatalogSelection.select(clicked.id());
+        long now = System.currentTimeMillis();
+        boolean doubleClick = clicked.id().equals(lastMapPickerClickedId)
+                && now - lastMapPickerClickTime <= 350L;
+        lastMapPickerClickedId = clicked.id();
+        lastMapPickerClickTime = now;
+        if (!doubleClick) return true;
+        if (mapPickerTarget == MapPickerTarget.NEW_SCENE) {
+            selectInitialSceneMap(clicked);
+        } else if (mapPickerTarget == MapPickerTarget.ACTIVE_SCENE) {
+            placeMapDefinitionAtWorld(clicked, new Vec2d(0.0, 0.0));
+        }
+        closeMapPicker();
+        return true;
+    }
+
+    private void selectInitialSceneMap(MapDefinition definition) {
+        newSceneMapDefinition = definition;
+        newSceneBackgroundAssetId = definition.assetId();
+        newSceneBackgroundDisplayName = definition.displayName();
+        MapPreview preview = resolveMapPreview(definition);
+        newSceneBackgroundPreviewTexture = preview == null ? null : preview.texture();
+        newSceneBackgroundPreviewWidth = preview == null ? 0 : preview.width();
+        newSceneBackgroundPreviewHeight = preview == null ? 0 : preview.height();
+    }
+
+    private MapPreview resolveMapPreview(MapDefinition definition) {
+        if (definition == null) return null;
+        AssetThumbnail thumbnail = session.getAssetThumbnailRegistry()
+                .findById(definition.assetId()).orElse(null);
+        if (thumbnail == null && definition.assetId().startsWith("library:")) {
+            thumbnail = session.getAssetThumbnailRegistry()
+                    .findById(definition.assetId().substring("library:".length())).orElse(null);
+        }
+        if (thumbnail != null) {
+            return new MapPreview(thumbnail.texture(), thumbnail.width(), thumbnail.height());
+        }
+        String assetId = definition.assetId().startsWith("registered:")
+                ? definition.assetId().substring("registered:".length()) : definition.assetId();
+        if (assetRegistry.findById(assetId).orElse(null) instanceof BuiltInTextureAssetRef builtIn) {
+            return new MapPreview(
+                    builtIn.texture(), builtIn.textureWidth(), builtIn.textureHeight());
+        }
+        return null;
+    }
+
     private void closeBackgroundImagePicker() {
         backgroundImagePickerActive = false;
         backgroundPickerTarget = BackgroundPickerTarget.NONE;
@@ -2649,8 +2791,7 @@ public final class VTTScreen extends Screen {
             }
             return true;
         }
-        if (newSceneNameBuffer != null && backgroundImagePickerActive) {
-            assetCatalogController.charTyped(codePoint);
+        if (newSceneNameBuffer != null && mapPickerActive) {
             return true;
         }
         if (newSceneNameBuffer != null) {
@@ -2950,7 +3091,7 @@ public final class VTTScreen extends Screen {
     private void confirmNewScene() {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
         if (session.requestCreateScene(
-                newSceneNameBuffer, newSceneBackgroundAssetId)) {
+                newSceneNameBuffer, newSceneMapDefinition)) {
             selectionManager.clearSelection();
             inputController.selectHandTool();
             closeNewSceneDialog();
@@ -2980,6 +3121,43 @@ public final class VTTScreen extends Screen {
             VTT.LOGGER.error("Failed to create VTT map", exception);
             VttClientEditorNotice.show("Could not create map");
         }
+    }
+
+    private double mapDragDistance(double mouseX, double mouseY) {
+        return Math.hypot(mouseX - mapDragStartX, mouseY - mapDragStartY);
+    }
+
+    private void placeMapDefinition(
+            MapDefinition definition, double screenX, double screenY
+    ) {
+        if (renderState == null) return;
+        placeMapDefinitionAtWorld(
+                definition, renderState.screenToWorld(new Vec2d(screenX, screenY)));
+    }
+
+    private void placeMapDefinitionAtWorld(MapDefinition definition, Vec2d worldPosition) {
+        if (!session.isLocalMaster() || session.getActiveScene() == null
+                || definition == null || worldPosition == null
+                || session.getActiveScene().getMaps().size()
+                >= com.petrick.vtt.feature.tabletop.VttSceneLimits.MAX_MAPS) {
+            VttClientEditorNotice.show("Could not place map");
+            return;
+        }
+        String id = "map_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        inputController.beginEditorAction();
+        VttSceneMap map = new VttSceneMap(
+                id, definition.displayName(), definition.id(), definition.assetId());
+        map.getTransform().setX(worldPosition.x());
+        map.getTransform().setY(worldPosition.y());
+        int topLayer = session.getActiveScene().getMaps().stream()
+                .filter(value -> value != null)
+                .mapToInt(VttSceneMap::getLayerIndex)
+                .max().orElse(-1) + 1;
+        map.setLayerIndex(topLayer);
+        session.getActiveScene().addMap(map);
+        inputController.endEditorAction();
+        if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
+        VttClientEditorNotice.show("Map placed: " + definition.displayName());
     }
 
     private void closeNewMapDialog() {
@@ -3035,10 +3213,11 @@ public final class VTTScreen extends Screen {
     private void closeNewSceneDialog() {
         newSceneNameBuffer = null;
         clearNewSceneBackground();
-        closeBackgroundImagePicker();
+        closeMapPicker();
     }
 
     private void clearNewSceneBackground() {
+        newSceneMapDefinition = null;
         newSceneBackgroundAssetId = null;
         newSceneBackgroundDisplayName = null;
         newSceneBackgroundPreviewTexture = null;
@@ -3161,17 +3340,17 @@ public final class VTTScreen extends Screen {
                     newSceneBackgroundPreviewWidth, newSceneBackgroundPreviewHeight);
         } else {
             context.graphics().drawCenteredString(
-                    this.font, "No image", previewX + previewSize / 2,
+                    this.font, "No map", previewX + previewSize / 2,
                     previewY + previewSize / 2 - 4, 0xFF88888E);
         }
 
         renderNewSceneButton(context, x + 100, y + 55, 260, 22,
-                "Choose Background", true);
+                "Choose Initial Map", true);
         renderNewSceneButton(context, x + 100, y + 82, 260, 22,
-                "Use No Background", newSceneBackgroundAssetId != null);
+                "Use No Initial Map", newSceneMapDefinition != null);
         String selectedBackground = newSceneBackgroundDisplayName == null
-                ? "Background: none"
-                : "Background: " + ellipsize(newSceneBackgroundDisplayName, 31);
+                ? "Initial map: none"
+                : "Initial map: " + ellipsize(newSceneBackgroundDisplayName, 31);
         context.graphics().drawString(this.font, selectedBackground,
                 x + 100, y + 113,
                 newSceneBackgroundAssetId == null ? 0xFFAAAAAA : 0xFFFFFFFF, false);
@@ -3263,7 +3442,7 @@ public final class VTTScreen extends Screen {
         int dialogX = this.width / 2 - 190;
         int dialogY = this.height / 2 - 85;
         if (inside(mouseX, mouseY, dialogX + 100, dialogY + 55, 260, 22)) {
-            openBackgroundImagePicker(BackgroundPickerTarget.NEW_SCENE);
+            openMapPicker(MapPickerTarget.NEW_SCENE);
             return true;
         }
         if (inside(mouseX, mouseY, dialogX + 100, dialogY + 82, 260, 22)) {
@@ -3408,6 +3587,15 @@ public final class VTTScreen extends Screen {
         NEW_SCENE,
         NEW_MAP,
         ACTIVE_SCENE
+    }
+
+    private enum MapPickerTarget {
+        NONE,
+        NEW_SCENE,
+        ACTIVE_SCENE
+    }
+
+    private record MapPreview(ResourceLocation texture, int width, int height) {
     }
 
     @Override

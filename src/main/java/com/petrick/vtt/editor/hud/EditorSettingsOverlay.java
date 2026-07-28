@@ -98,11 +98,11 @@ public final class EditorSettingsOverlay {
             if (chooseBackgroundBounds(panel).contains(mouseX, mouseY)) {
                 return Interaction.CHOOSE_BACKGROUND;
             }
-            if (scene.getBackgroundAssetId() != null
+            if (hasSceneMaps(scene)
                     && removeBackgroundBounds(panel).contains(mouseX, mouseY)) {
                 return Interaction.REMOVE_BACKGROUND;
             }
-            if (scene.getBackgroundAssetId() != null
+            if (hasSceneMaps(scene)
                     && editSceneBounds(panel).contains(mouseX, mouseY)) {
                 return Interaction.EDIT_SCENE;
             }
@@ -197,7 +197,7 @@ public final class EditorSettingsOverlay {
             VttScene scene,
             boolean editable
     ) {
-        return editable && scene != null && scene.getBackgroundAssetId() != null
+        return editable && scene != null && hasSceneMaps(scene)
                 && selectedCategory == Category.SCENE
                 && editSceneBounds(bounds(screenWidth, screenHeight)).contains(mouseX, mouseY);
     }
@@ -246,21 +246,24 @@ public final class EditorSettingsOverlay {
                 ellipsize(font, scene.getDisplayName(), 210),
                 contentX, panel.y() + 65, TEXT, false);
 
-        context.graphics().drawString(font, "Background", contentX, panel.y() + 87, MUTED, false);
-        String background = scene.getBackgroundAssetId() == null
-                ? "None"
-                : scene.getBackgroundAssetId();
+        context.graphics().drawString(font, "Maps", contentX, panel.y() + 87, MUTED, false);
+        String background = scene.getMaps().isEmpty()
+                ? scene.getBackgroundAssetId() == null ? "None" : "Legacy background"
+                : scene.getMaps().size() == 1
+                ? scene.getMaps().getFirst().getDisplayName()
+                : scene.getMaps().size() + " maps in scene";
         context.graphics().drawString(font, ellipsize(font, background, 210),
                 contentX, panel.y() + 100,
-                scene.getBackgroundAssetId() == null ? MUTED : TEXT, false);
+                hasSceneMaps(scene) ? TEXT : MUTED, false);
 
         renderSceneButton(context, font, chooseBackgroundBounds(panel),
-                scene.getBackgroundAssetId() == null ? "Choose" : "Change",
+                "Add Map",
                 editable);
         renderSceneButton(context, font, editSceneBounds(panel),
-                "Edit Scene", editable && scene.getBackgroundAssetId() != null);
+                "Edit Scene", editable && hasSceneMaps(scene));
         renderSceneButton(context, font, removeBackgroundBounds(panel),
-                "Remove", editable && scene.getBackgroundAssetId() != null);
+                scene.getMaps().isEmpty() ? "Remove Legacy" : "Clear Maps",
+                editable && hasSceneMaps(scene));
 
         context.graphics().drawString(
                 font, "Initial View", contentX, panel.y() + 158, MUTED, false);
@@ -299,6 +302,11 @@ public final class EditorSettingsOverlay {
         int end = value.length();
         while (end > 0 && font.width(value.substring(0, end) + suffix) > maxWidth) end--;
         return value.substring(0, end) + suffix;
+    }
+
+    private boolean hasSceneMaps(VttScene scene) {
+        return scene != null
+                && (!scene.getMaps().isEmpty() || scene.getBackgroundAssetId() != null);
     }
 
     private void renderColors(

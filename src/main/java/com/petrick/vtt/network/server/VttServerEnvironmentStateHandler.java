@@ -68,6 +68,9 @@ public final class VttServerEnvironmentStateHandler {
                 return;
             }
         }
+        boolean existingMap = VttEnvironmentCommandPayload.MAP.equals(request.entityType())
+                && state.activeScene().getMaps().stream().anyMatch(
+                map -> map != null && request.entityId().equals(map.getId()));
         var update = state.applyEnvironmentCommand(request, player.getUUID().toString());
         if (update == null) {
             VttServerRequestRateLimiter.reject(
@@ -80,7 +83,18 @@ public final class VttServerEnvironmentStateHandler {
                 || VttEnvironmentCommandPayload.VISION.equals(update.entityType());
         VttServerVisionSourceSync.broadcast(
                 player.getServer(), state, changesVisionGeometry);
+        boolean changesAssets = VttEnvironmentCommandPayload.MAP.equals(update.entityType())
+                && VttEnvironmentCommandPayload.UPSERT.equals(update.operation())
+                && !existingMap;
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
+            if (changesAssets) {
+                VttServerVisionSourceSync.markCurrentAssetsSent(connected, state);
+                VttServerAssetSyncService.sendActiveSceneAssets(
+                        connected, state.replicatedSceneFor(connected),
+                        VttServerPlayerEvents.isMaster(connected),
+                        () -> PacketDistributor.sendToPlayer(connected, update));
+                continue;
+            }
             if (!VttEnvironmentCommandPayload.VISION.equals(update.entityType())
                     || VttServerVisionSourceSync.canReceiveObject(
                     connected, state, update.entityId())) {

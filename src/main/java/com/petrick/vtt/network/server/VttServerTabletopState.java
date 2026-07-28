@@ -320,6 +320,12 @@ public final class VttServerTabletopState {
     public synchronized boolean createAndActivateScene(
             String displayName, String backgroundAssetId
     ) {
+        return createAndActivateScene(displayName, "", backgroundAssetId);
+    }
+
+    public synchronized boolean createAndActivateScene(
+            String displayName, String sourceMapDefinitionId, String mapAssetId
+    ) {
         if (displayName == null || displayName.isBlank() || displayName.length() > 48
                 || VttSceneLimits.sceneCreation(tabletop) != null) return false;
         String trimmedName = displayName.trim();
@@ -334,7 +340,18 @@ public final class VttServerTabletopState {
 
         if (!flushActiveSceneNow("scene creation")) return false;
         VttScene created = new VttScene(sceneId, trimmedName);
-        created.setBackgroundAssetId(backgroundAssetId);
+        if (sourceMapDefinitionId != null && !sourceMapDefinitionId.isBlank()) {
+            String validatedAssetId = validateBackgroundAssetId(mapAssetId);
+            if (sourceMapDefinitionId.length() > 128 || validatedAssetId == null) return false;
+            created.addMap(new com.petrick.vtt.feature.tabletop.VttSceneMap(
+                    "map_" + java.util.UUID.randomUUID().toString()
+                            .replace("-", "").substring(0, 12),
+                    sourceMapDefinitionId.substring(
+                            sourceMapDefinitionId.lastIndexOf('/') + 1),
+                    sourceMapDefinitionId, validatedAssetId));
+        } else if (mapAssetId != null && !mapAssetId.isBlank()) {
+            created.setBackgroundAssetId(mapAssetId);
+        }
         if (!saveSceneImmediately(created, "scene creation")) return false;
         tabletop.addSceneId(sceneId);
         tabletop.setSceneDisplayName(sceneId, trimmedName);
@@ -759,6 +776,9 @@ public final class VttServerTabletopState {
         try {
             String confirmedJson = command.entityJson();
             boolean changed = switch (command.entityType()) {
+                case VttEnvironmentCommandPayload.MAP -> delete
+                        ? activeScene.removeMap(command.entityId())
+                        : upsertMap(command.entityId(), command.entityJson());
                 case VttEnvironmentCommandPayload.WALL -> delete
                         ? activeScene.removeWall(command.entityId())
                         : upsertWall(command.entityId(), command.entityJson());
@@ -873,6 +893,41 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean upsertMap(String id, String json) {
+        com.petrick.vtt.feature.tabletop.VttSceneMap map = GSON.fromJson(
+                json, com.petrick.vtt.feature.tabletop.VttSceneMap.class);
+        boolean exists = activeScene.getMaps().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+        if (map == null || !id.equals(map.getId())
+                || map.getDisplayName() == null || map.getDisplayName().isBlank()
+                || map.getDisplayName().length() > 128
+                || map.getSourceMapDefinitionId() == null
+                || map.getSourceMapDefinitionId().isBlank()
+                || map.getSourceMapDefinitionId().length() > 128
+                || map.getAssetId() == null || map.getAssetId().length() > 512
+                || validateBackgroundAssetId(map.getAssetId()) == null
+                || map.getLayerIndex() < 0 || map.getLayerIndex() > VttSceneLimits.MAX_MAPS
+                || !validBackgroundTransform(map.getTransform())
+                || !exists && VttSceneLimits.environmentUpsert(
+                activeScene, VttEnvironmentCommandPayload.MAP, id) != null) return false;
+        activeScene.removeMap(id);
+        activeScene.addMap(map);
+        return true;
+    }
+
+    private boolean validBackgroundTransform(
+            com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform transform
+    ) {
+        return transform != null && Double.isFinite(transform.getX())
+                && Double.isFinite(transform.getY())
+                && Double.isFinite(transform.getScaleX())
+                && Double.isFinite(transform.getScaleY())
+                && Math.abs(transform.getX()) <= 10_000_000.0
+                && Math.abs(transform.getY()) <= 10_000_000.0
+                && transform.getScaleX() >= 0.01 && transform.getScaleX() <= 1_000.0
+                && transform.getScaleY() >= 0.01 && transform.getScaleY() <= 1_000.0;
+    }
+
     private boolean upsertDoor(String id, String json) {
         VttDoor door = GSON.fromJson(json, VttDoor.class);
         boolean exists = activeScene.getDoors().stream().anyMatch(
@@ -975,6 +1030,9 @@ public final class VttServerTabletopState {
 
     private String authoritativeEnvironmentJson(String type, String id) {
         return switch (type) {
+            case VttEnvironmentCommandPayload.MAP -> GSON.toJson(activeScene.getMaps().stream()
+                    .filter(value -> value != null && id.equals(value.getId()))
+                    .findFirst().orElseThrow());
             case VttEnvironmentCommandPayload.WALL -> GSON.toJson(activeScene.getWalls().stream()
                     .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow());
             case VttEnvironmentCommandPayload.DOOR -> GSON.toJson(activeScene.getDoors().stream()

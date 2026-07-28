@@ -13,6 +13,7 @@ public record VttEnvironmentCommandPayload(
         implements CustomPacketPayload {
     public static final String UPSERT = "UPSERT";
     public static final String DELETE = "DELETE";
+    public static final String MAP = "MAP";
     public static final String WALL = "WALL";
     public static final String DOOR = "DOOR";
     public static final String FOG_HIDDEN = "FOG_HIDDEN";

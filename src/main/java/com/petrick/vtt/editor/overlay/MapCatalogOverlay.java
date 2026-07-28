@@ -104,6 +104,20 @@ public final class MapCatalogOverlay {
         return null;
     }
 
+    public void renderDragPreview(
+            VRenderContext context, Font font, MapDefinition definition,
+            double mouseX, double mouseY
+    ) {
+        if (definition == null) return;
+        String label = "Place map: " + definition.displayName();
+        int x = (int) Math.round(mouseX) + 12;
+        int y = (int) Math.round(mouseY) + 12;
+        int width = font.width(label) + 12;
+        context.graphics().fill(x, y, x + width, y + 18, 0xEE08080C);
+        border(context, x, y, width, 18, BORDER);
+        context.graphics().drawString(font, label, x + 6, y + 5, 0xFFFFFFFF, false);
+    }
+
     public boolean contains(
             MapDefinitionRegistry registry,
             int screenWidth,
