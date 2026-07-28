@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
+import com.petrick.vtt.feature.map.MapTextureMode;
 import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
@@ -36,11 +37,22 @@ public final class CreatedMapStorage {
             int imageWidth,
             int imageHeight
     ) {
+        return createAndSave(
+                displayName, assetId, imageWidth, imageHeight, MapTextureMode.STRETCH);
+    }
+
+    public static MapDefinition createAndSave(
+            String displayName,
+            String assetId,
+            int imageWidth,
+            int imageHeight,
+            MapTextureMode textureMode
+    ) {
         String name = normalizeName(displayName);
         String id = USER_MAP_ID_PREFIX + slug(name) + "_"
                 + UUID.randomUUID().toString().substring(0, 8);
         MapDefinition definition = new MapDefinition(
-                id, name, assetId, imageWidth, imageHeight);
+                id, name, assetId, imageWidth, imageHeight, textureMode);
         save(definition);
         return definition;
     }
@@ -55,7 +67,8 @@ public final class CreatedMapStorage {
             CreatedMapSaveData data = new CreatedMapSaveData(
                     CreatedMapSaveData.CURRENT_SCHEMA_VERSION,
                     definition.id(), definition.displayName(), definition.assetId(),
-                    definition.imageWidth(), definition.imageHeight());
+                    definition.imageWidth(), definition.imageHeight(),
+                    definition.textureMode());
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 GSON.toJson(data, writer);
             }
@@ -98,7 +111,8 @@ public final class CreatedMapStorage {
             }
             registry.register(new MapDefinition(
                     data.mapDefinitionId(), data.displayName(), data.assetId(),
-                    data.imageWidth(), data.imageHeight()));
+                    data.imageWidth(), data.imageHeight(),
+                    MapTextureMode.normalize(data.textureMode())));
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Failed to load created VTT map: {}", file, exception);
         }

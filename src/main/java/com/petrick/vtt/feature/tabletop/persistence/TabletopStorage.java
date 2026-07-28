@@ -109,7 +109,10 @@ public final class TabletopStorage {
                 "scene", TabletopSchemaMigrator.DocumentType.SCENE);
         if (scene != null) {
             scene.getMaps().forEach(map -> {
-                if (map != null) map.getTransform();
+                if (map != null) {
+                    map.getTransform();
+                    map.getTextureMode();
+                }
             });
             scene.getWalls().forEach(wall -> {
                 if (wall != null) wall.normalizeLegacyGeometry();
@@ -243,6 +246,7 @@ public final class TabletopStorage {
                 if (map == null || map.getId() == null || map.getId().isBlank()
                         || map.getDisplayName() == null || map.getDisplayName().isBlank()
                         || map.getAssetId() == null || map.getAssetId().isBlank()
+                        || map.getTextureMode() == null
                         || map.getTransform() == null
                         || !finite(map.getTransform().getX(), map.getTransform().getY(),
                         map.getTransform().getScaleX(),

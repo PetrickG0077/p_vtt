@@ -326,6 +326,13 @@ public final class VttServerTabletopState {
     public synchronized boolean createAndActivateScene(
             String displayName, String sourceMapDefinitionId, String mapAssetId
     ) {
+        return createAndActivateScene(displayName, sourceMapDefinitionId, mapAssetId, "");
+    }
+
+    public synchronized boolean createAndActivateScene(
+            String displayName, String sourceMapDefinitionId, String mapAssetId,
+            String mapTextureMode
+    ) {
         if (displayName == null || displayName.isBlank() || displayName.length() > 48
                 || VttSceneLimits.sceneCreation(tabletop) != null) return false;
         String trimmedName = displayName.trim();
@@ -348,7 +355,8 @@ public final class VttServerTabletopState {
                             .replace("-", "").substring(0, 12),
                     sourceMapDefinitionId.substring(
                             sourceMapDefinitionId.lastIndexOf('/') + 1),
-                    sourceMapDefinitionId, validatedAssetId));
+                    sourceMapDefinitionId, validatedAssetId,
+                    parseMapTextureMode(mapTextureMode)));
         } else if (mapAssetId != null && !mapAssetId.isBlank()) {
             created.setBackgroundAssetId(mapAssetId);
         }
@@ -363,6 +371,17 @@ public final class VttServerTabletopState {
         advanceAuthorityRevision();
         storage.saveTabletop(tabletop);
         return true;
+    }
+
+    private com.petrick.vtt.feature.map.MapTextureMode parseMapTextureMode(String value) {
+        if (value == null || value.isBlank()) {
+            return com.petrick.vtt.feature.map.MapTextureMode.STRETCH;
+        }
+        try {
+            return com.petrick.vtt.feature.map.MapTextureMode.valueOf(value);
+        } catch (IllegalArgumentException ignored) {
+            return com.petrick.vtt.feature.map.MapTextureMode.STRETCH;
+        }
     }
 
     public synchronized boolean renameScene(String sceneId, String displayName) {

@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 /** Master request to change server-authoritative scene lifecycle or metadata. */
 public record VttSceneCommandPayload(
         long authorityRevision, String operation, String targetId,
-        String value, String backgroundAssetId)
+        String value, String backgroundAssetId, String mapTextureMode)
         implements CustomPacketPayload {
     public static final String CREATE = "CREATE";
     public static final String SWITCH = "SWITCH";
@@ -27,6 +27,7 @@ public record VttSceneCommandPayload(
             ByteBufCodecs.stringUtf8(128), VttSceneCommandPayload::targetId,
             ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::value,
             ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::backgroundAssetId,
+            ByteBufCodecs.stringUtf8(16), VttSceneCommandPayload::mapTextureMode,
             VttSceneCommandPayload::new);
 
     @Override

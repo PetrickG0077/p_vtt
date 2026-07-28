@@ -45,6 +45,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
+import com.petrick.vtt.feature.map.MapTextureMode;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
@@ -199,6 +200,8 @@ public final class VTTScreen extends Screen {
     private ResourceLocation newMapPreviewTexture;
     private int newMapPreviewWidth;
     private int newMapPreviewHeight;
+    private MapTextureMode newMapTextureMode = MapTextureMode.STRETCH;
+    private boolean newMapTextureModeListOpen;
 
     private String renamingSceneId;
 
@@ -3100,6 +3103,8 @@ public final class VTTScreen extends Screen {
 
     private void beginNewMapDialog() {
         newMapNameBuffer = "";
+        newMapTextureMode = MapTextureMode.STRETCH;
+        newMapTextureModeListOpen = false;
         clearNewMapImage();
     }
 
@@ -3111,7 +3116,8 @@ public final class VTTScreen extends Screen {
         }
         try {
             MapDefinition definition = CreatedMapStorage.createAndSave(
-                    newMapNameBuffer, newMapAssetId, newMapPreviewWidth, newMapPreviewHeight);
+                    newMapNameBuffer, newMapAssetId, newMapPreviewWidth, newMapPreviewHeight,
+                    newMapTextureMode);
             mapDefinitionRegistry.register(definition);
             mapCatalogSelection.select(definition.id());
             closeNewMapDialog();
@@ -3146,7 +3152,8 @@ public final class VTTScreen extends Screen {
         String id = "map_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         inputController.beginEditorAction();
         VttSceneMap map = new VttSceneMap(
-                id, definition.displayName(), definition.id(), definition.assetId());
+                id, definition.displayName(), definition.id(), definition.assetId(),
+                definition.textureMode());
         map.getTransform().setX(worldPosition.x());
         map.getTransform().setY(worldPosition.y());
         int topLayer = session.getActiveScene().getMaps().stream()
@@ -3162,6 +3169,7 @@ public final class VTTScreen extends Screen {
 
     private void closeNewMapDialog() {
         newMapNameBuffer = null;
+        newMapTextureModeListOpen = false;
         clearNewMapImage();
         closeBackgroundImagePicker();
     }
@@ -3363,7 +3371,7 @@ public final class VTTScreen extends Screen {
 
     private void renderNewMapDialog(VRenderContext context) {
         int width = 380;
-        int height = 170;
+        int height = 202;
         int x = context.screenWidth() / 2 - width / 2;
         int y = context.screenHeight() / 2 - height / 2;
         renderSceneDialogFrame(context, x, y, width, height);
@@ -3407,9 +3415,20 @@ public final class VTTScreen extends Screen {
                     x + 100, y + 103, 0xFFAAAAAA, false);
         }
 
-        renderNewSceneButton(context, x + 100, y + 140, 110, 20,
+        context.graphics().drawString(this.font, "Texture:", x + 100, y + 119,
+                0xFFAAAAAA, false);
+        renderNewSceneButton(context, x + 170, y + 113, 190, 20,
+                formatMapTextureMode(newMapTextureMode) + "  v", true);
+        if (newMapTextureModeListOpen) {
+            renderNewSceneButton(context, x + 170, y + 134, 190, 18,
+                    "Stretch", true);
+            renderNewSceneButton(context, x + 170, y + 153, 190, 18,
+                    "Repeat", true);
+        }
+
+        renderNewSceneButton(context, x + 100, y + 174, 110, 20,
                 "Create", newMapAssetId != null && !newMapNameBuffer.isBlank());
-        renderNewSceneButton(context, x + 250, y + 140, 110, 20, "Cancel", true);
+        renderNewSceneButton(context, x + 250, y + 174, 110, 20, "Cancel", true);
     }
 
     private boolean handleNewMapDialogMouseClicked(
@@ -3418,20 +3437,40 @@ public final class VTTScreen extends Screen {
         if (newMapNameBuffer == null) return false;
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
         int dialogX = this.width / 2 - 190;
-        int dialogY = this.height / 2 - 85;
+        int dialogY = this.height / 2 - 101;
         if (inside(mouseX, mouseY, dialogX + 100, dialogY + 55, 260, 22)) {
             openBackgroundImagePicker(BackgroundPickerTarget.NEW_MAP);
             return true;
         }
-        if (inside(mouseX, mouseY, dialogX + 100, dialogY + 140, 110, 20)) {
+        if (inside(mouseX, mouseY, dialogX + 170, dialogY + 113, 190, 20)) {
+            newMapTextureModeListOpen = !newMapTextureModeListOpen;
+            return true;
+        }
+        if (newMapTextureModeListOpen
+                && inside(mouseX, mouseY, dialogX + 170, dialogY + 134, 190, 18)) {
+            newMapTextureMode = MapTextureMode.STRETCH;
+            newMapTextureModeListOpen = false;
+            return true;
+        }
+        if (newMapTextureModeListOpen
+                && inside(mouseX, mouseY, dialogX + 170, dialogY + 153, 190, 18)) {
+            newMapTextureMode = MapTextureMode.REPEAT;
+            newMapTextureModeListOpen = false;
+            return true;
+        }
+        if (inside(mouseX, mouseY, dialogX + 100, dialogY + 174, 110, 20)) {
             confirmNewMap();
             return true;
         }
-        if (inside(mouseX, mouseY, dialogX + 250, dialogY + 140, 110, 20)) {
+        if (inside(mouseX, mouseY, dialogX + 250, dialogY + 174, 110, 20)) {
             closeNewMapDialog();
             return true;
         }
         return true;
+    }
+
+    private String formatMapTextureMode(MapTextureMode mode) {
+        return mode == MapTextureMode.REPEAT ? "Repeat" : "Stretch";
     }
 
     private boolean handleNewSceneDialogMouseClicked(

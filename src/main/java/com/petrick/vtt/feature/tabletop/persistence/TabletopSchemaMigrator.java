@@ -10,7 +10,7 @@ import com.google.gson.JsonParser;
 final class TabletopSchemaMigrator {
     static final int LEGACY_SCHEMA_VERSION = 0;
     static final int CURRENT_TABLETOP_SCHEMA_VERSION = 1;
-    static final int CURRENT_SCENE_SCHEMA_VERSION = 2;
+    static final int CURRENT_SCENE_SCHEMA_VERSION = 3;
     static final int CURRENT_PLAYER_PREFERENCES_SCHEMA_VERSION = 1;
 
     private TabletopSchemaMigrator() {}
@@ -64,6 +64,18 @@ final class TabletopSchemaMigrator {
     }
 
     private static JsonObject migrateScene(JsonObject document, int sourceVersion) {
+        if (sourceVersion == 2) {
+            ensureArray(document, "maps");
+            for (JsonElement element : document.getAsJsonArray("maps")) {
+                if (element != null && element.isJsonObject()) {
+                    JsonObject map = element.getAsJsonObject();
+                    if (!map.has("textureMode") || map.get("textureMode").isJsonNull()) {
+                        map.addProperty("textureMode", "STRETCH");
+                    }
+                }
+            }
+            return document;
+        }
         if (sourceVersion == 1) {
             ensureArray(document, "maps");
             return document;

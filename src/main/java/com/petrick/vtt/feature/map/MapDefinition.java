@@ -6,7 +6,8 @@ public record MapDefinition(
         String displayName,
         String assetId,
         int imageWidth,
-        int imageHeight
+        int imageHeight,
+        MapTextureMode textureMode
 ) {
     public MapDefinition {
         if (id == null || id.isBlank()) {
@@ -22,5 +23,13 @@ public record MapDefinition(
                 || imageHeight <= 0 || imageHeight > 16_000) {
             throw new IllegalArgumentException("Invalid map image dimensions");
         }
+        textureMode = MapTextureMode.normalize(textureMode);
+    }
+
+    public MapDefinition(
+            String id, String displayName, String assetId,
+            int imageWidth, int imageHeight
+    ) {
+        this(id, displayName, assetId, imageWidth, imageHeight, MapTextureMode.STRETCH);
     }
 }

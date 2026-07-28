@@ -67,7 +67,10 @@ public final class MapCatalogOverlay {
                     x + PADDING + THUMBNAIL_SIZE + 7, rowY + 7,
                     selected ? 0xFFFFFFFF : 0xFFDDDDDD, false);
             context.graphics().drawString(font,
-                    definition.imageWidth() + " x " + definition.imageHeight(),
+                    definition.imageWidth() + " x " + definition.imageHeight()
+                            + " \u00b7 " + (definition.textureMode()
+                            == com.petrick.vtt.feature.map.MapTextureMode.REPEAT
+                            ? "Repeat" : "Stretch"),
                     x + PADDING + THUMBNAIL_SIZE + 7, rowY + 19,
                     0xFF999999, false);
             rowY += ROW_HEIGHT;

@@ -1,5 +1,7 @@
 package com.petrick.vtt.feature.tabletop;
 
+import com.petrick.vtt.feature.map.MapTextureMode;
+
 /** A locked map instance placed in a scene and editable only in Edit Scene mode. */
 public final class VttSceneMap {
     private String id;
@@ -9,6 +11,7 @@ public final class VttSceneMap {
     private VttSceneBackgroundTransform transform = new VttSceneBackgroundTransform();
     private int layerIndex;
     private boolean visible = true;
+    private MapTextureMode textureMode = MapTextureMode.STRETCH;
 
     public VttSceneMap() {
     }
@@ -19,10 +22,21 @@ public final class VttSceneMap {
             String sourceMapDefinitionId,
             String assetId
     ) {
+        this(id, displayName, sourceMapDefinitionId, assetId, MapTextureMode.STRETCH);
+    }
+
+    public VttSceneMap(
+            String id,
+            String displayName,
+            String sourceMapDefinitionId,
+            String assetId,
+            MapTextureMode textureMode
+    ) {
         this.id = id;
         this.displayName = displayName;
         this.sourceMapDefinitionId = sourceMapDefinitionId;
         this.assetId = assetId;
+        this.textureMode = MapTextureMode.normalize(textureMode);
     }
 
     public String getId() {
@@ -66,5 +80,14 @@ public final class VttSceneMap {
 
     public void setVisible(boolean visible) {
         this.visible = visible;
+    }
+
+    public MapTextureMode getTextureMode() {
+        textureMode = MapTextureMode.normalize(textureMode);
+        return textureMode;
+    }
+
+    public void setTextureMode(MapTextureMode textureMode) {
+        this.textureMode = MapTextureMode.normalize(textureMode);
     }
 }

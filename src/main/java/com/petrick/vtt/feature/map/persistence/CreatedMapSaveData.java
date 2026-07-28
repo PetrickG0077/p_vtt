@@ -1,5 +1,7 @@
 package com.petrick.vtt.feature.map.persistence;
 
+import com.petrick.vtt.feature.map.MapTextureMode;
+
 /** Stable JSON representation of a user-created map definition. */
 public record CreatedMapSaveData(
         int schemaVersion,
@@ -7,7 +9,8 @@ public record CreatedMapSaveData(
         String displayName,
         String assetId,
         int imageWidth,
-        int imageHeight
+        int imageHeight,
+        MapTextureMode textureMode
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
 }

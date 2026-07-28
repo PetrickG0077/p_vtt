@@ -15,6 +15,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.tabletop.VttWall;
+import com.petrick.vtt.feature.map.MapTextureMode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -550,17 +551,19 @@ public final class EditorSceneHistory {
             String assetId,
             BackgroundTransform transform,
             int layerIndex,
-            boolean visible
+            boolean visible,
+            MapTextureMode textureMode
     ) {
         private static SceneMap capture(VttSceneMap map) {
             return new SceneMap(
                     map.getId(), map.getDisplayName(), map.getSourceMapDefinitionId(),
                     map.getAssetId(), BackgroundTransform.capture(map.getTransform()),
-                    map.getLayerIndex(), map.isVisible());
+                    map.getLayerIndex(), map.isVisible(), map.getTextureMode());
         }
 
         private VttSceneMap restore() {
-            VttSceneMap map = new VttSceneMap(id, displayName, sourceMapDefinitionId, assetId);
+            VttSceneMap map = new VttSceneMap(
+                    id, displayName, sourceMapDefinitionId, assetId, textureMode);
             map.setTransform(transform.restore());
             map.setLayerIndex(layerIndex);
             map.setVisible(visible);

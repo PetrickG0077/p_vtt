@@ -11,6 +11,7 @@ import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
+import com.petrick.vtt.feature.map.MapTextureMode;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.resources.ResourceLocation;
 
@@ -39,13 +40,23 @@ public final class SceneBackgroundRenderer {
         scene.getMaps().stream()
                 .filter(map -> map != null && map.isVisible() && map.getAssetId() != null)
                 .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex))
-                .forEach(map -> renderTexture(context, map.getAssetId(), map.getTransform()));
+                .forEach(map -> renderTexture(
+                        context, map.getAssetId(), map.getTransform(), map.getTextureMode()));
     }
 
     private void renderTexture(
             VRenderContext context,
             String assetId,
             VttSceneBackgroundTransform transform
+    ) {
+        renderTexture(context, assetId, transform, MapTextureMode.STRETCH);
+    }
+
+    private void renderTexture(
+            VRenderContext context,
+            String assetId,
+            VttSceneBackgroundTransform transform,
+            MapTextureMode textureMode
     ) {
         BackgroundTexture texture = resolveTexture(assetId);
         if (texture == null) {
@@ -65,8 +76,54 @@ public final class SceneBackgroundRenderer {
         int left = (int) Math.round(center.x() - width / 2.0);
         int top = (int) Math.round(center.y() - height / 2.0);
 
-        context.graphics().blit(texture.location(), left, top, width, height,
-                0.0F, 0.0F, texture.width(), texture.height(), texture.width(), texture.height());
+        if (MapTextureMode.normalize(textureMode) == MapTextureMode.REPEAT) {
+            renderRepeated(context, texture, left, top, width, height, zoom);
+        } else {
+            context.graphics().blit(texture.location(), left, top, width, height,
+                    0.0F, 0.0F, texture.width(), texture.height(),
+                    texture.width(), texture.height());
+        }
+    }
+
+    private void renderRepeated(
+            VRenderContext context,
+            BackgroundTexture texture,
+            int left,
+            int top,
+            int width,
+            int height,
+            double zoom
+    ) {
+        int right = left + width;
+        int bottom = top + height;
+        int clipLeft = Math.max(0, left);
+        int clipTop = Math.max(0, top);
+        int clipRight = Math.min(context.screenWidth(), right);
+        int clipBottom = Math.min(context.screenHeight(), bottom);
+        if (clipLeft >= clipRight || clipTop >= clipBottom) return;
+
+        int tileWidth = Math.max(1, (int) Math.round(texture.width() * zoom));
+        int tileHeight = Math.max(1, (int) Math.round(texture.height() * zoom));
+        int firstColumn = Math.max(0, Math.floorDiv(clipLeft - left, tileWidth));
+        int firstRow = Math.max(0, Math.floorDiv(clipTop - top, tileHeight));
+        int firstX = left + firstColumn * tileWidth;
+        int firstY = top + firstRow * tileHeight;
+
+        context.graphics().enableScissor(clipLeft, clipTop, clipRight, clipBottom);
+        try {
+            int renderedTiles = 0;
+            for (int y = firstY; y < clipBottom && renderedTiles < 16_384; y += tileHeight) {
+                for (int x = firstX; x < clipRight && renderedTiles < 16_384; x += tileWidth) {
+                    context.graphics().blit(
+                            texture.location(), x, y, tileWidth, tileHeight,
+                            0.0F, 0.0F, texture.width(), texture.height(),
+                            texture.width(), texture.height());
+                    renderedTiles++;
+                }
+            }
+        } finally {
+            context.graphics().disableScissor();
+        }
     }
 
     private BackgroundTexture resolveTexture(String backgroundAssetId) {
