@@ -14,7 +14,9 @@ import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
+import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
+import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
@@ -46,6 +48,7 @@ public final class AssetManagerOverlay {
             VTT.MOD_ID, "textures/gui/editor_hud/trash.png");
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
+    private final SceneThumbnailRenderer sceneThumbnailRenderer;
 
     private Section section = Section.SCENES;
     private String search = "";
@@ -55,10 +58,15 @@ public final class AssetManagerOverlay {
     private long lastClickedAt;
     private boolean searchFocused;
 
+    public AssetManagerOverlay(TabletopStorage tabletopStorage) {
+        this.sceneThumbnailRenderer = new SceneThumbnailRenderer(tabletopStorage);
+    }
+
     public void render(
             VRenderContext context,
             Font font,
             VttTabletop tabletop,
+            VttScene activeScene,
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens,
             AssetRegistry assets,
@@ -134,7 +142,7 @@ public final class AssetManagerOverlay {
             int x = grid.x() + column * (CARD_WIDTH + CARD_GAP);
             int y = grid.y() + row * (CARD_HEIGHT + CARD_GAP);
             renderCard(context, font, new Bounds(x, y, CARD_WIDTH, CARD_HEIGHT),
-                    items.get(index), assets, thumbnails);
+                    items.get(index), tabletop, activeScene, assets, thumbnails);
         }
         if (items.isEmpty()) {
             context.graphics().drawCenteredString(
@@ -335,6 +343,7 @@ public final class AssetManagerOverlay {
 
     private void renderCard(
             VRenderContext context, Font font, Bounds card, Item item,
+            VttTabletop tabletop, VttScene activeScene,
             AssetRegistry assets, AssetThumbnailRegistry thumbnails
     ) {
         boolean selected = item.id().equals(selectedId);
@@ -345,7 +354,8 @@ public final class AssetManagerOverlay {
         border(context, card, selected ? 0xFF66DDEE : 0xFFE8E8E8);
         Bounds preview = new Bounds(card.x() + 8, card.y() + 8,
                 card.width() - 16, card.height() - 34);
-        renderPreview(context, item, preview, assets, thumbnails);
+        renderPreview(
+                context, item, preview, tabletop, activeScene, assets, thumbnails);
         context.graphics().drawString(
                 font, trim(item.name(), 16), card.x() + 8, card.bottom() - 18,
                 0xFFFFFFFF, false);
@@ -369,8 +379,15 @@ public final class AssetManagerOverlay {
 
     private void renderPreview(
             VRenderContext context, Item item, Bounds bounds,
+            VttTabletop tabletop, VttScene activeScene,
             AssetRegistry assets, AssetThumbnailRegistry thumbnails
     ) {
+        if (item.section() == Section.SCENES
+                && sceneThumbnailRenderer.render(
+                context, bounds.x(), bounds.y(), bounds.width(), bounds.height(),
+                tabletop, activeScene, item.id(), assets, thumbnails)) {
+            return;
+        }
         if (item.value() instanceof MapDefinition map) {
             Texture texture = texture(map.assetId(), assets, thumbnails);
             if (texture != null) {

@@ -258,7 +258,7 @@ public final class VTTScreen extends Screen {
                 assetId -> session.setActiveSceneBackground(assetId),
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
-        this.assetManagerOverlay = new AssetManagerOverlay();
+        this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
         this.editorSettingsOverlay = new EditorSettingsOverlay();
         this.sceneBackgroundEditor = new SceneBackgroundEditor(
                 assetRegistry, session.getAssetThumbnailRegistry());
@@ -472,6 +472,7 @@ public final class VTTScreen extends Screen {
                     0x99000000);
             assetManagerOverlay.render(
                     context, this.font, session.getActiveTabletop(),
+                    session.getActiveScene(),
                     mapDefinitionRegistry, tokenDefinitionRegistry,
                     assetRegistry, session.getAssetThumbnailRegistry());
         }
