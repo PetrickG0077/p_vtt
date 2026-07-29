@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -72,6 +73,18 @@ public final class VttServerTokenDefinitionHandler {
         }
 
         try {
+            VttServerTabletopState state = VttServerTabletopState.get();
+            if (VttTokenDefinitionCommandPayload.DELETE.equals(payload.operation())) {
+                List<String> usages =
+                        state.scenesUsingTokenDefinition(payload.definitionId());
+                if (!usages.isEmpty()) {
+                    VTT.LOGGER.warn(
+                            "Rejected deletion of server VTT token definition {} "
+                                    + "because it is used in {}",
+                            payload.definitionId(), usages);
+                    return;
+                }
+            }
             boolean changed = switch (payload.operation()) {
                 case VttTokenDefinitionCommandPayload.DUPLICATE -> duplicate(payload.definitionId());
                 case VttTokenDefinitionCommandPayload.DELETE -> delete(payload.definitionId());
@@ -83,12 +96,6 @@ public final class VttServerTokenDefinitionHandler {
                 return;
             }
 
-            VttServerTabletopState state = VttServerTabletopState.get();
-            if (VttTokenDefinitionCommandPayload.DELETE.equals(payload.operation())) {
-                int removedObjects = state.removeObjectsUsingTokenDefinition(payload.definitionId());
-                VTT.LOGGER.info("Removed {} scene objects using deleted token definition {}",
-                        removedObjects, payload.definitionId());
-            }
             broadcastReload(player, state);
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Failed VTT token definition command {} for {}",

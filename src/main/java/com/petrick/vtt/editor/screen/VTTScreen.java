@@ -18,6 +18,7 @@ import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.hud.EditorHudOverlay;
 import com.petrick.vtt.editor.hud.EditorSettingsOverlay;
+import com.petrick.vtt.editor.hud.AssetDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetManagerOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
@@ -46,6 +47,7 @@ import com.petrick.vtt.feature.canvas.CanvasRenderer;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
+import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -76,6 +78,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +119,8 @@ public final class VTTScreen extends Screen {
 
     private final EditorSettingsOverlay editorSettingsOverlay;
     private final AssetManagerOverlay assetManagerOverlay;
+    private final AssetDeleteConfirmationOverlay assetDeleteConfirmationOverlay =
+            new AssetDeleteConfirmationOverlay();
 
     private final SceneBackgroundEditor sceneBackgroundEditor;
 
@@ -227,6 +232,7 @@ public final class VTTScreen extends Screen {
     private boolean hudCreationOpen;
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
+    private PendingAssetDeletion pendingAssetDeletion;
 
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
@@ -502,6 +508,10 @@ public final class VTTScreen extends Screen {
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
+        if (pendingAssetDeletion != null) {
+            assetDeleteConfirmationOverlay.render(
+                    context, this.font, pendingAssetDeletion.request());
+        }
         VttAssetSyncHudOverlay.render(graphics);
         renderPresentationCurtain(context);
     }
@@ -605,6 +615,7 @@ public final class VTTScreen extends Screen {
         boolean spectator = session.isLocalSpectator();
         if (!master) {
             hudCreationOpen = false;
+            pendingAssetDeletion = null;
             panelVisibility.hideMasterPanels();
             String activeTool = inputController.getActiveToolId();
             if (!"hand".equals(activeTool) && !"select".equals(activeTool)) {
@@ -614,6 +625,7 @@ public final class VTTScreen extends Screen {
         if (spectator) {
             hudSettingsOpen = false;
             hudCreationOpen = false;
+            pendingAssetDeletion = null;
         }
         editorHudOverlay.render(context, this.font, editorHudState());
         if (hudSettingsOpen && session.getActiveScene() != null
@@ -726,20 +738,108 @@ public final class VTTScreen extends Screen {
                         .ifPresent(this::beginEditTokenDefinition);
             }
         } else if (interaction.action() == AssetManagerOverlay.Action.DELETE) {
-            switch (interaction.section()) {
-                case SCENES -> {
-                    if (session.getActiveTabletop().getSceneIds().size() > 1) {
-                        rememberAssetManagerReturn(interaction.section());
-                        pendingDeleteSceneId = interaction.id();
-                        hudCreationOpen = false;
-                    }
+            beginAssetManagerDeletion(interaction.section(), interaction.id());
+        }
+    }
+
+    private void beginAssetManagerDeletion(
+            AssetManagerOverlay.Section section,
+            String id
+    ) {
+        PendingAssetDeletion deletion = createPendingAssetDeletion(section, id);
+        if (deletion == null) return;
+        pendingAssetDeletion = deletion;
+        assetManagerOverlay.mouseReleased(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+    }
+
+    private PendingAssetDeletion createPendingAssetDeletion(
+            AssetManagerOverlay.Section section,
+            String id
+    ) {
+        if (section == null || id == null || id.isBlank()) return null;
+        String typeLabel;
+        String displayName;
+        List<String> usages = List.of();
+        String blockedMessage = "";
+        switch (section) {
+            case SCENES -> {
+                if (session.getActiveTabletop() == null) return null;
+                typeLabel = "Scene";
+                displayName = session.getActiveTabletop().getSceneDisplayName(id);
+                if (session.getActiveTabletop().getSceneIds().size() <= 1) {
+                    blockedMessage = "A tabletop must contain at least one scene.";
                 }
-                case MAPS -> deleteMapDefinition(
-                        mapDefinitionRegistry.findById(interaction.id()).orElse(null));
-                case TOKENS -> tokenDefinitionRegistry.findById(interaction.id())
-                        .ifPresent(this::deleteTokenDefinitionFromManager);
+            }
+            case MAPS -> {
+                MapDefinition definition =
+                        mapDefinitionRegistry.findById(id).orElse(null);
+                if (!CreatedMapStorage.isUserCreatedMap(definition)) return null;
+                typeLabel = "Map";
+                displayName = definition.displayName();
+                usages = findDefinitionUsages(section, id);
+                if (!usages.isEmpty()) {
+                    blockedMessage = "Remove this map from every scene before deleting it.";
+                }
+            }
+            case TOKENS -> {
+                TokenDefinition definition =
+                        tokenDefinitionRegistry.findById(id).orElse(null);
+                if (!CreatedTokenStorage.isUserCreatedToken(definition)) return null;
+                typeLabel = "Token";
+                displayName = definition.displayName();
+                usages = findDefinitionUsages(section, id);
+                if (!usages.isEmpty()) {
+                    blockedMessage = "Remove every placed token before deleting this definition.";
+                }
+            }
+            default -> {
+                return null;
             }
         }
+        AssetDeleteConfirmationOverlay.Request request =
+                new AssetDeleteConfirmationOverlay.Request(
+                        typeLabel, displayName, usages, blockedMessage);
+        return new PendingAssetDeletion(section, id, request);
+    }
+
+    private List<String> findDefinitionUsages(
+            AssetManagerOverlay.Section section,
+            String definitionId
+    ) {
+        if (session.getActiveTabletop() == null) return List.of();
+        List<String> usages = new ArrayList<>();
+        String activeSceneId = session.getActiveScene() == null
+                ? null : session.getActiveScene().getId();
+        for (String sceneId : session.getActiveTabletop().getSceneIds()) {
+            VttScene candidate = sceneId.equals(activeSceneId)
+                    ? session.getActiveScene()
+                    : session.getTabletopStorage().loadScene(
+                            session.getActiveTabletop().getId(), sceneId);
+            if (candidate == null) continue;
+            long count;
+            if (section == AssetManagerOverlay.Section.MAPS) {
+                count = candidate.getMaps().stream()
+                        .filter(map -> map != null
+                                && definitionId.equals(map.getSourceMapDefinitionId()))
+                        .count();
+            } else if (section == AssetManagerOverlay.Section.TOKENS
+                    && sceneId.equals(activeSceneId)) {
+                count = scene.getObjects().stream()
+                        .filter(object -> object != null
+                                && definitionId.equals(object.sourceTokenDefinitionId()))
+                        .count();
+            } else {
+                count = candidate.getObjects().stream()
+                        .filter(object -> object != null
+                                && definitionId.equals(object.getSourceTokenDefinitionId()))
+                        .count();
+            }
+            if (count > 0) {
+                usages.add(session.getActiveTabletop().getSceneDisplayName(sceneId)
+                        + " (" + count + (count == 1 ? " instance)" : " instances)"));
+            }
+        }
+        return usages;
     }
 
     private void rememberAssetManagerReturn(AssetManagerOverlay.Section section) {
@@ -784,12 +884,55 @@ public final class VTTScreen extends Screen {
                 assetManagerOverlay.section(), assetManagerOverlay.selectedId());
     }
 
+    private boolean handleAssetDeleteConfirmationMouseClicked(
+            double mouseX,
+            double mouseY,
+            int button
+    ) {
+        if (pendingAssetDeletion == null) return false;
+        AssetDeleteConfirmationOverlay.Action action =
+                assetDeleteConfirmationOverlay.mouseClicked(
+                        mouseX, mouseY, button, this.width, this.height,
+                        pendingAssetDeletion.request());
+        if (action == AssetDeleteConfirmationOverlay.Action.DELETE) {
+            confirmPendingAssetDeletion();
+        } else if (action == AssetDeleteConfirmationOverlay.Action.CANCEL) {
+            pendingAssetDeletion = null;
+        }
+        return true;
+    }
+
+    private void confirmPendingAssetDeletion() {
+        if (pendingAssetDeletion == null) return;
+        PendingAssetDeletion refreshed = createPendingAssetDeletion(
+                pendingAssetDeletion.section(), pendingAssetDeletion.id());
+        if (refreshed == null) {
+            pendingAssetDeletion = null;
+            return;
+        }
+        pendingAssetDeletion = refreshed;
+        if (refreshed.request().blocked()) return;
+
+        switch (refreshed.section()) {
+            case SCENES -> session.deleteScene(refreshed.id());
+            case MAPS -> deleteMapDefinition(
+                    mapDefinitionRegistry.findById(refreshed.id()).orElse(null));
+            case TOKENS -> tokenDefinitionRegistry.findById(refreshed.id())
+                    .ifPresent(this::deleteTokenDefinitionFromManager);
+        }
+        pendingAssetDeletion = null;
+    }
+
     private void deleteTokenDefinitionFromManager(TokenDefinition definition) {
         if (!CreatedTokenStorage.isUserCreatedToken(definition)) return;
         if (session.isNetworkAuthorityActive()) {
-            VttClientTokenDefinitionSync.sendDelete(definition.id());
+            if (VttClientTokenDefinitionSync.sendDelete(definition.id())) {
+                tokenCatalogSelection.clear();
+                VttClientEditorNotice.show("Token deletion sent to server");
+            }
         } else {
             deleteTokenDefinition(definition);
+            VttClientEditorNotice.show("Token deleted");
         }
     }
 
@@ -1024,6 +1167,7 @@ public final class VTTScreen extends Screen {
         hudPlayersOpen = false;
         hudSettingsOpen = false;
         hudCreationOpen = false;
+        pendingAssetDeletion = null;
         editorSettingsOverlay.cancelDrag();
     }
 
@@ -1151,6 +1295,9 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleAssetDeleteConfirmationMouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseClicked(
@@ -1744,6 +1891,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (pendingAssetDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseReleased(
@@ -1821,6 +1969,7 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (pendingAssetDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseDragged(
@@ -1908,6 +2057,7 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (pendingAssetDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (panelVisibility.isMapCatalogVisible()
                     && mapCatalogOverlay.contains(
@@ -2039,6 +2189,16 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (pendingAssetDeletion != null) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                if (!pendingAssetDeletion.request().blocked()) {
+                    confirmPendingAssetDeletion();
+                }
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                pendingAssetDeletion = null;
+            }
+            return true;
+        }
         if (sceneBackgroundEditor.isActive()) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmSceneBackgroundEdit();
@@ -2992,6 +3152,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (pendingAssetDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) return true;
         if (hudCreationOpen) {
             if (assetManagerOverlay.charTyped(
@@ -4055,6 +4216,13 @@ public final class VTTScreen extends Screen {
     }
 
     private record MapPreview(ResourceLocation texture, int width, int height) {
+    }
+
+    private record PendingAssetDeletion(
+            AssetManagerOverlay.Section section,
+            String id,
+            AssetDeleteConfirmationOverlay.Request request
+    ) {
     }
 
     @Override

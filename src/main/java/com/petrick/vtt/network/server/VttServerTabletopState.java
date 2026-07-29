@@ -37,6 +37,7 @@ import net.minecraft.server.level.ServerPlayer;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
@@ -525,6 +526,25 @@ public final class VttServerTabletopState {
         }
         objectSpatialIndex.rebuild(activeScene);
         return removedCount;
+    }
+
+    public synchronized List<String> scenesUsingTokenDefinition(String definitionId) {
+        if (definitionId == null || definitionId.isBlank()) return List.of();
+        List<String> usages = new ArrayList<>();
+        for (String sceneId : List.copyOf(tabletop.getSceneIds())) {
+            VttScene scene = activeScene != null && sceneId.equals(activeScene.getId())
+                    ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+            if (scene == null) continue;
+            long count = scene.getObjects().stream()
+                    .filter(object -> object != null
+                            && definitionId.equals(object.getSourceTokenDefinitionId()))
+                    .count();
+            if (count > 0) {
+                usages.add(tabletop.getSceneDisplayName(sceneId)
+                        + " (" + count + (count == 1 ? " instance)" : " instances)"));
+            }
+        }
+        return List.copyOf(usages);
     }
 
     public synchronized VttTokenTransformUpdatePayload applyTokenTransform(
