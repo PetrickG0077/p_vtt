@@ -36,6 +36,14 @@ public final class AssetManagerOverlay {
     private static final int TABS_HEIGHT = 34;
     private static final ResourceLocation SCENE_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/scenes.png");
+    private static final ResourceLocation MAP_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/maps.png");
+    private static final ResourceLocation TOKEN_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/tokens.png");
+    private static final ResourceLocation EDIT_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/edit.png");
+    private static final ResourceLocation TRASH_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/trash.png");
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
 
@@ -45,6 +53,7 @@ public final class AssetManagerOverlay {
     private int scrollRow;
     private String lastClickedKey;
     private long lastClickedAt;
+    private boolean searchFocused;
 
     public void render(
             VRenderContext context,
@@ -69,21 +78,34 @@ public final class AssetManagerOverlay {
         Bounds searchBox = searchBounds(panel);
         context.graphics().fill(
                 searchBox.x(), searchBox.y(), searchBox.right(), searchBox.bottom(),
-                0xFF202024);
-        border(context, searchBox, 0xFFFFFFFF);
+                searchFocused ? 0xFF242D33 : 0xFF202024);
+        border(context, searchBox, searchFocused ? 0xFF66DDEE : 0xFFFFFFFF);
+        String searchText = search.isBlank()
+                ? (searchFocused ? "" : "Search...")
+                : search;
+        int searchColor = search.isBlank() ? 0xFF909096 : 0xFFFFFFFF;
         context.graphics().drawString(
-                font, search.isBlank() ? "Search" : search + "_",
-                searchBox.x() + 10, searchBox.y() + 8,
-                search.isBlank() ? 0xFF77777D : 0xFFFFFFFF, false);
+                font, searchText,
+                searchBox.x() + 10, searchBox.y() + (searchBox.height() - font.lineHeight) / 2,
+                searchColor, false);
+        if (searchFocused) {
+            int caretX = searchBox.x() + 10 + font.width(
+                    search.isBlank() ? "" : search);
+            context.graphics().vLine(
+                    caretX, searchBox.y() + 8, searchBox.bottom() - 8,
+                    0xFFFFFFFF);
+        }
 
         Bounds add = addBounds(panel);
         context.graphics().fill(
                 add.x(), add.y(), add.right(), add.bottom(),
                 add.contains(context.mouseX(), context.mouseY())
                         ? 0xFFFFFFFF : 0xFFE5E5E5);
-        context.graphics().drawCenteredString(
-                font, "ADD +", add.x() + add.width() / 2,
-                add.y() + 9, 0xFF111111);
+        drawScaledCenteredString(
+                context, font, "ADD +",
+                add.x() + add.width() / 2,
+                add.y() + add.height() / 2,
+                1.2F, 0xFF000000);
 
         for (Section candidate : Section.values()) {
             Bounds tab = tabBounds(panel, candidate);
@@ -91,8 +113,15 @@ public final class AssetManagerOverlay {
             context.graphics().fill(
                     tab.x(), tab.y(), tab.right(), tab.bottom(),
                     active ? 0xFF4A4A4A : 0xFF121214);
+            int groupWidth = 16 + 5 + font.width(candidate.label);
+            int groupX = tab.x() + (tab.width() - groupWidth) / 2;
+            int iconY = tab.y() + (tab.height() - 16) / 2;
+            context.graphics().blit(
+                    candidate.icon(), groupX, iconY,
+                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
             context.graphics().drawString(
-                    font, candidate.label, tab.x() + 18, tab.y() + 12,
+                    font, candidate.label, groupX + 21,
+                    tab.y() + (tab.height() - font.lineHeight) / 2,
                     active ? 0xFFFFFFFF : 0xFFCCCCCC, false);
         }
 
@@ -113,6 +142,7 @@ public final class AssetManagerOverlay {
                     panel.x() + panel.width() / 2, panel.y() + HEADER_HEIGHT
                             + TABS_HEIGHT + 30, 0xFF88888E);
         }
+        border(context, panel, 0xFFE8E8E8);
     }
 
     public Interaction mouseClicked(
@@ -126,8 +156,19 @@ public final class AssetManagerOverlay {
             TokenDefinitionRegistry tokens
     ) {
         Bounds panel = panel(screenWidth, screenHeight);
-        if (!panel.contains(mouseX, mouseY)) return Interaction.none();
-        if (button != 0) return Interaction.handled();
+        if (!panel.contains(mouseX, mouseY)) {
+            searchFocused = false;
+            return Interaction.none();
+        }
+        if (button != 0) {
+            searchFocused = false;
+            return Interaction.handled();
+        }
+        if (searchBounds(panel).contains(mouseX, mouseY)) {
+            searchFocused = true;
+            return Interaction.handled();
+        }
+        searchFocused = false;
         if (addBounds(panel).contains(mouseX, mouseY)) {
             return new Interaction(Action.ADD, section, null, true);
         }
@@ -176,6 +217,7 @@ public final class AssetManagerOverlay {
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
     ) {
+        if (!searchFocused) return false;
         if (Character.isISOControl(codePoint) || search.length() >= 48) return false;
         search += codePoint;
         selectFirstGlobalMatch(tabletop, maps, tokens);
@@ -187,6 +229,7 @@ public final class AssetManagerOverlay {
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
     ) {
+        if (!searchFocused) return false;
         if (search.isEmpty()) return false;
         search = search.substring(0, search.length() - 1);
         selectFirstGlobalMatch(tabletop, maps, tokens);
@@ -310,15 +353,17 @@ public final class AssetManagerOverlay {
             Bounds edit = editBounds(card);
             context.graphics().fill(
                     edit.x(), edit.y(), edit.right(), edit.bottom(), 0xCC101014);
-            context.graphics().drawString(font, "/", edit.x() + 6, edit.y() + 4,
-                    0xFFFFFFFF, false);
+            context.graphics().blit(
+                    EDIT_ICON, edit.x() + 1, edit.y() + 1,
+                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         }
         if (item.deletable()) {
             Bounds delete = deleteBounds(card);
             context.graphics().fill(
                     delete.x(), delete.y(), delete.right(), delete.bottom(), 0xCC101014);
-            context.graphics().drawString(font, "X", delete.x() + 5, delete.y() + 4,
-                    0xFFFF7777, false);
+            context.graphics().blit(
+                    TRASH_ICON, delete.x() + 1, delete.y() + 1,
+                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         }
     }
 
@@ -329,9 +374,10 @@ public final class AssetManagerOverlay {
         if (item.value() instanceof MapDefinition map) {
             Texture texture = texture(map.assetId(), assets, thumbnails);
             if (texture != null) {
+                Bounds fitted = fitInside(bounds, texture.width(), texture.height());
                 context.graphics().blit(
-                        texture.location(), bounds.x(), bounds.y(),
-                        bounds.width(), bounds.height(), 0.0F, 0.0F,
+                        texture.location(), fitted.x(), fitted.y(),
+                        fitted.width(), fitted.height(), 0.0F, 0.0F,
                         texture.width(), texture.height(), texture.width(), texture.height());
                 return;
             }
@@ -340,9 +386,11 @@ public final class AssetManagerOverlay {
             CanvasObjectState state = token.states().get(token.defaultStateId());
             CanvasVisual visual = state == null ? null : state.visual();
             if (visual != null) {
+                Bounds fitted = fitInside(
+                        bounds, token.defaultSize().x(), token.defaultSize().y());
                 visualRenderer.render(
-                        context, visual, bounds.x(), bounds.y(),
-                        bounds.right(), bounds.bottom());
+                        context, visual, fitted.x(), fitted.y(),
+                        fitted.right(), fitted.bottom());
                 return;
             }
         }
@@ -409,8 +457,21 @@ public final class AssetManagerOverlay {
     }
 
     private Bounds tabBounds(Bounds panel, Section section) {
-        return new Bounds(panel.x() + section.ordinal() * 140,
+        return new Bounds(panel.x() + 1 + section.ordinal() * 140,
                 panel.y() + HEADER_HEIGHT, 140, TABS_HEIGHT);
+    }
+
+    private Bounds fitInside(Bounds container, double contentWidth, double contentHeight) {
+        if (contentWidth <= 0.0 || contentHeight <= 0.0) return container;
+        double scale = Math.min(
+                container.width() / contentWidth,
+                container.height() / contentHeight);
+        int width = Math.max(1, (int) Math.round(contentWidth * scale));
+        int height = Math.max(1, (int) Math.round(contentHeight * scale));
+        return new Bounds(
+                container.x() + (container.width() - width) / 2,
+                container.y() + (container.height() - height) / 2,
+                width, height);
     }
 
     private Bounds editBounds(Bounds card) {
@@ -428,15 +489,39 @@ public final class AssetManagerOverlay {
         context.graphics().vLine(bounds.right(), bounds.y(), bounds.bottom(), color);
     }
 
+    private void drawScaledCenteredString(
+            VRenderContext context,
+            Font font,
+            String text,
+            int centerX,
+            int centerY,
+            float scale,
+            int color
+    ) {
+        context.graphics().pose().pushPose();
+        context.graphics().pose().scale(scale, scale, 1.0F);
+        int x = Math.round(centerX / scale - font.width(text) / 2.0F);
+        int y = Math.round(centerY / scale - font.lineHeight / 2.0F);
+        context.graphics().drawString(font, text, x, y, color, false);
+        context.graphics().pose().popPose();
+    }
+
     private String trim(String value, int length) {
         if (value == null) return "";
         return value.length() <= length ? value : value.substring(0, length - 3) + "...";
     }
 
     public enum Section {
-        SCENES("Scenes"), MAPS("Maps"), TOKENS("Tokens");
+        SCENES("Scenes", SCENE_ICON),
+        MAPS("Maps", MAP_ICON),
+        TOKENS("Tokens", TOKEN_ICON);
         private final String label;
-        Section(String label) { this.label = label; }
+        private final ResourceLocation icon;
+        Section(String label, ResourceLocation icon) {
+            this.label = label;
+            this.icon = icon;
+        }
+        private ResourceLocation icon() { return icon; }
     }
 
     public enum Action { NONE, SELECT, ADD, EDIT, DELETE }

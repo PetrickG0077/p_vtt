@@ -226,6 +226,8 @@ public final class VTTScreen extends Screen {
 
     private boolean hudCreationOpen;
 
+    private AssetManagerOverlay.Section returnToAssetManagerSection;
+
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
     private long lastFollowCameraSentAt;
@@ -465,6 +467,9 @@ public final class VTTScreen extends Screen {
         renderEditorNotice(context);
         renderEditorHud(context);
         if (hudCreationOpen && session.isLocalMaster()) {
+            context.graphics().fill(
+                    0, 0, context.screenWidth(), context.screenHeight(),
+                    0x99000000);
             assetManagerOverlay.render(
                     context, this.font, session.getActiveTabletop(),
                     mapDefinitionRegistry, tokenDefinitionRegistry,
@@ -695,6 +700,7 @@ public final class VTTScreen extends Screen {
             return;
         }
         if (interaction.action() == AssetManagerOverlay.Action.ADD) {
+            rememberAssetManagerReturn(interaction.section());
             hudCreationOpen = false;
             switch (interaction.section()) {
                 case SCENES -> beginNewSceneDialog();
@@ -706,6 +712,7 @@ public final class VTTScreen extends Screen {
         if (interaction.id() == null) return;
         selectAssetManagerItem(interaction.section(), interaction.id());
         if (interaction.action() == AssetManagerOverlay.Action.EDIT) {
+            rememberAssetManagerReturn(interaction.section());
             hudCreationOpen = false;
             switch (interaction.section()) {
                 case SCENES -> {
@@ -721,6 +728,7 @@ public final class VTTScreen extends Screen {
             switch (interaction.section()) {
                 case SCENES -> {
                     if (session.getActiveTabletop().getSceneIds().size() > 1) {
+                        rememberAssetManagerReturn(interaction.section());
                         pendingDeleteSceneId = interaction.id();
                         hudCreationOpen = false;
                     }
@@ -731,6 +739,31 @@ public final class VTTScreen extends Screen {
                         .ifPresent(this::deleteTokenDefinitionFromManager);
             }
         }
+    }
+
+    private void rememberAssetManagerReturn(AssetManagerOverlay.Section section) {
+        returnToAssetManagerSection = section;
+    }
+
+    private boolean willReturnToAssetManager(AssetManagerOverlay.Section section) {
+        return returnToAssetManagerSection == section;
+    }
+
+    private void returnToAssetManagerIfRequested() {
+        AssetManagerOverlay.Section target = returnToAssetManagerSection;
+        if (target == null) return;
+        returnToAssetManagerSection = null;
+        String selectedId = switch (target) {
+            case SCENES -> session.getActiveTabletop() == null
+                    ? null : session.getActiveTabletop().getActiveSceneId();
+            case MAPS -> mapCatalogSelection.getSelectedMapDefinitionId();
+            case TOKENS -> tokenCatalogSelection.getSelectedTokenDefinitionId();
+        };
+        assetManagerOverlay.select(target, selectedId);
+        hudCreationOpen = true;
+        hudPlayersOpen = false;
+        hudSettingsOpen = false;
+        panelVisibility.hideBottomCatalogs();
     }
 
     private void selectAssetManagerItem(
@@ -1505,6 +1538,7 @@ public final class VTTScreen extends Screen {
         tokenImagePickerActive = false;
         lastTokenImagePickerClickedItemId = null;
         lastTokenImagePickerClickTime = 0L;
+        returnToAssetManagerIfRequested();
     }
 
     private void handleTokenCatalogContextMenuAction(
@@ -2046,6 +2080,7 @@ public final class VTTScreen extends Screen {
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 renamingSceneId = null;
                 sceneRenameBuffer = null;
+                returnToAssetManagerIfRequested();
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !sceneRenameBuffer.isEmpty()) {
                 sceneRenameBuffer = sceneRenameBuffer.substring(0, sceneRenameBuffer.length() - 1);
             }
@@ -2056,8 +2091,10 @@ public final class VTTScreen extends Screen {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 session.deleteScene(pendingDeleteSceneId);
                 pendingDeleteSceneId = null;
+                returnToAssetManagerIfRequested();
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 pendingDeleteSceneId = null;
+                returnToAssetManagerIfRequested();
             }
             return true;
         }
@@ -3329,8 +3366,10 @@ public final class VTTScreen extends Screen {
                 }
             }
             mapCatalogSelection.select(definition.id());
+            boolean returningToManager =
+                    willReturnToAssetManager(AssetManagerOverlay.Section.MAPS);
             closeNewMapDialog();
-            if (!panelVisibility.isMapCatalogVisible()) {
+            if (!returningToManager && !panelVisibility.isMapCatalogVisible()) {
                 panelVisibility.toggleMapCatalog();
             }
             VttClientEditorNotice.show((existing == null ? "Map created: " : "Map updated: ")
@@ -3488,6 +3527,7 @@ public final class VTTScreen extends Screen {
         editingMapDefinitionId = null;
         newMapTextureModeListOpen = false;
         clearNewMapImage();
+        returnToAssetManagerIfRequested();
         closeBackgroundImagePicker();
     }
 
@@ -3586,6 +3626,7 @@ public final class VTTScreen extends Screen {
         newSceneNameBuffer = null;
         clearNewSceneBackground();
         closeMapPicker();
+        returnToAssetManagerIfRequested();
     }
 
     private void clearNewSceneBackground() {
@@ -3615,6 +3656,7 @@ public final class VTTScreen extends Screen {
         if (session.renameScene(renamingSceneId, sceneRenameBuffer)) {
             renamingSceneId = null;
             sceneRenameBuffer = null;
+            returnToAssetManagerIfRequested();
         }
     }
 
