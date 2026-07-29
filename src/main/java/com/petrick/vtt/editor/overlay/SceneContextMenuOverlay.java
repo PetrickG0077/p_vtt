@@ -10,20 +10,21 @@ public final class SceneContextMenuOverlay {
     private static final int OPTION_HEIGHT = 18;
     private static final int PADDING = 4;
 
-    public enum Action { NONE, RENAME, DELETE }
+    public enum Action { NONE, DUPLICATE, RENAME, DELETE }
 
     public void render(VRenderContext context, Font font, SceneContextMenu menu) {
         if (menu == null || !menu.isOpen()) return;
         int x = menu.getX();
         int y = menu.getY();
-        int height = PADDING * 2 + OPTION_HEIGHT * 2;
+        int height = PADDING * 2 + OPTION_HEIGHT * 3;
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xEE101010);
         context.graphics().hLine(x, x + WIDTH, y, 0xFF666666);
         context.graphics().hLine(x, x + WIDTH, y + height, 0xFF666666);
         context.graphics().vLine(x, y, y + height, 0xFF666666);
         context.graphics().vLine(x + WIDTH, y, y + height, 0xFF666666);
-        renderOption(context, font, "Rename", x, y, 0, 0xFFFFFFFF);
-        renderOption(context, font, "Delete", x, y, 1, 0xFFFF5555);
+        renderOption(context, font, "Duplicate", x, y, 0, 0xFFFFFFFF);
+        renderOption(context, font, "Rename", x, y, 1, 0xFFFFFFFF);
+        renderOption(context, font, "Delete", x, y, 2, 0xFFFF5555);
     }
 
     private void renderOption(VRenderContext context, Font font, String label,
@@ -42,15 +43,16 @@ public final class SceneContextMenuOverlay {
         int relativeY = (int) mouseY - menu.getY() - PADDING;
         if (relativeY < 0) return Action.NONE;
         return switch (relativeY / OPTION_HEIGHT) {
-            case 0 -> Action.RENAME;
-            case 1 -> Action.DELETE;
+            case 0 -> Action.DUPLICATE;
+            case 1 -> Action.RENAME;
+            case 2 -> Action.DELETE;
             default -> Action.NONE;
         };
     }
 
     public boolean containsPoint(SceneContextMenu menu, double mouseX, double mouseY) {
         if (menu == null || !menu.isOpen()) return false;
-        int height = PADDING * 2 + OPTION_HEIGHT * 2;
+        int height = PADDING * 2 + OPTION_HEIGHT * 3;
         return mouseX >= menu.getX() && mouseX <= menu.getX() + WIDTH
                 && mouseY >= menu.getY() && mouseY <= menu.getY() + height;
     }

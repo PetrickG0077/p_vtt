@@ -20,11 +20,13 @@ import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
+import com.petrick.vtt.feature.tabletop.persistence.VttSceneDuplicator;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import net.minecraft.client.Minecraft;
@@ -525,6 +527,49 @@ public final class VTTSession {
                 "map_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12),
                 definition.displayName(), definition.id(), definition.assetId(),
                 definition.textureMode());
+    }
+
+    public boolean requestDuplicateScene(String sceneId) {
+        if (!isLocalMaster() || activeTabletop == null || sceneId == null
+                || sceneId.isBlank() || !activeTabletop.getSceneIds().contains(sceneId)) {
+            return false;
+        }
+        if (VttSceneLimits.sceneCreation(activeTabletop) != null) return false;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    networkAuthorityRevision, VttSceneCommandPayload.DUPLICATE,
+                    sceneId, "", "", ""));
+            return true;
+        }
+        saveCanvasSceneToActiveScene();
+        VttScene source = activeScene != null && sceneId.equals(activeScene.getId())
+                ? activeScene : tabletopStorage.loadScene(activeTabletop.getId(), sceneId);
+        if (source == null) return false;
+        String displayName = activeTabletop.getSceneDisplayName(sceneId) + " Copy";
+        String baseId = displayName.trim().toLowerCase().replace('\\', '/')
+                .replaceAll("[^a-z0-9/_-]", "_").replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (baseId.isBlank()) baseId = "scene_copy";
+        String duplicateId = baseId;
+        int suffix = 2;
+        while (activeTabletop.getSceneIds().contains(duplicateId)) {
+            duplicateId = baseId + "_" + suffix++;
+        }
+        VttScene duplicate = VttSceneDuplicator.duplicate(
+                source, duplicateId, displayName);
+        if (duplicate == null
+                || !tabletopStorage.saveScene(activeTabletop.getId(), duplicate)) {
+            return false;
+        }
+        activeTabletop.addSceneId(duplicateId);
+        activeTabletop.setSceneDisplayName(duplicateId, displayName);
+        activeTabletop.setActiveSceneId(duplicateId);
+        activeScene = duplicate;
+        if (!tabletopStorage.saveTabletop(activeTabletop)) return false;
+        loadActiveSceneToCanvasScene();
+        VTT.LOGGER.info("Duplicated and activated VTT scene: {} -> {}",
+                sceneId, duplicateId);
+        return true;
     }
 
     public boolean setActiveSceneBackground(String assetId) {

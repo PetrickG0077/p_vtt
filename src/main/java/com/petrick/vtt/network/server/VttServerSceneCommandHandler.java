@@ -33,7 +33,8 @@ public final class VttServerSceneCommandHandler {
             return;
         }
 
-        if (VttSceneCommandPayload.CREATE.equals(request.operation())) {
+        if (VttSceneCommandPayload.CREATE.equals(request.operation())
+                || VttSceneCommandPayload.DUPLICATE.equals(request.operation())) {
             var violation = VttSceneLimits.sceneCreation(state.activeTabletop());
             if (violation != null) {
                 reject(requester, violation.code());
@@ -51,6 +52,8 @@ public final class VttServerSceneCommandHandler {
             case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
             case VttSceneCommandPayload.RENAME -> state.renameScene(request.targetId(), request.value());
             case VttSceneCommandPayload.DELETE -> state.deleteScene(request.targetId());
+            case VttSceneCommandPayload.DUPLICATE ->
+                    state.duplicateAndActivateScene(request.targetId());
             default -> false;
         };
         if (!changed) {

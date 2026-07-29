@@ -43,6 +43,10 @@ public final class VttSceneMap {
         return id;
     }
 
+    public void setId(String id) {
+        this.id = id == null || id.isBlank() ? "map" : id.trim();
+    }
+
     public String getDisplayName() {
         return displayName;
     }

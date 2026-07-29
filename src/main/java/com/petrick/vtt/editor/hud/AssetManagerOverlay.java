@@ -49,6 +49,8 @@ public final class AssetManagerOverlay {
             VTT.MOD_ID, "textures/gui/editor_hud/edit.png");
     private static final ResourceLocation TRASH_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/trash.png");
+    private static final ResourceLocation DUPLICATE_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/creation.png");
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
     private final SceneThumbnailRenderer sceneThumbnailRenderer;
@@ -222,6 +224,9 @@ public final class AssetManagerOverlay {
             selectedId = item.id();
             if (editBounds(card).contains(mouseX, mouseY) && item.editable()) {
                 return new Interaction(Action.EDIT, item.section(), item.id(), true);
+            }
+            if (duplicateBounds(card).contains(mouseX, mouseY) && item.editable()) {
+                return new Interaction(Action.DUPLICATE, item.section(), item.id(), true);
             }
             if (deleteBounds(card).contains(mouseX, mouseY) && item.deletable()) {
                 return new Interaction(Action.DELETE, item.section(), item.id(), true);
@@ -415,6 +420,13 @@ public final class AssetManagerOverlay {
             context.graphics().blit(
                     EDIT_ICON, edit.x() + 1, edit.y() + 1,
                     16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+            Bounds duplicate = duplicateBounds(card);
+            context.graphics().fill(
+                    duplicate.x(), duplicate.y(), duplicate.right(), duplicate.bottom(),
+                    0xCC101014);
+            context.graphics().blit(
+                    DUPLICATE_ICON, duplicate.x() + 1, duplicate.y() + 1,
+                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         }
         if (item.deletable()) {
             Bounds delete = deleteBounds(card);
@@ -585,6 +597,10 @@ public final class AssetManagerOverlay {
         return new Bounds(card.x() + 4, card.y() + 4, 18, 18);
     }
 
+    private Bounds duplicateBounds(Bounds card) {
+        return new Bounds(card.right() - 22, card.y() + 4, 18, 18);
+    }
+
     private Bounds deleteBounds(Bounds card) {
         return new Bounds(card.right() - 22, card.bottom() - 24, 18, 18);
     }
@@ -631,7 +647,7 @@ public final class AssetManagerOverlay {
         private ResourceLocation icon() { return icon; }
     }
 
-    public enum Action { NONE, SELECT, ADD, EDIT, DELETE }
+    public enum Action { NONE, SELECT, ADD, EDIT, DUPLICATE, DELETE }
 
     public record Interaction(Action action, Section section, String id, boolean consumed) {
         public static Interaction none() {

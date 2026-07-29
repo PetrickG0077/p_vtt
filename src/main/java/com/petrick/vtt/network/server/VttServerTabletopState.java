@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.tabletop.VttTabletopPlayerPreferences;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStorage;
 import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
+import com.petrick.vtt.feature.tabletop.persistence.VttSceneDuplicator;
 import net.neoforged.fml.loading.FMLPaths;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
@@ -398,6 +399,45 @@ public final class VttServerTabletopState {
             if (!flushActiveSceneNow("scene rename")) return false;
         } else if (!saveSceneImmediately(target, "scene rename")) return false;
         tabletop.setSceneDisplayName(sceneId, trimmedName);
+        storage.saveTabletop(tabletop);
+        return true;
+    }
+
+    public synchronized boolean duplicateAndActivateScene(String sceneId) {
+        if (sceneId == null || sceneId.isBlank()
+                || !tabletop.getSceneIds().contains(sceneId)
+                || VttSceneLimits.sceneCreation(tabletop) != null) return false;
+        if (!flushActiveSceneNow("scene duplication")) return false;
+        VttScene source = activeScene != null && sceneId.equals(activeScene.getId())
+                ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+        if (source == null) return false;
+
+        String displayName = tabletop.getSceneDisplayName(sceneId) + " Copy";
+        String baseId = displayName.toLowerCase()
+                .replaceAll("[^a-z0-9_-]", "_").replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (baseId.isBlank()) baseId = "scene_copy";
+        if (baseId.length() > 64) baseId = baseId.substring(0, 64);
+        String duplicateId = baseId;
+        int suffix = 2;
+        while (tabletop.getSceneIds().contains(duplicateId)) {
+            String suffixText = "_" + suffix++;
+            duplicateId = baseId.substring(
+                    0, Math.min(baseId.length(), 64 - suffixText.length())) + suffixText;
+        }
+
+        VttScene duplicate = VttSceneDuplicator.duplicate(
+                source, duplicateId, displayName);
+        if (duplicate == null
+                || !saveSceneImmediately(duplicate, "scene duplication")) return false;
+        tabletop.addSceneId(duplicateId);
+        tabletop.setSceneDisplayName(duplicateId, displayName);
+        tabletop.setActiveSceneId(duplicateId);
+        activeScene = duplicate;
+        objectSpatialIndex.rebuild(activeScene);
+        visionGeometryIndex.rebuild(activeScene);
+        movementCollision.rebuildObstacleIndex(activeScene);
+        advanceAuthorityRevision();
         storage.saveTabletop(tabletop);
         return true;
     }

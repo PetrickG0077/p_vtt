@@ -79,10 +79,12 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.Comparator;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -233,6 +235,11 @@ public final class VTTScreen extends Screen {
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
     private PendingAssetDeletion pendingAssetDeletion;
+    private boolean pendingAssetManagerSceneDuplicate;
+    private long pendingAssetManagerSceneDuplicateUntil;
+    private Set<String> pendingServerTokenDuplicateIds;
+    private String pendingServerTokenDuplicateName;
+    private long pendingServerTokenDuplicateUntil;
 
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
@@ -310,6 +317,7 @@ public final class VTTScreen extends Screen {
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
+        resolvePendingServerTokenDuplicateSelection();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
                 && !selectionManager.getSelectedObjectIds().isEmpty()) {
@@ -724,7 +732,9 @@ public final class VTTScreen extends Screen {
         }
         if (interaction.id() == null) return;
         selectAssetManagerItem(interaction.section(), interaction.id());
-        if (interaction.action() == AssetManagerOverlay.Action.EDIT) {
+        if (interaction.action() == AssetManagerOverlay.Action.DUPLICATE) {
+            duplicateAssetManagerItem(interaction.section(), interaction.id());
+        } else if (interaction.action() == AssetManagerOverlay.Action.EDIT) {
             rememberAssetManagerReturn(interaction.section());
             hudCreationOpen = false;
             switch (interaction.section()) {
@@ -740,6 +750,82 @@ public final class VTTScreen extends Screen {
         } else if (interaction.action() == AssetManagerOverlay.Action.DELETE) {
             beginAssetManagerDeletion(interaction.section(), interaction.id());
         }
+    }
+
+    private void duplicateAssetManagerItem(
+            AssetManagerOverlay.Section section,
+            String id
+    ) {
+        switch (section) {
+            case SCENES -> {
+                pendingAssetManagerSceneDuplicate = true;
+                pendingAssetManagerSceneDuplicateUntil =
+                        System.currentTimeMillis() + 15_000L;
+                if (!session.requestDuplicateScene(id)) {
+                    pendingAssetManagerSceneDuplicate = false;
+                    VttClientEditorNotice.show("Could not duplicate scene");
+                }
+            }
+            case MAPS -> mapDefinitionRegistry.findById(id).ifPresent(definition -> {
+                duplicateMapDefinition(definition);
+                assetManagerOverlay.select(
+                        AssetManagerOverlay.Section.MAPS,
+                        mapCatalogSelection.getSelectedMapDefinitionId());
+            });
+            case TOKENS -> tokenDefinitionRegistry.findById(id).ifPresent(definition -> {
+                if (session.isNetworkAuthorityActive()) {
+                    Set<String> existingIds = new HashSet<>();
+                    tokenDefinitionRegistry.getAll()
+                            .forEach(value -> existingIds.add(value.id()));
+                    if (VttClientTokenDefinitionSync.sendDuplicate(definition.id())) {
+                        pendingServerTokenDuplicateIds = existingIds;
+                        pendingServerTokenDuplicateName =
+                                definition.displayName() + " Copy";
+                        pendingServerTokenDuplicateUntil =
+                                System.currentTimeMillis() + 15_000L;
+                    }
+                } else {
+                    duplicateTokenDefinition(definition);
+                    assetManagerOverlay.select(
+                            AssetManagerOverlay.Section.TOKENS,
+                            tokenCatalogSelection.getSelectedTokenDefinitionId());
+                }
+            });
+        }
+    }
+
+    private void resolvePendingServerTokenDuplicateSelection() {
+        if (pendingAssetManagerSceneDuplicate
+                && System.currentTimeMillis() > pendingAssetManagerSceneDuplicateUntil) {
+            pendingAssetManagerSceneDuplicate = false;
+            pendingAssetManagerSceneDuplicateUntil = 0L;
+            VttClientEditorNotice.show("Scene duplication timed out");
+        }
+        if (pendingServerTokenDuplicateIds == null) return;
+        TokenDefinition duplicate = tokenDefinitionRegistry.getAll().stream()
+                .filter(CreatedTokenStorage::isUserCreatedToken)
+                .filter(value -> !pendingServerTokenDuplicateIds.contains(value.id()))
+                .filter(value -> pendingServerTokenDuplicateName == null
+                        || value.displayName().startsWith(pendingServerTokenDuplicateName))
+                .max(Comparator.comparing(TokenDefinition::id))
+                .orElse(null);
+        if (duplicate != null) {
+            tokenCatalogSelection.select(duplicate.id());
+            assetManagerOverlay.select(
+                    AssetManagerOverlay.Section.TOKENS, duplicate.id());
+            clearPendingServerTokenDuplicate();
+            return;
+        }
+        if (System.currentTimeMillis() > pendingServerTokenDuplicateUntil) {
+            clearPendingServerTokenDuplicate();
+            VttClientEditorNotice.show("Token duplication timed out");
+        }
+    }
+
+    private void clearPendingServerTokenDuplicate() {
+        pendingServerTokenDuplicateIds = null;
+        pendingServerTokenDuplicateName = null;
+        pendingServerTokenDuplicateUntil = 0L;
     }
 
     private void beginAssetManagerDeletion(
@@ -3814,7 +3900,11 @@ public final class VTTScreen extends Screen {
         String sceneId = sceneContextMenu.getSceneId();
         sceneContextMenu.close();
         if (sceneId == null) return;
-        if (action == SceneContextMenuOverlay.Action.RENAME) {
+        if (action == SceneContextMenuOverlay.Action.DUPLICATE) {
+            if (!session.requestDuplicateScene(sceneId)) {
+                VttClientEditorNotice.show("Could not duplicate scene");
+            }
+        } else if (action == SceneContextMenuOverlay.Action.RENAME) {
             renamingSceneId = sceneId;
             sceneRenameBuffer = session.getActiveTabletop().getSceneDisplayName(sceneId);
         } else if (action == SceneContextMenuOverlay.Action.DELETE
@@ -3869,6 +3959,8 @@ public final class VTTScreen extends Screen {
         String activeSceneId = session.getActiveScene() == null
                 ? null : session.getActiveScene().getId();
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
+        boolean reopenDuplicatedSceneInAssetManager =
+                pendingAssetManagerSceneDuplicate && activeSceneId != null;
         if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
@@ -3887,6 +3979,13 @@ public final class VTTScreen extends Screen {
         closeBackgroundImagePicker();
         tokenImagePickerActive = false;
         closeHudPopups();
+        if (reopenDuplicatedSceneInAssetManager) {
+            hudCreationOpen = true;
+            assetManagerOverlay.select(
+                    AssetManagerOverlay.Section.SCENES, activeSceneId);
+            pendingAssetManagerSceneDuplicate = false;
+            pendingAssetManagerSceneDuplicateUntil = 0L;
+        }
         applyActiveSceneInitialCamera();
         initialCameraApplied = true;
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);
