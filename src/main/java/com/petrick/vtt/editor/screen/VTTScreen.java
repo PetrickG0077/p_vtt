@@ -1753,7 +1753,10 @@ public final class VTTScreen extends Screen {
             if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
             return sceneBackgroundEditor.mouseReleased(button);
         }
-        if (hudCreationOpen) return true;
+        if (hudCreationOpen) {
+            assetManagerOverlay.mouseReleased(button);
+            return true;
+        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseReleased(
                 mouseX, button, this.width, this.height,
@@ -1836,7 +1839,13 @@ public final class VTTScreen extends Screen {
                     session.getActiveScene(), renderState, mouseX, mouseY,
                     getKeyboardModifiers());
         }
-        if (hudCreationOpen) return true;
+        if (hudCreationOpen) {
+            assetManagerOverlay.mouseDragged(
+                    mouseY, button, this.width, this.height,
+                    session.getActiveTabletop(), mapDefinitionRegistry,
+                    tokenDefinitionRegistry);
+            return true;
+        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseDragged(
                 mouseX, this.width, this.height,
@@ -2059,6 +2068,7 @@ public final class VTTScreen extends Screen {
         }
         if (hudCreationOpen) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                assetManagerOverlay.mouseReleased(GLFW.GLFW_MOUSE_BUTTON_LEFT);
                 hudCreationOpen = false;
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 assetManagerOverlay.backspace(

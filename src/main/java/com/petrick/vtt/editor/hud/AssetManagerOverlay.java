@@ -26,6 +26,7 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -36,6 +37,8 @@ public final class AssetManagerOverlay {
     private static final int CARD_GAP = 10;
     private static final int HEADER_HEIGHT = 54;
     private static final int TABS_HEIGHT = 34;
+    private static final int SCROLLBAR_WIDTH = 5;
+    private static final int MIN_SCROLLBAR_THUMB_HEIGHT = 18;
     private static final ResourceLocation SCENE_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/scenes.png");
     private static final ResourceLocation MAP_ICON = ResourceLocation.fromNamespaceAndPath(
@@ -53,13 +56,16 @@ public final class AssetManagerOverlay {
     private Section section = Section.SCENES;
     private String search = "";
     private String selectedId;
-    private int scrollRow;
+    private final EnumMap<Section, Integer> scrollRows = new EnumMap<>(Section.class);
     private String lastClickedKey;
     private long lastClickedAt;
     private boolean searchFocused;
+    private boolean draggingScrollbar;
+    private double scrollbarGrabOffset;
 
     public AssetManagerOverlay(TabletopStorage tabletopStorage) {
         this.sceneThumbnailRenderer = new SceneThumbnailRenderer(tabletopStorage);
+        for (Section candidate : Section.values()) scrollRows.put(candidate, 0);
     }
 
     public void render(
@@ -144,6 +150,7 @@ public final class AssetManagerOverlay {
             renderCard(context, font, new Bounds(x, y, CARD_WIDTH, CARD_HEIGHT),
                     items.get(index), tabletop, activeScene, assets, thumbnails);
         }
+        renderScrollbar(context, panel, grid);
         if (items.isEmpty()) {
             context.graphics().drawCenteredString(
                     font, search.isBlank() ? "No assets in this section" : "No search results",
@@ -184,12 +191,24 @@ public final class AssetManagerOverlay {
             if (tabBounds(panel, candidate).contains(mouseX, mouseY)) {
                 section = candidate;
                 selectedId = null;
-                scrollRow = 0;
+                draggingScrollbar = false;
                 return Interaction.handled();
             }
         }
         List<Item> items = visibleItems(tabletop, maps, tokens);
         Grid grid = grid(panel, items.size());
+        Scrollbar scrollbar = scrollbar(panel, grid);
+        if (scrollbar != null && scrollbar.track().contains(mouseX, mouseY)) {
+            if (scrollbar.thumb().contains(mouseX, mouseY)) {
+                draggingScrollbar = true;
+                scrollbarGrabOffset = mouseY - scrollbar.thumb().y();
+            } else {
+                int direction = mouseY < scrollbar.thumb().y() ? -1 : 1;
+                setScrollRow(scrollRow() + direction * grid.visibleRows());
+                grid(panel, items.size());
+            }
+            return Interaction.handled();
+        }
         for (int index = grid.firstIndex(); index < grid.lastIndex(); index++) {
             int visibleIndex = index - grid.firstIndex();
             int column = visibleIndex % grid.columns();
@@ -252,14 +271,45 @@ public final class AssetManagerOverlay {
     ) {
         Bounds panel = panel(screenWidth, screenHeight);
         if (!panel.contains(mouseX, mouseY)) return false;
-        int columns = Math.max(1, (panel.width() - 32 + CARD_GAP)
-                / (CARD_WIDTH + CARD_GAP));
-        int rows = (visibleItems(tabletop, maps, tokens).size() + columns - 1) / columns;
-        int visibleRows = Math.max(1, (panel.height() - HEADER_HEIGHT - TABS_HEIGHT - 24)
-                / (CARD_HEIGHT + CARD_GAP));
-        int maximum = Math.max(0, rows - visibleRows);
-        scrollRow = Math.max(0, Math.min(maximum,
-                scrollRow + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0)));
+        Grid grid = grid(panel, visibleItems(tabletop, maps, tokens).size());
+        setScrollRow(Math.max(0, Math.min(grid.maximumScrollRow(),
+                scrollRow() + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0))));
+        return true;
+    }
+
+    public boolean mouseDragged(
+            double mouseY,
+            int button,
+            int screenWidth,
+            int screenHeight,
+            VttTabletop tabletop,
+            MapDefinitionRegistry maps,
+            TokenDefinitionRegistry tokens
+    ) {
+        if (!draggingScrollbar || button != 0) return false;
+        Bounds panel = panel(screenWidth, screenHeight);
+        Grid grid = grid(panel, visibleItems(tabletop, maps, tokens).size());
+        Scrollbar scrollbar = scrollbar(panel, grid);
+        if (scrollbar == null) {
+            draggingScrollbar = false;
+            return true;
+        }
+        int travel = scrollbar.track().height() - scrollbar.thumb().height();
+        if (travel <= 0 || grid.maximumScrollRow() <= 0) {
+            setScrollRow(0);
+            return true;
+        }
+        double thumbY = mouseY - scrollbarGrabOffset;
+        double progress = (thumbY - scrollbar.track().y()) / travel;
+        setScrollRow((int) Math.round(
+                Math.max(0.0, Math.min(1.0, progress))
+                        * grid.maximumScrollRow()));
+        return true;
+    }
+
+    public boolean mouseReleased(int button) {
+        if (button != 0 || !draggingScrollbar) return false;
+        draggingScrollbar = false;
         return true;
     }
 
@@ -273,7 +323,6 @@ public final class AssetManagerOverlay {
     public void select(Section section, String id) {
         this.section = section == null ? Section.SCENES : section;
         this.selectedId = id;
-        this.scrollRow = 0;
     }
 
     private void selectFirstGlobalMatch(
@@ -283,7 +332,7 @@ public final class AssetManagerOverlay {
     ) {
         if (search.isBlank()) {
             selectedId = null;
-            scrollRow = 0;
+            setScrollRow(0);
             return;
         }
         String needle = search.toLowerCase(Locale.ROOT);
@@ -297,7 +346,7 @@ public final class AssetManagerOverlay {
         if (match != null) {
             section = match.section();
             selectedId = match.id();
-            scrollRow = 0;
+            setScrollRow(0);
         }
     }
 
@@ -452,10 +501,51 @@ public final class AssetManagerOverlay {
         int columns = Math.max(1, (width + CARD_GAP) / (CARD_WIDTH + CARD_GAP));
         int visibleRows = Math.max(1, (height + CARD_GAP) / (CARD_HEIGHT + CARD_GAP));
         int rows = (itemCount + columns - 1) / columns;
-        scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, rows - visibleRows)));
-        int first = scrollRow * columns;
+        int maximumScrollRow = Math.max(0, rows - visibleRows);
+        setScrollRow(Math.max(0, Math.min(scrollRow(), maximumScrollRow)));
+        int first = scrollRow() * columns;
         return new Grid(x, y, columns, first,
-                Math.min(itemCount, first + visibleRows * columns));
+                Math.min(itemCount, first + visibleRows * columns),
+                height, rows, visibleRows, maximumScrollRow);
+    }
+
+    private void renderScrollbar(VRenderContext context, Bounds panel, Grid grid) {
+        Scrollbar scrollbar = scrollbar(panel, grid);
+        if (scrollbar == null) return;
+        Bounds track = scrollbar.track();
+        Bounds thumb = scrollbar.thumb();
+        context.graphics().fill(
+                track.x(), track.y(), track.right(), track.bottom(), 0x66333338);
+        boolean hovered = track.contains(context.mouseX(), context.mouseY());
+        context.graphics().fill(
+                thumb.x(), thumb.y(), thumb.right(), thumb.bottom(),
+                draggingScrollbar ? 0xFF66DDEE
+                        : hovered ? 0xFFB8EAF2 : 0xFFD8D8DC);
+    }
+
+    private Scrollbar scrollbar(Bounds panel, Grid grid) {
+        if (grid.maximumScrollRow() <= 0 || grid.totalRows() <= 0) return null;
+        Bounds track = new Bounds(
+                panel.right() - 11, grid.y(),
+                SCROLLBAR_WIDTH, grid.height());
+        int thumbHeight = Math.max(
+                MIN_SCROLLBAR_THUMB_HEIGHT,
+                Math.min(track.height(), (int) Math.round(
+                        track.height() * (grid.visibleRows() / (double) grid.totalRows()))));
+        int travel = Math.max(0, track.height() - thumbHeight);
+        int thumbY = track.y() + (int) Math.round(
+                travel * (scrollRow() / (double) grid.maximumScrollRow()));
+        return new Scrollbar(
+                track,
+                new Bounds(track.x(), thumbY, track.width(), thumbHeight));
+    }
+
+    private int scrollRow() {
+        return scrollRows.getOrDefault(section, 0);
+    }
+
+    private void setScrollRow(int value) {
+        scrollRows.put(section, Math.max(0, value));
     }
 
     private Bounds panel(int screenWidth, int screenHeight) {
@@ -563,6 +653,17 @@ public final class AssetManagerOverlay {
             return px >= x && px <= right() && py >= y && py <= bottom();
         }
     }
-    private record Grid(int x, int y, int columns, int firstIndex, int lastIndex) {}
+    private record Grid(
+            int x,
+            int y,
+            int columns,
+            int firstIndex,
+            int lastIndex,
+            int height,
+            int totalRows,
+            int visibleRows,
+            int maximumScrollRow
+    ) {}
+    private record Scrollbar(Bounds track, Bounds thumb) {}
     private record Texture(ResourceLocation location, int width, int height) {}
 }
