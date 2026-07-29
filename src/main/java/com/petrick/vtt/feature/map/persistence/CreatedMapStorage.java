@@ -89,6 +89,15 @@ public final class CreatedMapStorage {
         return updated;
     }
 
+    public static MapDefinition duplicate(MapDefinition source) {
+        if (!isUserCreatedMap(source)) {
+            throw new IllegalArgumentException("Only user-created maps can be duplicated");
+        }
+        return createAndSave(
+                source.displayName() + " Copy", source.assetId(),
+                source.imageWidth(), source.imageHeight(), source.textureMode());
+    }
+
     public static boolean delete(MapDefinition definition) {
         if (!isUserCreatedMap(definition)) return false;
         try {

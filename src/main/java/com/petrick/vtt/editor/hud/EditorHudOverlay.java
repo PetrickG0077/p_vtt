@@ -27,7 +27,6 @@ public final class EditorHudOverlay {
     private static final int DISABLED_BORDER = 0xFF55555A;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF99999F;
-    private static final int DANGER = 0xFFFF7777;
     private static final int MAX_VISIBLE_PLAYERS = 12;
     private static final int MAX_VISIBLE_OWNED_TOKENS = 4;
     private static final int ICON_TEXTURE_SIZE = 32;
@@ -45,7 +44,6 @@ public final class EditorHudOverlay {
             if (button.contains(context.mouseX(), context.mouseY())) hovered = button;
         }
         if (state.playersOpen()) renderPlayers(context, font, state);
-        if (state.creationOpen() && state.master()) renderCreation(context, font, state);
         if (hovered != null) renderTooltip(context, font, hovered);
     }
 
@@ -56,11 +54,6 @@ public final class EditorHudOverlay {
         }
         if (state.playersOpen() && selectPlayerAt(
                 mouseX, mouseY, screenHeight, state)) return Action.NONE;
-        if (state.creationOpen() && state.master()) {
-            Action creationAction = creationActionAt(
-                    mouseX, mouseY, screenWidth, screenHeight, state);
-            if (creationAction != Action.NONE) return creationAction;
-        }
         for (Button button : buttons(screenWidth, screenHeight, state)) {
             if (button.enabled() && button.contains(mouseX, mouseY)) return button.action();
         }
@@ -74,9 +67,7 @@ public final class EditorHudOverlay {
             if (button.contains(mouseX, mouseY)) return true;
         }
         return state.playersOpen()
-                && playersBounds(screenHeight, state).contains(mouseX, mouseY)
-                || state.creationOpen() && state.master()
-                && creationBounds(screenWidth, screenHeight).contains(mouseX, mouseY);
+                && playersBounds(screenHeight, state).contains(mouseX, mouseY);
     }
 
     private List<Button> buttons(int screenWidth, int screenHeight, State state) {
@@ -147,7 +138,7 @@ public final class EditorHudOverlay {
             result.add(button(Action.TOKENS, bottomX, bottomY, size, "", "Tokens", true,
                     state.tokensOpen()));
             bottomX += size + GAP;
-            result.add(button(Action.CREATION, bottomX, bottomY, size, "", "Create & Manage",
+            result.add(button(Action.CREATION, bottomX, bottomY, size, "", "Asset Manager",
                     true, state.creationOpen()));
         }
         return result;
@@ -496,91 +487,12 @@ public final class EditorHudOverlay {
         return (state.master() ? 97 : 32) + ownedTokenBlockHeight(state);
     }
 
-    private void renderCreation(VRenderContext context, Font font, State state) {
-        Bounds bounds = creationBounds(context.screenWidth(), context.screenHeight());
-        renderPanel(context, bounds.x(), bounds.y(), bounds.width(), bounds.height());
-        context.graphics().drawString(font, "Create & Manage", bounds.x() + 8, bounds.y() + 8,
-                TEXT, false);
-        renderMenuRow(context, font, bounds, 0, "Create Scene", true, false);
-        renderMenuRow(context, font, bounds, 1, "Create Map", true, false);
-        renderMenuRow(context, font, bounds, 2,
-                state.selectedMapName().isBlank() ? "Edit Selected Map"
-                        : "Edit Map: " + trim(state.selectedMapName(), 18),
-                state.canEditSelectedMap(), false);
-        renderMenuRow(context, font, bounds, 3, "Create Token", true, false);
-        renderMenuRow(context, font, bounds, 4,
-                state.activeSceneName().isBlank() ? "Delete Active Scene"
-                        : "Delete Scene: " + trim(state.activeSceneName(), 18),
-                state.canDeleteActiveScene(), true);
-        renderMenuRow(context, font, bounds, 5,
-                state.selectedMapName().isBlank() ? "Delete Selected Map"
-                        : "Delete Map: " + trim(state.selectedMapName(), 18),
-                state.canEditSelectedMap(), true);
-        renderMenuRow(context, font, bounds, 6,
-                state.selectedTokenName().isBlank() ? "Delete Selected Token"
-                        : "Delete Token: " + trim(state.selectedTokenName(), 18),
-                state.canDeleteSelectedToken(), true);
-    }
-
-    private void renderMenuRow(
-            VRenderContext context, Font font, Bounds bounds, int index,
-            String label, boolean enabled, boolean danger
-    ) {
-        Bounds row = creationRow(bounds, index);
-        boolean hovered = row.contains(context.mouseX(), context.mouseY());
-        context.graphics().fill(row.x(), row.y(), row.x() + row.width(), row.y() + row.height(),
-                enabled && hovered ? BUTTON_HOVER : BUTTON_BACKGROUND);
-        border(context, row.x(), row.y(), row.width(), row.height(),
-                enabled ? PANEL_BORDER : DISABLED_BORDER);
-        context.graphics().drawString(font, label, row.x() + 6, row.y() + 5,
-                enabled ? danger ? DANGER : TEXT : MUTED, false);
-    }
-
-    private Action creationActionAt(
-            double mouseX, double mouseY, int screenWidth, int screenHeight, State state
-    ) {
-        Bounds bounds = creationBounds(screenWidth, screenHeight);
-        for (int index = 0; index < 7; index++) {
-            if (creationRow(bounds, index).contains(mouseX, mouseY)) {
-                return switch (index) {
-                    case 0 -> Action.CREATE_SCENE;
-                    case 1 -> Action.CREATE_MAP;
-                    case 2 -> state.canEditSelectedMap()
-                            ? Action.EDIT_SELECTED_MAP : Action.NONE;
-                    case 3 -> Action.CREATE_TOKEN;
-                    case 4 -> state.canDeleteActiveScene()
-                            ? Action.DELETE_ACTIVE_SCENE : Action.NONE;
-                    case 5 -> state.canEditSelectedMap()
-                            ? Action.DELETE_SELECTED_MAP : Action.NONE;
-                    case 6 -> state.canDeleteSelectedToken()
-                            ? Action.DELETE_SELECTED_TOKEN : Action.NONE;
-                    default -> Action.NONE;
-                };
-            }
-        }
-        return Action.NONE;
-    }
-
-    private Bounds creationRow(Bounds bounds, int index) {
-        return new Bounds(bounds.x() + 7, bounds.y() + 24 + index * 23,
-                bounds.width() - 14, 19);
-    }
-
     private Bounds playersBounds(int screenHeight, State state) {
         int rows = Math.max(1, Math.min(MAX_VISIBLE_PLAYERS, state.players().size()));
         if (state.players().size() > MAX_VISIBLE_PLAYERS) rows++;
         int footer = playerFooterHeight(state);
         return new Bounds(MARGIN, topPopupY(screenHeight),
                 240, 29 + rows * 12 + footer);
-    }
-
-    private Bounds creationBounds(int screenWidth, int screenHeight) {
-        int width = 230;
-        int bottomPanelY = screenHeight - MARGIN - PADDING * 2 - buttonSize(screenHeight);
-        int height = 185;
-        int y = Math.max(topPopupY(screenHeight), bottomPanelY - GAP - height);
-        return new Bounds((screenWidth - width) / 2, y,
-                width, height);
     }
 
     private int topPopupY(int screenHeight) {
@@ -709,14 +621,7 @@ public final class EditorHudOverlay {
         SCENES,
         MAPS,
         TOKENS,
-        CREATION,
-        CREATE_SCENE,
-        CREATE_MAP,
-        EDIT_SELECTED_MAP,
-        CREATE_TOKEN,
-        DELETE_ACTIVE_SCENE,
-        DELETE_SELECTED_MAP,
-        DELETE_SELECTED_TOKEN;
+        CREATION;
 
         private boolean isPopup() {
             return this == PLAYERS || this == SETTINGS || this == CREATION;
@@ -744,13 +649,7 @@ public final class EditorHudOverlay {
             String localPlayerId,
             String selectedSceneTokenId,
             String selectedSceneTokenName,
-            String selectedSceneTokenOwnerId,
-            String activeSceneName,
-            boolean canDeleteActiveScene,
-            String selectedMapName,
-            boolean canEditSelectedMap,
-            String selectedTokenName,
-            boolean canDeleteSelectedToken
+            String selectedSceneTokenOwnerId
     ) {
         public State {
             activeToolId = activeToolId == null ? "" : activeToolId;
@@ -763,9 +662,6 @@ public final class EditorHudOverlay {
             selectedSceneTokenName = selectedSceneTokenName == null ? "" : selectedSceneTokenName;
             selectedSceneTokenOwnerId =
                     selectedSceneTokenOwnerId == null ? "" : selectedSceneTokenOwnerId;
-            activeSceneName = activeSceneName == null ? "" : activeSceneName;
-            selectedMapName = selectedMapName == null ? "" : selectedMapName;
-            selectedTokenName = selectedTokenName == null ? "" : selectedTokenName;
         }
     }
 

@@ -10,6 +10,7 @@ import com.petrick.vtt.editor.catalog.AssetCatalogItem;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
 import com.petrick.vtt.editor.catalog.AssetCatalogVisibleRow;
 import com.petrick.vtt.editor.catalog.MapCatalogSelection;
+import com.petrick.vtt.editor.catalog.MapCatalogContextMenu;
 import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
 import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
@@ -17,10 +18,12 @@ import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.hud.EditorHudOverlay;
 import com.petrick.vtt.editor.hud.EditorSettingsOverlay;
+import com.petrick.vtt.editor.hud.AssetManagerOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.overlay.MapCatalogOverlay;
+import com.petrick.vtt.editor.overlay.MapCatalogContextMenuOverlay;
 import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
 import com.petrick.vtt.editor.overlay.SceneListOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
@@ -112,6 +115,7 @@ public final class VTTScreen extends Screen {
     private final EditorHudOverlay editorHudOverlay;
 
     private final EditorSettingsOverlay editorSettingsOverlay;
+    private final AssetManagerOverlay assetManagerOverlay;
 
     private final SceneBackgroundEditor sceneBackgroundEditor;
 
@@ -143,6 +147,10 @@ public final class VTTScreen extends Screen {
     private MapDefinition draggingMapDefinition;
     private double mapDragStartX;
     private double mapDragStartY;
+    private final MapCatalogContextMenu mapCatalogContextMenu =
+            new MapCatalogContextMenu();
+    private final MapCatalogContextMenuOverlay mapCatalogContextMenuOverlay =
+            new MapCatalogContextMenuOverlay();
 
     private final SceneOutlinerOverlay sceneOutlinerOverlay;
 
@@ -248,6 +256,7 @@ public final class VTTScreen extends Screen {
                 assetId -> session.setActiveSceneBackground(assetId),
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
+        this.assetManagerOverlay = new AssetManagerOverlay();
         this.editorSettingsOverlay = new EditorSettingsOverlay();
         this.sceneBackgroundEditor = new SceneBackgroundEditor(
                 assetRegistry, session.getAssetThumbnailRegistry());
@@ -344,6 +353,8 @@ public final class VTTScreen extends Screen {
                 mapCatalogOverlay.renderDragPreview(
                         context, this.font, draggingMapDefinition, mouseX, mouseY);
             }
+            mapCatalogContextMenuOverlay.render(
+                    context, this.font, mapCatalogContextMenu);
             renderEditorNotice(context);
             renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
@@ -448,9 +459,17 @@ public final class VTTScreen extends Screen {
                 this.font,
                 tokenCatalogContextMenu
         );
+        mapCatalogContextMenuOverlay.render(
+                context, this.font, mapCatalogContextMenu);
         sceneContextMenuOverlay.render(context, this.font, sceneContextMenu);
         renderEditorNotice(context);
         renderEditorHud(context);
+        if (hudCreationOpen && session.isLocalMaster()) {
+            assetManagerOverlay.render(
+                    context, this.font, session.getActiveTabletop(),
+                    mapDefinitionRegistry, tokenDefinitionRegistry,
+                    assetRegistry, session.getAssetThumbnailRegistry());
+        }
 
         if (tokenCreationDraft != null) {
             tokenCreationDialog.render(
@@ -599,8 +618,6 @@ public final class VTTScreen extends Screen {
     }
 
     private EditorHudOverlay.State editorHudState() {
-        TokenDefinition selectedToken = selectedTokenDefinition();
-        MapDefinition selectedMap = selectedMapDefinition();
         CanvasObject selectedSceneToken = selectionManager.getSelectedObjectIds().size() == 1
                 ? scene.findObjectById(selectionManager.getSelectedObjectIds().iterator().next())
                 : null;
@@ -616,12 +633,6 @@ public final class VTTScreen extends Screen {
                     .map(object -> object.getOwnerId() == null ? "" : object.getOwnerId())
                     .findFirst().orElse("");
         }
-        boolean canDeleteToken = CreatedTokenStorage.isUserCreatedToken(selectedToken);
-        String activeSceneName = session.getActiveScene() == null
-                ? "" : session.getActiveScene().getDisplayName();
-        boolean canDeleteScene = session.getActiveTabletop() != null
-                && session.getActiveTabletop().getSceneIds().size() > 1
-                && session.getActiveScene() != null;
         return new EditorHudOverlay.State(
                 session.isLocalMaster(), session.isLocalSpectator(),
                 sceneBackgroundEditor.isActive(),
@@ -638,17 +649,7 @@ public final class VTTScreen extends Screen {
                 session.getLocalPlayerId(),
                 selectedSceneToken == null ? "" : selectedSceneToken.id(),
                 selectedSceneToken == null ? "" : selectedSceneToken.displayName(),
-                selectedSceneTokenOwnerId,
-                activeSceneName, canDeleteScene,
-                selectedMap == null ? "" : selectedMap.displayName(),
-                CreatedMapStorage.isUserCreatedMap(selectedMap),
-                selectedToken == null ? "" : selectedToken.displayName(), canDeleteToken);
-    }
-
-    private TokenDefinition selectedTokenDefinition() {
-        if (!tokenCatalogSelection.hasSelection()) return null;
-        return tokenDefinitionRegistry.findById(
-                tokenCatalogSelection.getSelectedTokenDefinitionId()).orElse(null);
+                selectedSceneTokenOwnerId);
     }
 
     private MapDefinition selectedMapDefinition() {
@@ -670,6 +671,92 @@ public final class VTTScreen extends Screen {
         }
         handleEditorHudAction(action);
         return true;
+    }
+
+    private boolean handleAssetManagerMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (!hudCreationOpen || !session.isLocalMaster()) return false;
+        AssetManagerOverlay.Interaction interaction = assetManagerOverlay.mouseClicked(
+                mouseX, mouseY, button, this.width, this.height,
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+        if (!interaction.consumed()) return false;
+        handleAssetManagerInteraction(interaction);
+        return true;
+    }
+
+    private void handleAssetManagerInteraction(
+            AssetManagerOverlay.Interaction interaction
+    ) {
+        if (interaction.section() == null) return;
+        if (interaction.action() == AssetManagerOverlay.Action.SELECT) {
+            selectAssetManagerItem(interaction.section(), interaction.id());
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.ADD) {
+            hudCreationOpen = false;
+            switch (interaction.section()) {
+                case SCENES -> beginNewSceneDialog();
+                case MAPS -> beginNewMapDialog();
+                case TOKENS -> beginCreateTokenDefinition();
+            }
+            return;
+        }
+        if (interaction.id() == null) return;
+        selectAssetManagerItem(interaction.section(), interaction.id());
+        if (interaction.action() == AssetManagerOverlay.Action.EDIT) {
+            hudCreationOpen = false;
+            switch (interaction.section()) {
+                case SCENES -> {
+                    renamingSceneId = interaction.id();
+                    sceneRenameBuffer = session.getActiveTabletop()
+                            .getSceneDisplayName(interaction.id());
+                }
+                case MAPS -> beginEditSelectedMapDialog();
+                case TOKENS -> tokenDefinitionRegistry.findById(interaction.id())
+                        .ifPresent(this::beginEditTokenDefinition);
+            }
+        } else if (interaction.action() == AssetManagerOverlay.Action.DELETE) {
+            switch (interaction.section()) {
+                case SCENES -> {
+                    if (session.getActiveTabletop().getSceneIds().size() > 1) {
+                        pendingDeleteSceneId = interaction.id();
+                        hudCreationOpen = false;
+                    }
+                }
+                case MAPS -> deleteMapDefinition(
+                        mapDefinitionRegistry.findById(interaction.id()).orElse(null));
+                case TOKENS -> tokenDefinitionRegistry.findById(interaction.id())
+                        .ifPresent(this::deleteTokenDefinitionFromManager);
+            }
+        }
+    }
+
+    private void selectAssetManagerItem(
+            AssetManagerOverlay.Section section, String id
+    ) {
+        if (id == null) return;
+        switch (section) {
+            case SCENES -> {
+            }
+            case MAPS -> mapCatalogSelection.select(id);
+            case TOKENS -> tokenCatalogSelection.select(id);
+        }
+    }
+
+    private void syncAssetManagerSelection() {
+        selectAssetManagerItem(
+                assetManagerOverlay.section(), assetManagerOverlay.selectedId());
+    }
+
+    private void deleteTokenDefinitionFromManager(TokenDefinition definition) {
+        if (!CreatedTokenStorage.isUserCreatedToken(definition)) return;
+        if (session.isNetworkAuthorityActive()) {
+            VttClientTokenDefinitionSync.sendDelete(definition.id());
+        } else {
+            deleteTokenDefinition(definition);
+        }
     }
 
     private boolean handleEditorSettingsMouseClicked(
@@ -736,6 +823,7 @@ public final class VTTScreen extends Screen {
         boolean master = session.isLocalMaster();
         tokenCatalogContextMenu.close();
         tokenCatalogOverlay.allowDetailsPopup();
+        mapCatalogContextMenu.close();
         sceneContextMenu.close();
         switch (action) {
             case CLOSE -> this.onClose();
@@ -823,40 +911,6 @@ public final class VTTScreen extends Screen {
                     hudSettingsOpen = false;
                 }
             }
-            case CREATE_SCENE -> {
-                if (master) beginNewSceneDialog();
-                closeHudPopups();
-            }
-            case CREATE_MAP -> {
-                if (master) beginNewMapDialog();
-                closeHudPopups();
-            }
-            case EDIT_SELECTED_MAP -> {
-                if (master) beginEditSelectedMapDialog();
-                closeHudPopups();
-            }
-            case CREATE_TOKEN -> {
-                if (master) beginCreateTokenDefinition();
-                closeHudPopups();
-            }
-            case DELETE_ACTIVE_SCENE -> {
-                if (master && session.getActiveScene() != null
-                        && session.getActiveTabletop() != null
-                        && session.getActiveTabletop().getSceneIds().size() > 1) {
-                    pendingDeleteSceneId = session.getActiveScene().getId();
-                } else {
-                    VttClientEditorNotice.show("At least one scene must remain");
-                }
-                closeHudPopups();
-            }
-            case DELETE_SELECTED_MAP -> {
-                if (master) deleteSelectedMapDefinition();
-                closeHudPopups();
-            }
-            case DELETE_SELECTED_TOKEN -> {
-                if (master) deleteSelectedTokenDefinitionFromHud();
-                closeHudPopups();
-            }
             case NONE -> {
             }
         }
@@ -867,25 +921,6 @@ public final class VTTScreen extends Screen {
         tokenImagePickerActive = false;
         lastTokenImagePickerClickedItemId = null;
         lastTokenImagePickerClickTime = 0L;
-    }
-
-    private void deleteSelectedTokenDefinitionFromHud() {
-        TokenDefinition tokenDefinition = selectedTokenDefinition();
-        if (tokenDefinition == null) {
-            VttClientEditorNotice.show("Select a token in the token list first");
-            return;
-        }
-        if (!CreatedTokenStorage.isUserCreatedToken(tokenDefinition)) {
-            VttClientEditorNotice.show("Built-in tokens cannot be deleted");
-            return;
-        }
-        if (session.isNetworkAuthorityActive()) {
-            if (VttClientTokenDefinitionSync.sendDelete(tokenDefinition.id())) {
-                tokenCatalogSelection.clear();
-            }
-            return;
-        }
-        deleteTokenDefinition(tokenDefinition);
     }
 
     private void setSelectedSceneTokenOwner(String ownerId) {
@@ -1034,6 +1069,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (hudCreationOpen && assetManagerOverlay.contains(
+                mouseX, mouseY, this.width, this.height)) {
+            CursorManager.reset();
+            return;
+        }
         if (editorHudOverlay.containsHud(mouseX, mouseY, this.width, this.height,
                 editorHudState())) {
             CursorManager.reset();
@@ -1082,6 +1122,7 @@ public final class VTTScreen extends Screen {
                 return inputController.mouseClicked(
                         mouseX, mouseY, button, getKeyboardModifiers(), renderState);
             }
+            if (handleMapCatalogContextMouseClicked(mouseX, mouseY, button)) return true;
             if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
             if (handleMapCatalogPlacementMouseClicked(mouseX, mouseY, button)) return true;
             if (handleSceneEditOutlinerMouseClicked(mouseX, mouseY, button)) return true;
@@ -1113,6 +1154,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (handleAssetManagerMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
@@ -1163,11 +1205,28 @@ public final class VTTScreen extends Screen {
             }
         }
 
+        if (mapCatalogContextMenu.isOpen()) {
+            MapCatalogContextMenuOverlay.Action action =
+                    mapCatalogContextMenuOverlay.getActionAt(
+                            mapCatalogContextMenu, mouseX, mouseY);
+            if (action != MapCatalogContextMenuOverlay.Action.NONE) {
+                handleMapCatalogContextMenuAction(action);
+                mapCatalogContextMenu.close();
+                return true;
+            }
+            if (!mapCatalogContextMenuOverlay.containsPoint(
+                    mapCatalogContextMenu, mouseX, mouseY)) {
+                mapCatalogContextMenu.close();
+                return true;
+            }
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && panelVisibility.isSceneListVisible()) {
             Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
                     session.getActiveTabletop(), this.width, this.height, mouseX, mouseY);
             if (clickedSceneId.isPresent()) {
                 tokenCatalogContextMenu.close();
+                mapCatalogContextMenu.close();
                 sceneContextMenu.open((int) mouseX + 8, (int) mouseY, clickedSceneId.get());
                 return true;
             }
@@ -1186,6 +1245,7 @@ public final class VTTScreen extends Screen {
 
             if (clickedToken != null) {
                 tokenCatalogSelection.select(clickedToken.id());
+                mapCatalogContextMenu.close();
 
                 tokenCatalogOverlay.suppressDetailsPopup();
 
@@ -1195,6 +1255,21 @@ public final class VTTScreen extends Screen {
                         clickedToken
                 );
 
+                return true;
+            }
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT
+                && panelVisibility.isMapCatalogVisible()) {
+            MapDefinition clickedMap = mapCatalogOverlay.findMapAt(
+                    mapDefinitionRegistry, this.width, this.height,
+                    mouseX, mouseY, mapCatalogScrollOffset);
+            if (clickedMap != null) {
+                mapCatalogSelection.select(clickedMap.id());
+                tokenCatalogContextMenu.close();
+                sceneContextMenu.close();
+                mapCatalogContextMenu.open(
+                        (int) mouseX + 10, (int) mouseY - 45, clickedMap);
                 return true;
             }
         }
@@ -1643,6 +1718,7 @@ public final class VTTScreen extends Screen {
             if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
             return sceneBackgroundEditor.mouseReleased(button);
         }
+        if (hudCreationOpen) return true;
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseReleased(
                 mouseX, button, this.width, this.height,
@@ -1725,6 +1801,7 @@ public final class VTTScreen extends Screen {
                     session.getActiveScene(), renderState, mouseX, mouseY,
                     getKeyboardModifiers());
         }
+        if (hudCreationOpen) return true;
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseDragged(
                 mouseX, this.width, this.height,
@@ -1804,6 +1881,13 @@ public final class VTTScreen extends Screen {
                     scene, session.getActiveScene(), mouseX, mouseY, scrollY)) return true;
             return renderState == null || inputController.mouseScrolled(
                     mouseX, mouseY, scrollX, scrollY, renderState);
+        }
+        if (hudCreationOpen) {
+            assetManagerOverlay.mouseScrolled(
+                    mouseX, mouseY, scrollY, this.width, this.height,
+                    session.getActiveTabletop(), mapDefinitionRegistry,
+                    tokenDefinitionRegistry);
+            return true;
         }
         if (!backgroundImagePickerActive && !mapPickerActive
                 && hudSettingsOpen && editorSettingsOverlay.contains(
@@ -1935,6 +2019,17 @@ public final class VTTScreen extends Screen {
             } else if (keyCode == GLFW.GLFW_KEY_END) {
                 sceneBackgroundEditor.moveSelectedLayer(
                         session.getActiveScene(), SceneBackgroundEditor.LayerMove.BOTTOM);
+            }
+            return true;
+        }
+        if (hudCreationOpen) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                hudCreationOpen = false;
+            } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                assetManagerOverlay.backspace(
+                        session.getActiveTabletop(), mapDefinitionRegistry,
+                        tokenDefinitionRegistry);
+                syncAssetManagerSelection();
             }
             return true;
         }
@@ -2850,6 +2945,14 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (sceneBackgroundEditor.isActive()) return true;
+        if (hudCreationOpen) {
+            if (assetManagerOverlay.charTyped(
+                    codePoint, session.getActiveTabletop(),
+                    mapDefinitionRegistry, tokenDefinitionRegistry)) {
+                syncAssetManagerSelection();
+            }
+            return true;
+        }
         if (renamingSceneId != null) {
             if (isAllowedRenameCharacter(codePoint) && sceneRenameBuffer.length() < 48) {
                 sceneRenameBuffer += codePoint;
@@ -3268,6 +3371,39 @@ public final class VTTScreen extends Screen {
                 mapDefinitionRegistry, this.width, this.height, mouseX, mouseY);
     }
 
+    private boolean handleMapCatalogContextMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (mapCatalogContextMenu.isOpen()) {
+            MapCatalogContextMenuOverlay.Action action =
+                    mapCatalogContextMenuOverlay.getActionAt(
+                            mapCatalogContextMenu, mouseX, mouseY);
+            if (action != MapCatalogContextMenuOverlay.Action.NONE) {
+                handleMapCatalogContextMenuAction(action);
+                mapCatalogContextMenu.close();
+                return true;
+            }
+            if (!mapCatalogContextMenuOverlay.containsPoint(
+                    mapCatalogContextMenu, mouseX, mouseY)) {
+                mapCatalogContextMenu.close();
+                return true;
+            }
+        }
+        if (button != GLFW.GLFW_MOUSE_BUTTON_RIGHT
+                || !panelVisibility.isMapCatalogVisible()) return false;
+        MapDefinition clicked = mapCatalogOverlay.findMapAt(
+                mapDefinitionRegistry, this.width, this.height,
+                mouseX, mouseY, mapCatalogScrollOffset);
+        if (clicked == null) return mapCatalogOverlay.contains(
+                mapDefinitionRegistry, this.width, this.height, mouseX, mouseY);
+        mapCatalogSelection.select(clicked.id());
+        tokenCatalogContextMenu.close();
+        sceneContextMenu.close();
+        mapCatalogContextMenu.open(
+                (int) mouseX + 10, (int) mouseY - 45, clicked);
+        return true;
+    }
+
     private boolean handleSceneEditOutlinerMouseClicked(
             double mouseX, double mouseY, int button
     ) {
@@ -3355,8 +3491,39 @@ public final class VTTScreen extends Screen {
         closeBackgroundImagePicker();
     }
 
-    private void deleteSelectedMapDefinition() {
-        MapDefinition definition = selectedMapDefinition();
+    private void handleMapCatalogContextMenuAction(
+            MapCatalogContextMenuOverlay.Action action
+    ) {
+        MapDefinition definition = mapCatalogContextMenu.getMapDefinition();
+        if (definition == null) return;
+        switch (action) {
+            case EDIT -> {
+                mapCatalogSelection.select(definition.id());
+                if (sceneBackgroundEditor.isActive()) {
+                    confirmSceneBackgroundEdit();
+                }
+                beginEditSelectedMapDialog();
+            }
+            case DUPLICATE -> duplicateMapDefinition(definition);
+            case DELETE -> deleteMapDefinition(definition);
+            case NONE -> {
+            }
+        }
+    }
+
+    private void duplicateMapDefinition(MapDefinition definition) {
+        try {
+            MapDefinition duplicate = CreatedMapStorage.duplicate(definition);
+            mapDefinitionRegistry.register(duplicate);
+            mapCatalogSelection.select(duplicate.id());
+            VttClientEditorNotice.show("Map duplicated: " + duplicate.displayName());
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error("Failed to duplicate VTT map", exception);
+            VttClientEditorNotice.show("Could not duplicate map");
+        }
+    }
+
+    private void deleteMapDefinition(MapDefinition definition) {
         if (!CreatedMapStorage.isUserCreatedMap(definition)) {
             VttClientEditorNotice.show("Select a user-created map first");
             return;
