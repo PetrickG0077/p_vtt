@@ -1614,6 +1614,11 @@ public final class VTTScreen extends Screen {
             }
 
             if (panelVisibility.isSceneListVisible()) {
+                if (sceneListOverlay.openFolderAt(
+                        session.getActiveTabletop(), this.width, this.height,
+                        mouseX, mouseY)) {
+                    return true;
+                }
                 Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
                         session.getActiveTabletop(), this.width, this.height, mouseX, mouseY);
                 if (clickedSceneId.isPresent()) {
@@ -3179,6 +3184,13 @@ public final class VTTScreen extends Screen {
                     mapDefinitionRegistry, this.height, mouseY);
             return true;
         }
+        if (mapCatalogOverlay.openFolderAt(
+                mapDefinitionRegistry, this.width, this.height,
+                mouseX, mouseY, mapCatalogScrollOffset)) {
+            mapCatalogScrollOffset = 0;
+            mapCatalogSelection.clear();
+            return true;
+        }
         MapDefinition clicked = mapCatalogOverlay.findMapAt(
                 mapDefinitionRegistry, this.width, this.height,
                 mouseX, mouseY, mapCatalogScrollOffset);
@@ -3603,7 +3615,8 @@ public final class VTTScreen extends Screen {
                     : CreatedMapStorage.updateAndSave(
                     existing, newMapNameBuffer, newMapAssetId,
                     newMapPreviewWidth, newMapPreviewHeight, newMapTextureMode);
-            mapDefinitionRegistry.register(definition);
+            mapDefinitionRegistry.register(
+                    definition, CreatedMapStorage.folderOf(definition));
             if (existing != null && session.getActiveScene() != null) {
                 session.getActiveScene().getMaps().stream()
                         .filter(map -> map != null
@@ -3652,6 +3665,13 @@ public final class VTTScreen extends Screen {
             draggingMapCatalogScrollbar = true;
             mapCatalogScrollOffset = mapCatalogOverlay.scrollOffsetFromMouse(
                     mapDefinitionRegistry, this.height, mouseY);
+            return true;
+        }
+        if (mapCatalogOverlay.openFolderAt(
+                mapDefinitionRegistry, this.width, this.height,
+                mouseX, mouseY, mapCatalogScrollOffset)) {
+            mapCatalogScrollOffset = 0;
+            mapCatalogSelection.clear();
             return true;
         }
         MapDefinition clickedMap = mapCatalogOverlay.findMapAt(
@@ -3812,7 +3832,8 @@ public final class VTTScreen extends Screen {
     private void duplicateMapDefinition(MapDefinition definition) {
         try {
             MapDefinition duplicate = CreatedMapStorage.duplicate(definition);
-            mapDefinitionRegistry.register(duplicate);
+            mapDefinitionRegistry.register(
+                    duplicate, CreatedMapStorage.folderOf(duplicate));
             mapCatalogSelection.select(duplicate.id());
             VttClientEditorNotice.show("Map duplicated: " + duplicate.displayName());
         } catch (RuntimeException exception) {

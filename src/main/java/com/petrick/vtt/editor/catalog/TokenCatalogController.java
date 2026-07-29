@@ -75,6 +75,13 @@ public final class TokenCatalogController {
             clearDrag();
             return TokenCatalogClickResult.consumeClick();
         }
+        if (overlay.openFolderAt(
+                registry, screenWidth, screenHeight, mouseX, mouseY, scrollOffset)) {
+            scrollOffset = 0;
+            selection.clear();
+            clearDrag();
+            return TokenCatalogClickResult.consumeClick();
+        }
 
         Optional<TokenDefinition> clickedDefinition = overlay.findTokenDefinitionAt(
                 registry,

@@ -113,7 +113,7 @@ public final class VttServerTokenDefinitionHandler {
         String baseName = source.data().displayName + " Copy";
         copy.displayName = uniqueDisplayName(definitions, baseName);
         copy.tokenDefinitionId = uniqueDefinitionId(definitions, "user/tokens/" + sanitize(copy.displayName));
-        save(copy);
+        save(copy, source.path().getParent());
         VTT.LOGGER.info("Duplicated server VTT token definition: {} -> {}",
                 definitionId, copy.tokenDefinitionId);
         return true;
@@ -131,7 +131,7 @@ public final class VttServerTokenDefinitionHandler {
         Path folder = tokensFolder();
         Map<String, TokenFile> result = new LinkedHashMap<>();
         if (!Files.isDirectory(folder)) return result;
-        try (Stream<Path> files = Files.list(folder)) {
+        try (Stream<Path> files = Files.walk(folder)) {
             for (Path file : files.filter(Files::isRegularFile)
                     .filter(path -> path.toString().toLowerCase().endsWith(".json")).toList()) {
                 try (Reader reader = Files.newBufferedReader(file)) {
@@ -211,9 +211,15 @@ public final class VttServerTokenDefinitionHandler {
     }
 
     private static void save(CreatedTokenSaveData data) throws IOException {
-        Path folder = tokensFolder();
+        TokenFile existing = loadDefinitions().get(data.tokenDefinitionId);
+        Path folder = existing == null ? tokensFolder() : existing.path().getParent();
+        save(data, folder);
+    }
+
+    private static void save(CreatedTokenSaveData data, Path folder) throws IOException {
+        if (folder == null) folder = tokensFolder();
         Files.createDirectories(folder);
-        deleteOldDefinitionFile(folder, data.tokenDefinitionId);
+        deleteOldDefinitionFile(tokensFolder(), data.tokenDefinitionId);
         Path target = folder.resolve(sanitize(data.displayName) + ".json").normalize();
         if (!target.startsWith(folder)) throw new IOException("Invalid token file path");
         try (Writer writer = Files.newBufferedWriter(target)) {
@@ -227,7 +233,7 @@ public final class VttServerTokenDefinitionHandler {
     }
 
     private static void deleteOldDefinitionFile(Path folder, String definitionId) throws IOException {
-        try (Stream<Path> files = Files.list(folder)) {
+        try (Stream<Path> files = Files.walk(folder)) {
             for (Path file : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".json")).toList()) {
                 boolean matches = false;
                 try (Reader reader = Files.newBufferedReader(file)) {

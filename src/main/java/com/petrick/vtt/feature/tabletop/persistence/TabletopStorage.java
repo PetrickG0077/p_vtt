@@ -19,6 +19,9 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.function.Predicate;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * Serviço responsável por salvar e carregar Tabletop/Scenes em JSON.
@@ -33,6 +36,7 @@ public final class TabletopStorage {
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
             .create();
+    private final Map<String, Path> sceneFilesById = new HashMap<>();
 
     private final TabletopStoragePaths paths;
 
@@ -99,12 +103,17 @@ public final class TabletopStorage {
         Path file = paths.tabletopFile(tabletopId);
         VttTabletop tabletop = loadWithRecovery(file, VttTabletop.class,
                 this::validTabletop, "tabletop", TabletopSchemaMigrator.DocumentType.TABLETOP);
-        if (tabletop != null) warnComplexity(tabletop.getId(), VttSceneLimits.inspect(tabletop));
+        if (tabletop != null) {
+            tabletop.getSceneIds().forEach(sceneId ->
+                    tabletop.setSceneFolder(
+                            sceneId, sceneFolder(tabletop.getId(), sceneId)));
+            warnComplexity(tabletop.getId(), VttSceneLimits.inspect(tabletop));
+        }
         return tabletop;
     }
 
     public synchronized VttScene loadScene(String tabletopId, String sceneId) {
-        Path file = paths.sceneFile(tabletopId, sceneId);
+        Path file = findSceneFile(tabletopId, sceneId);
         VttScene scene = loadWithRecovery(file, VttScene.class, this::validScene,
                 "scene", TabletopSchemaMigrator.DocumentType.SCENE);
         if (scene != null) {
@@ -189,7 +198,7 @@ public final class TabletopStorage {
         scene.setSchemaVersion(TabletopSchemaMigrator.CURRENT_SCENE_SCHEMA_VERSION);
         paths.ensureTabletopFoldersExist(tabletopId);
 
-        Path file = paths.sceneFile(tabletopId, scene.getId());
+        Path file = findSceneFile(tabletopId, scene.getId());
 
         return writeAtomically(file, scene, VttScene.class, this::validScene, "scene");
     }
@@ -210,7 +219,7 @@ public final class TabletopStorage {
         if (tabletopId == null || tabletopId.isBlank() || sceneId == null || sceneId.isBlank()) {
             return false;
         }
-        Path file = paths.sceneFile(tabletopId, sceneId);
+        Path file = findSceneFile(tabletopId, sceneId);
         try {
             Files.deleteIfExists(file);
             Files.deleteIfExists(temporaryFile(file));
@@ -222,6 +231,40 @@ public final class TabletopStorage {
         } catch (IOException | RuntimeException exception) {
             VTT.LOGGER.error("Failed to delete VTT scene JSON: {}", file, exception);
             return false;
+        }
+    }
+
+    public synchronized String sceneFolder(String tabletopId, String sceneId) {
+        Path root = paths.scenesFolder(tabletopId).toAbsolutePath().normalize();
+        Path file = findSceneFile(tabletopId, sceneId).toAbsolutePath().normalize();
+        Path parent = file.getParent();
+        if (parent == null || !parent.startsWith(root)) return "";
+        String relative = root.relativize(parent).toString();
+        return ".".equals(relative) ? "" : relative.replace('\\', '/');
+    }
+
+    private Path findSceneFile(String tabletopId, String sceneId) {
+        String cacheKey = tabletopId + "\n" + sceneId;
+        Path cached = sceneFilesById.get(cacheKey);
+        if (cached != null && Files.isRegularFile(cached)) return cached;
+        Path expected = paths.sceneFile(tabletopId, sceneId);
+        if (Files.isRegularFile(expected)) {
+            sceneFilesById.put(cacheKey, expected);
+            return expected;
+        }
+        Path folder = paths.scenesFolder(tabletopId);
+        if (!Files.isDirectory(folder)) return expected;
+        String expectedName = expected.getFileName().toString();
+        try (Stream<Path> files = Files.walk(folder)) {
+            Path found = files.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString()
+                            .equalsIgnoreCase(expectedName))
+                    .findFirst().orElse(expected);
+            sceneFilesById.put(cacheKey, found);
+            return found;
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not search scene folders for {}", sceneId, exception);
+            return expected;
         }
     }
 

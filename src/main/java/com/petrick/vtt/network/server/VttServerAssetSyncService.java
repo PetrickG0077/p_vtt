@@ -191,7 +191,7 @@ public final class VttServerAssetSyncService {
         }
 
         if (Files.isDirectory(tokensRoot)) {
-            try (Stream<Path> stream = Files.list(tokensRoot)) {
+            try (Stream<Path> stream = Files.walk(tokensRoot)) {
                 stream.filter(Files::isRegularFile).filter(path -> path.toString().toLowerCase().endsWith(".json"))
                         .peek(path -> checkCancelled())
                         .forEach(path -> collectToken(path, definitionIds, includeAllTokens,

@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.editor.catalog.MapCatalogSelection;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
@@ -11,7 +12,6 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.resources.ResourceLocation;
 
-import java.util.Comparator;
 import java.util.List;
 
 /** Compact list of reusable maps, positioned above the bottom editor HUD. */
@@ -23,6 +23,8 @@ public final class MapCatalogOverlay {
     private static final int MAX_VISIBLE = 2;
     private static final int OFFSET_FROM_BOTTOM = 40;
     private static final int BORDER = 0xFF66CCFF;
+    private final CatalogFolderBrowser<MapDefinition> folderBrowser =
+            new CatalogFolderBrowser<>();
 
     public void render(
             VRenderContext context,
@@ -33,28 +35,41 @@ public final class MapCatalogOverlay {
             AssetThumbnailRegistry thumbnails,
             int scrollOffset
     ) {
-        List<MapDefinition> maps = sorted(registry);
-        int first = clampScrollOffset(registry, scrollOffset);
-        int visible = Math.min(MAX_VISIBLE, Math.max(0, maps.size() - first));
-        int height = panelHeight(maps.size());
+        List<CatalogFolderBrowser.Row<MapDefinition>> rows = visibleRows(registry);
+        int first = clampOffset(rows.size(), scrollOffset);
+        int visible = Math.min(MAX_VISIBLE, Math.max(0, rows.size() - first));
+        int height = panelHeight(rows.size());
         int x = panelX(context.screenWidth());
         int y = panelY(context.screenHeight(), height);
 
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xDD000000);
         border(context, x, y, WIDTH, height, BORDER);
-        context.graphics().drawString(font, "Map Catalog", x + PADDING, y + PADDING,
+        context.graphics().drawString(font, folderBrowser.breadcrumb("Map Catalog"),
+                x + PADDING, y + PADDING,
                 0xFFFFFFFF, false);
-        context.graphics().drawString(font, "Maps: " + maps.size(), x + PADDING, y + 20,
+        context.graphics().drawString(font, "Maps: " + (registry == null ? 0 : registry.size()),
+                x + PADDING, y + 20,
                 0xFFBBBBBB, false);
 
         int rowY = firstRowY(y);
-        if (maps.isEmpty()) {
+        if (rows.isEmpty()) {
             context.graphics().drawString(font, "No maps created", x + PADDING, rowY + 8,
                     0xFF888888, false);
             return;
         }
         for (int index = 0; index < visible; index++) {
-            MapDefinition definition = maps.get(first + index);
+            CatalogFolderBrowser.Row<MapDefinition> row = rows.get(first + index);
+            if (row.folder()) {
+                context.graphics().fill(x + 4, rowY, x + WIDTH - 4,
+                        rowY + ROW_HEIGHT, 0x33225566);
+                context.graphics().drawString(font,
+                        (row.displayName().equals("..") ? "↑ " : "▸ ")
+                                + row.displayName(),
+                        x + PADDING, rowY + 12, 0xFFFFDD88, false);
+                rowY += ROW_HEIGHT;
+                continue;
+            }
+            MapDefinition definition = row.item();
             boolean selected = selection != null && selection.isSelected(definition.id());
             boolean hovered = rowContains(x, rowY, context.mouseX(), context.mouseY());
             if (selected || hovered) {
@@ -75,12 +90,12 @@ public final class MapCatalogOverlay {
                     0xFF999999, false);
             rowY += ROW_HEIGHT;
         }
-        if (maps.size() > MAX_VISIBLE) {
+        if (rows.size() > MAX_VISIBLE) {
             context.graphics().drawString(font,
-                    (first + 1) + "-" + (first + visible) + " / " + maps.size(),
+                    (first + 1) + "-" + (first + visible) + " / " + rows.size(),
                     x + PADDING, rowY + 2, 0xFF999999, false);
             EditorScrollbar.render(context, x + WIDTH - 9, firstRowY(y), 4,
-                    MAX_VISIBLE * ROW_HEIGHT, maps.size(), MAX_VISIBLE, first, BORDER);
+                    MAX_VISIBLE * ROW_HEIGHT, rows.size(), MAX_VISIBLE, first, BORDER);
         }
     }
 
@@ -92,19 +107,41 @@ public final class MapCatalogOverlay {
             double mouseY,
             int scrollOffset
     ) {
-        List<MapDefinition> maps = sorted(registry);
-        int height = panelHeight(maps.size());
+        List<CatalogFolderBrowser.Row<MapDefinition>> rows = visibleRows(registry);
+        int height = panelHeight(rows.size());
         int x = panelX(screenWidth);
         int y = panelY(screenHeight, height);
-        int first = clampScrollOffset(registry, scrollOffset);
-        int visible = Math.min(MAX_VISIBLE, Math.max(0, maps.size() - first));
+        int first = clampOffset(rows.size(), scrollOffset);
+        int visible = Math.min(MAX_VISIBLE, Math.max(0, rows.size() - first));
         int rowY = firstRowY(y);
         for (int index = 0; index < visible; index++) {
             if (rowContains(x, rowY + index * ROW_HEIGHT, mouseX, mouseY)) {
-                return maps.get(first + index);
+                return rows.get(first + index).item();
             }
         }
         return null;
+    }
+
+    public boolean openFolderAt(
+            MapDefinitionRegistry registry,
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY,
+            int scrollOffset
+    ) {
+        List<CatalogFolderBrowser.Row<MapDefinition>> rows = visibleRows(registry);
+        int x = panelX(screenWidth);
+        int y = panelY(screenHeight, panelHeight(rows.size()));
+        int first = clampOffset(rows.size(), scrollOffset);
+        int visible = Math.min(MAX_VISIBLE, Math.max(0, rows.size() - first));
+        int rowY = firstRowY(y);
+        for (int index = 0; index < visible; index++) {
+            if (rowContains(x, rowY + index * ROW_HEIGHT, mouseX, mouseY)) {
+                return folderBrowser.open(rows.get(first + index));
+            }
+        }
+        return false;
     }
 
     public void renderDragPreview(
@@ -128,14 +165,14 @@ public final class MapCatalogOverlay {
             double mouseX,
             double mouseY
     ) {
-        int height = panelHeight(registry == null ? 0 : registry.size());
+        int height = panelHeight(visibleRows(registry).size());
         int x = panelX(screenWidth);
         int y = panelY(screenHeight, height);
         return mouseX >= x && mouseX <= x + WIDTH && mouseY >= y && mouseY <= y + height;
     }
 
     public int clampScrollOffset(MapDefinitionRegistry registry, int value) {
-        int count = registry == null ? 0 : registry.size();
+        int count = visibleRows(registry).size();
         return Math.max(0, Math.min(value, Math.max(0, count - MAX_VISIBLE)));
     }
 
@@ -146,7 +183,7 @@ public final class MapCatalogOverlay {
             double mouseX,
             double mouseY
     ) {
-        int count = registry == null ? 0 : registry.size();
+        int count = visibleRows(registry).size();
         if (count <= MAX_VISIBLE) return false;
         int height = panelHeight(count);
         int x = panelX(screenWidth);
@@ -161,7 +198,7 @@ public final class MapCatalogOverlay {
             int screenHeight,
             double mouseY
     ) {
-        int count = registry == null ? 0 : registry.size();
+        int count = visibleRows(registry).size();
         int y = panelY(screenHeight, panelHeight(count));
         return EditorScrollbar.offsetForMouse(
                 mouseY, firstRowY(y), MAX_VISIBLE * ROW_HEIGHT,
@@ -204,12 +241,18 @@ public final class MapCatalogOverlay {
         border(context, x, y, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 0xFFDDDDDD);
     }
 
-    private List<MapDefinition> sorted(MapDefinitionRegistry registry) {
+    private List<CatalogFolderBrowser.Row<MapDefinition>> visibleRows(
+            MapDefinitionRegistry registry
+    ) {
         if (registry == null) return List.of();
-        return registry.getAll().stream()
-                .sorted(Comparator.comparing(MapDefinition::displayName,
-                        String.CASE_INSENSITIVE_ORDER))
-                .toList();
+        return folderBrowser.rows(
+                registry.getAll(),
+                definition -> registry.folderOf(definition.id()),
+                MapDefinition::displayName);
+    }
+
+    private int clampOffset(int count, int value) {
+        return Math.max(0, Math.min(value, Math.max(0, count - MAX_VISIBLE)));
     }
 
     private int panelHeight(int count) {

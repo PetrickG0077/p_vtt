@@ -17,13 +17,19 @@ import java.util.Optional;
 public final class TokenDefinitionRegistry {
 
     private final Map<String, TokenDefinition> definitionsById = new HashMap<>();
+    private final Map<String, String> foldersById = new HashMap<>();
 
     public void register(TokenDefinition definition) {
+        register(definition, "");
+    }
+
+    public void register(TokenDefinition definition, String folderPath) {
         if (definition == null) {
             throw new IllegalArgumentException("TokenDefinition cannot be null");
         }
 
         definitionsById.put(definition.id(), definition);
+        foldersById.put(definition.id(), normalizeFolder(folderPath));
     }
 
     public Optional<TokenDefinition> findById(String id) {
@@ -53,6 +59,7 @@ public final class TokenDefinitionRegistry {
         }
 
         definitionsById.remove(id);
+        foldersById.remove(id);
     }
 
     public boolean contains(String id) {
@@ -65,5 +72,15 @@ public final class TokenDefinitionRegistry {
 
     public void clear() {
         definitionsById.clear();
+        foldersById.clear();
+    }
+
+    public String folderOf(String id) {
+        return id == null ? "" : foldersById.getOrDefault(id, "");
+    }
+
+    private String normalizeFolder(String value) {
+        if (value == null || value.isBlank() || ".".equals(value)) return "";
+        return value.replace('\\', '/').replaceAll("^/+|/+$", "");
     }
 }

@@ -8,10 +8,16 @@ import java.util.Optional;
 /** In-memory registry of reusable map definitions. */
 public final class MapDefinitionRegistry {
     private final Map<String, MapDefinition> definitionsById = new LinkedHashMap<>();
+    private final Map<String, String> foldersById = new LinkedHashMap<>();
 
     public void register(MapDefinition definition) {
+        register(definition, "");
+    }
+
+    public void register(MapDefinition definition, String folderPath) {
         if (definition == null) throw new IllegalArgumentException("MapDefinition cannot be null");
         definitionsById.put(definition.id(), definition);
+        foldersById.put(definition.id(), normalizeFolder(folderPath));
     }
 
     public Optional<MapDefinition> findById(String id) {
@@ -24,7 +30,10 @@ public final class MapDefinitionRegistry {
     }
 
     public void removeById(String id) {
-        if (id != null) definitionsById.remove(id);
+        if (id != null) {
+            definitionsById.remove(id);
+            foldersById.remove(id);
+        }
     }
 
     public int size() {
@@ -33,5 +42,15 @@ public final class MapDefinitionRegistry {
 
     public void clear() {
         definitionsById.clear();
+        foldersById.clear();
+    }
+
+    public String folderOf(String id) {
+        return id == null ? "" : foldersById.getOrDefault(id, "");
+    }
+
+    private String normalizeFolder(String value) {
+        if (value == null || value.isBlank() || ".".equals(value)) return "";
+        return value.replace('\\', '/').replaceAll("^/+|/+$", "");
     }
 }

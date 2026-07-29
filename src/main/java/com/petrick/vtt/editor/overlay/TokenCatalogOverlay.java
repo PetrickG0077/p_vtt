@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
@@ -10,8 +11,6 @@ import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -72,6 +71,8 @@ public final class TokenCatalogOverlay {
     private static final int DETAILS_POPUP_WIDTH = 230;
 
     private final CanvasVisualRenderer visualRenderer;
+    private final CatalogFolderBrowser<TokenDefinition> folderBrowser =
+            new CatalogFolderBrowser<>();
 
     private boolean detailsPopupSuppressed;
 
@@ -86,7 +87,8 @@ public final class TokenCatalogOverlay {
             TokenCatalogSelection selection,
             int scrollOffset
     ) {
-        List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
+        List<CatalogFolderBrowser.Row<TokenDefinition>> rows =
+                getVisibleRows(tokenDefinitionRegistry);
 
         Optional<TokenDefinition> hoveredDefinition = findTokenDefinitionAt(
                 tokenDefinitionRegistry,
@@ -99,7 +101,7 @@ public final class TokenCatalogOverlay {
 
         TokenDefinition detailsDefinition = resolveDetailsDefinition(hoveredDefinition);
 
-        int panelHeight = calculatePanelHeight(definitions.size());
+        int panelHeight = calculatePanelHeight(rows.size());
 
         int x = getPanelX(context.screenWidth());
         int y = getPanelY(context.screenHeight(), panelHeight);
@@ -109,29 +111,38 @@ public final class TokenCatalogOverlay {
         int textX = x + PADDING;
         int textY = y + PADDING;
 
-        drawLine(context, font, "Token Catalog", textX, textY, TITLE_COLOR);
+        drawLine(context, font, folderBrowser.breadcrumb("Token Catalog"),
+                textX, textY, TITLE_COLOR);
         textY += LINE_HEIGHT + 4;
 
         drawLine(
                 context,
                 font,
-                "Tokens: " + definitions.size(),
+                "Tokens: " + (tokenDefinitionRegistry == null
+                        ? 0 : tokenDefinitionRegistry.size()),
                 textX,
                 textY,
                 TEXT_COLOR
         );
         textY += LINE_HEIGHT + 4;
 
-        if (definitions.isEmpty()) {
+        if (rows.isEmpty()) {
             drawLine(context, font, "No token definitions", textX, textY, MUTED_TEXT_COLOR);
             return;
         }
 
-        int firstDefinition = clampScrollOffset(definitions.size(), scrollOffset);
-        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, definitions.size() - firstDefinition);
+        int firstDefinition = clampScrollOffset(rows.size(), scrollOffset);
+        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, rows.size() - firstDefinition);
 
         for (int i = 0; i < visibleDefinitions; i++) {
-            TokenDefinition definition = definitions.get(firstDefinition + i);
+            CatalogFolderBrowser.Row<TokenDefinition> row =
+                    rows.get(firstDefinition + i);
+            if (row.folder()) {
+                renderFolderRow(context, font, row, textX, textY);
+                textY += TOKEN_ROW_HEIGHT;
+                continue;
+            }
+            TokenDefinition definition = row.item();
 
             boolean hovered = hoveredDefinition
                     .map(tokenDefinition -> tokenDefinition.id().equals(definition.id()))
@@ -152,12 +163,12 @@ public final class TokenCatalogOverlay {
             textY += TOKEN_ROW_HEIGHT;
         }
 
-        if (definitions.size() > MAX_VISIBLE_TOKENS) {
+        if (rows.size() > MAX_VISIBLE_TOKENS) {
             drawLine(
                     context,
                     font,
                     (firstDefinition + 1) + "-"
-                            + (firstDefinition + visibleDefinitions) + " / " + definitions.size(),
+                            + (firstDefinition + visibleDefinitions) + " / " + rows.size(),
                     textX,
                     textY,
                     MUTED_TEXT_COLOR
@@ -169,7 +180,7 @@ public final class TokenCatalogOverlay {
                     getFirstTokenY(y),
                     4,
                     MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT,
-                    definitions.size(),
+                    rows.size(),
                     MAX_VISIBLE_TOKENS,
                     firstDefinition,
                     PANEL_BORDER
@@ -211,9 +222,7 @@ public final class TokenCatalogOverlay {
             double mouseX,
             double mouseY
     ) {
-        int tokenCount = tokenDefinitionRegistry == null
-                ? 0
-                : tokenDefinitionRegistry.getAll().size();
+        int tokenCount = getVisibleRows(tokenDefinitionRegistry).size();
 
         int panelHeight = calculatePanelHeight(tokenCount);
 
@@ -282,6 +291,21 @@ public final class TokenCatalogOverlay {
                 subtitleY,
                 MUTED_TEXT_COLOR
         );
+    }
+
+    private void renderFolderRow(
+            VRenderContext context,
+            Font font,
+            CatalogFolderBrowser.Row<TokenDefinition> row,
+            int x,
+            int y
+    ) {
+        context.graphics().fill(
+                x - 3, y, x + PANEL_WIDTH - PADDING * 2,
+                y + TOKEN_ROW_HEIGHT, 0x33225566);
+        String prefix = row.displayName().equals("..") ? "↑ " : "▸ ";
+        drawLine(context, font, prefix + row.displayName(),
+                x + 4, y + 10, HOVER_TEXT_COLOR);
     }
 
     private void renderTokenThumbnail(
@@ -393,13 +417,14 @@ public final class TokenCatalogOverlay {
             double mouseY,
             int scrollOffset
     ) {
-        List<TokenDefinition> definitions = getSortedDefinitions(tokenDefinitionRegistry);
+        List<CatalogFolderBrowser.Row<TokenDefinition>> rows =
+                getVisibleRows(tokenDefinitionRegistry);
 
-        if (definitions.isEmpty()) {
+        if (rows.isEmpty()) {
             return Optional.empty();
         }
 
-        int panelHeight = calculatePanelHeight(definitions.size());
+        int panelHeight = calculatePanelHeight(rows.size());
 
         int panelX = getPanelX(screenWidth);
         int panelY = getPanelY(screenHeight, panelHeight);
@@ -414,24 +439,49 @@ public final class TokenCatalogOverlay {
 
         int firstTokenY = getFirstTokenY(panelY);
 
-        int firstDefinition = clampScrollOffset(definitions.size(), scrollOffset);
-        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, definitions.size() - firstDefinition);
+        int firstDefinition = clampScrollOffset(rows.size(), scrollOffset);
+        int visibleDefinitions = Math.min(MAX_VISIBLE_TOKENS, rows.size() - firstDefinition);
 
         for (int i = 0; i < visibleDefinitions; i++) {
             int rowTop = firstTokenY + i * TOKEN_ROW_HEIGHT;
             int rowBottom = rowTop + TOKEN_ROW_HEIGHT;
 
             if (mouseY >= rowTop && mouseY <= rowBottom) {
-                return Optional.of(definitions.get(firstDefinition + i));
+                return Optional.ofNullable(rows.get(firstDefinition + i).item());
             }
         }
 
         return Optional.empty();
     }
 
+    public boolean openFolderAt(
+            TokenDefinitionRegistry registry,
+            int screenWidth,
+            int screenHeight,
+            double mouseX,
+            double mouseY,
+            int scrollOffset
+    ) {
+        List<CatalogFolderBrowser.Row<TokenDefinition>> rows = getVisibleRows(registry);
+        int panelHeight = calculatePanelHeight(rows.size());
+        int panelX = getPanelX(screenWidth);
+        int panelY = getPanelY(screenHeight, panelHeight);
+        if (mouseX < panelX || mouseX > panelX + PANEL_WIDTH) return false;
+        int first = clampScrollOffset(rows.size(), scrollOffset);
+        int visible = Math.min(MAX_VISIBLE_TOKENS, rows.size() - first);
+        int firstY = getFirstTokenY(panelY);
+        for (int index = 0; index < visible; index++) {
+            int top = firstY + index * TOKEN_ROW_HEIGHT;
+            if (mouseY >= top && mouseY <= top + TOKEN_ROW_HEIGHT) {
+                return folderBrowser.open(rows.get(first + index));
+            }
+        }
+        return false;
+    }
+
     public boolean isScrollbarAt(TokenDefinitionRegistry registry, int screenWidth, int screenHeight,
                                  double mouseX, double mouseY) {
-        int tokenCount = registry == null ? 0 : registry.size();
+        int tokenCount = getVisibleRows(registry).size();
         if (tokenCount <= MAX_VISIBLE_TOKENS) return false;
         int panelY = getPanelY(screenHeight, calculatePanelHeight(tokenCount));
         return EditorScrollbar.contains(mouseX, mouseY,
@@ -441,14 +491,14 @@ public final class TokenCatalogOverlay {
 
     public int scrollOffsetFromMouse(TokenDefinitionRegistry registry, int screenHeight,
                                      double mouseY) {
-        int tokenCount = registry == null ? 0 : registry.size();
+        int tokenCount = getVisibleRows(registry).size();
         int panelY = getPanelY(screenHeight, calculatePanelHeight(tokenCount));
         return EditorScrollbar.offsetForMouse(mouseY, getFirstTokenY(panelY),
                 MAX_VISIBLE_TOKENS * TOKEN_ROW_HEIGHT, tokenCount, MAX_VISIBLE_TOKENS);
     }
 
     public int clampScrollOffset(TokenDefinitionRegistry registry, int offset) {
-        return clampScrollOffset(registry == null ? 0 : registry.size(), offset);
+        return clampScrollOffset(getVisibleRows(registry).size(), offset);
     }
 
     private int clampScrollOffset(int tokenCount, int offset) {
@@ -621,16 +671,14 @@ public final class TokenCatalogOverlay {
         return hoveredDefinition.orElse(null);
     }
 
-    private List<TokenDefinition> getSortedDefinitions(TokenDefinitionRegistry tokenDefinitionRegistry) {
-        if (tokenDefinitionRegistry == null) {
-            return new ArrayList<>();
-        }
-
-        List<TokenDefinition> definitions = new ArrayList<>(tokenDefinitionRegistry.getAll());
-
-        definitions.sort(Comparator.comparing(TokenDefinition::displayName));
-
-        return definitions;
+    private List<CatalogFolderBrowser.Row<TokenDefinition>> getVisibleRows(
+            TokenDefinitionRegistry registry
+    ) {
+        if (registry == null) return List.of();
+        return folderBrowser.rows(
+                registry.getAll(),
+                definition -> registry.folderOf(definition.id()),
+                TokenDefinition::displayName);
     }
 
     private int calculatePanelHeight(int tokenCount) {

@@ -31,6 +31,7 @@ public final class VttTabletop {
 
     /** Lightweight scene metadata used by the scene list without loading every scene JSON. */
     private Map<String, String> sceneDisplayNames = new LinkedHashMap<>();
+    private Map<String, String> sceneFolders = new LinkedHashMap<>();
 
     public VttTabletop() {
         this("default", "Default Tabletop");
@@ -95,6 +96,7 @@ public final class VttTabletop {
 
         sceneIds.remove(sceneId);
         sceneDisplayNames().remove(sceneId);
+        sceneFolders().remove(sceneId);
 
         if (sceneId.equals(activeSceneId)) {
             activeSceneId = sceneIds.isEmpty()
@@ -123,9 +125,30 @@ public final class VttTabletop {
         sceneDisplayNames().put(sceneId, normalized);
     }
 
+    public String getSceneFolder(String sceneId) {
+        if (sceneId == null) return "";
+        return sceneFolders().getOrDefault(sceneId, "");
+    }
+
+    public void setSceneFolder(String sceneId, String folder) {
+        if (sceneId == null || sceneId.isBlank()) return;
+        String normalized = folder == null ? "" : folder.replace('\\', '/')
+                .replaceAll("/+", "/").replaceAll("^/+|/+$", "");
+        if (normalized.isBlank()) {
+            sceneFolders().remove(sceneId);
+        } else {
+            sceneFolders().put(sceneId, normalized);
+        }
+    }
+
     private Map<String, String> sceneDisplayNames() {
         if (sceneDisplayNames == null) sceneDisplayNames = new LinkedHashMap<>();
         return sceneDisplayNames;
+    }
+
+    private Map<String, String> sceneFolders() {
+        if (sceneFolders == null) sceneFolders = new LinkedHashMap<>();
+        return sceneFolders;
     }
 
     private String normalizeId(String value) {

@@ -102,12 +102,13 @@ public final class CreatedTokenStorage {
             return;
         }
 
-        try (Stream<Path> files = Files.list(folder)) {
+        try (Stream<Path> files = Files.walk(folder)) {
             files
                     .filter(Files::isRegularFile)
                     .filter(CreatedTokenStorage::isJsonFile)
                     .forEach(file -> loadCreatedTokenFile(
                             file,
+                            folder,
                             tokenDefinitionRegistry,
                             assetRegistry
                     ));
@@ -180,7 +181,7 @@ public final class CreatedTokenStorage {
         Path expected = folder.resolve(createFileName(definition.displayName()));
         if (Files.isRegularFile(expected)) return expected;
         if (!Files.isDirectory(folder)) return null;
-        try (Stream<Path> files = Files.list(folder)) {
+        try (Stream<Path> files = Files.walk(folder)) {
             for (Path candidate : files.filter(Files::isRegularFile).filter(CreatedTokenStorage::isJsonFile).toList()) {
                 try (Reader reader = Files.newBufferedReader(candidate)) {
                     CreatedTokenSaveData data = GSON.fromJson(reader, CreatedTokenSaveData.class);
@@ -274,7 +275,10 @@ public final class CreatedTokenStorage {
         CreatedTokenSaveData data = createSaveDataForEditedDraft(draft);
 
         try {
-            deleteOldFileIfRenamed(draft, data);
+            Path existingFile = findTokenFile(getTokensFolder(), oldDefinition);
+            Path targetFolder = existingFile == null
+                    ? getTokensFolder() : existingFile.getParent();
+            deleteOldFileIfRenamed(draft, data, targetFolder);
 
             TokenDefinition updatedDefinition = createTokenDefinitionFromSaveData(
                     data,
@@ -282,9 +286,10 @@ public final class CreatedTokenStorage {
             );
 
             tokenDefinitionRegistry.removeById(oldDefinition.id());
-            tokenDefinitionRegistry.register(updatedDefinition);
+            tokenDefinitionRegistry.register(
+                    updatedDefinition, relativeFolder(getTokensFolder(), targetFolder));
 
-            saveCreatedTokenData(data);
+            saveCreatedTokenData(data, targetFolder);
 
             VTT.LOGGER.info("Updated created VTT token: {}", updatedDefinition.id());
 
@@ -313,9 +318,9 @@ public final class CreatedTokenStorage {
             return;
         }
 
-        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+        Path file = findTokenFile(getTokensFolder(), definition);
 
-        if (Files.exists(file)) {
+        if (file != null && Files.exists(file)) {
             openInExplorer(file.getParent());
             return;
         }
@@ -354,9 +359,9 @@ public final class CreatedTokenStorage {
             return null;
         }
 
-        Path sourceFile = getTokensFolder().resolve(createFileName(sourceDefinition.displayName()));
+        Path sourceFile = findTokenFile(getTokensFolder(), sourceDefinition);
 
-        if (!Files.exists(sourceFile)) {
+        if (sourceFile == null || !Files.exists(sourceFile)) {
             VTT.LOGGER.warn("Cannot duplicate token because JSON file does not exist: {}", sourceFile);
             return null;
         }
@@ -379,34 +384,21 @@ public final class CreatedTokenStorage {
                     USER_TOKEN_ID_PREFIX + sanitizeFileName(newDisplayName)
             );
 
-            CreatedTokenSaveData duplicatedData = new CreatedTokenSaveData();
-
+            CreatedTokenSaveData duplicatedData = GSON.fromJson(
+                    GSON.toJson(sourceData), CreatedTokenSaveData.class);
             duplicatedData.tokenDefinitionId = newTokenDefinitionId;
             duplicatedData.displayName = newDisplayName;
-
-            duplicatedData.player = sourceData.player;
-            duplicatedData.notes = sourceData.notes;
-
-            duplicatedData.selectedImageId = sourceData.selectedImageId;
-            duplicatedData.selectedImageDisplayName = sourceData.selectedImageDisplayName;
-            duplicatedData.selectedImageTextureId = sourceData.selectedImageTextureId;
-
-            duplicatedData.selectedImageWidth = sourceData.selectedImageWidth;
-            duplicatedData.selectedImageHeight = sourceData.selectedImageHeight;
-
-            duplicatedData.defaultWidth = sourceData.defaultWidth;
-            duplicatedData.defaultHeight = sourceData.defaultHeight;
-
-            duplicatedData.activeStateId = sourceData.activeStateId;
 
             TokenDefinition duplicatedDefinition = createTokenDefinitionFromSaveData(
                     duplicatedData,
                     assetRegistry
             );
 
-            tokenDefinitionRegistry.register(duplicatedDefinition);
+            Path targetFolder = sourceFile.getParent();
+            tokenDefinitionRegistry.register(
+                    duplicatedDefinition, relativeFolder(getTokensFolder(), targetFolder));
 
-            saveCreatedTokenData(duplicatedData);
+            saveCreatedTokenData(duplicatedData, targetFolder);
 
             VTT.LOGGER.info(
                     "Duplicated created VTT token: {} -> {}",
@@ -439,7 +431,11 @@ public final class CreatedTokenStorage {
             return;
         }
 
-        Path file = getTokensFolder().resolve(createFileName(definition.displayName()));
+        Path file = findTokenFile(getTokensFolder(), definition);
+        if (file == null) {
+            VTT.LOGGER.warn("Created VTT token file did not exist: {}", definition.id());
+            return;
+        }
 
         try {
             boolean deleted = Files.deleteIfExists(file);
@@ -469,6 +465,7 @@ public final class CreatedTokenStorage {
 
     private static void loadCreatedTokenFile(
             Path file,
+            Path rootFolder,
             TokenDefinitionRegistry tokenDefinitionRegistry,
             AssetRegistry assetRegistry
     ) {
@@ -485,7 +482,8 @@ public final class CreatedTokenStorage {
                     assetRegistry
             );
 
-            tokenDefinitionRegistry.register(definition);
+            tokenDefinitionRegistry.register(
+                    definition, relativeFolder(rootFolder, file.getParent()));
 
             VTT.LOGGER.info("Loaded created VTT token: {}", file);
         } catch (Exception exception) {
@@ -813,7 +811,8 @@ public final class CreatedTokenStorage {
 
     private static void deleteOldFileIfRenamed(
             TokenCreationDraft draft,
-            CreatedTokenSaveData data
+            CreatedTokenSaveData data,
+            Path folder
     ) throws IOException {
         String originalDisplayName = draft.getOriginalDisplayName();
 
@@ -827,8 +826,9 @@ public final class CreatedTokenStorage {
             return;
         }
 
-        Path oldFile = getTokensFolder().resolve(createFileName(originalDisplayName));
-        Path newFile = getTokensFolder().resolve(createFileName(newDisplayName));
+        Path targetFolder = folder == null ? getTokensFolder() : folder;
+        Path oldFile = targetFolder.resolve(createFileName(originalDisplayName));
+        Path newFile = targetFolder.resolve(createFileName(newDisplayName));
 
         if (!oldFile.equals(newFile)) {
             Files.deleteIfExists(oldFile);
@@ -836,8 +836,13 @@ public final class CreatedTokenStorage {
     }
 
     private static void saveCreatedTokenData(CreatedTokenSaveData data) throws IOException {
-        Path folder = getTokensFolder();
+        saveCreatedTokenData(data, getTokensFolder());
+    }
 
+    private static void saveCreatedTokenData(
+            CreatedTokenSaveData data, Path folder
+    ) throws IOException {
+        if (folder == null) folder = getTokensFolder();
         Files.createDirectories(folder);
 
         Path file = folder.resolve(createFileName(data.displayName));
@@ -857,6 +862,17 @@ public final class CreatedTokenStorage {
     private static boolean isJsonFile(Path file) {
         String fileName = file.getFileName().toString().toLowerCase();
         return fileName.endsWith(".json");
+    }
+
+    private static String relativeFolder(Path root, Path folder) {
+        if (root == null || folder == null) return "";
+        try {
+            String relative = root.toAbsolutePath().normalize()
+                    .relativize(folder.toAbsolutePath().normalize()).toString();
+            return ".".equals(relative) ? "" : relative.replace('\\', '/');
+        } catch (IllegalArgumentException ignored) {
+            return "";
+        }
     }
 
     private static String createFileName(String displayName) {
