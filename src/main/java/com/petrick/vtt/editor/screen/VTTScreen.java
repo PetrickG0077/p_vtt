@@ -1225,7 +1225,10 @@ public final class VTTScreen extends Screen {
             case FOCUS_SELECTED_PLAYER_TOKEN -> focusSelectedPlayerToken();
             case SETTINGS -> {
                 boolean closing = hudSettingsOpen;
-                if (closing) finishGridSettingsDrag();
+                if (closing) {
+                    finishGridSettingsDrag();
+                    editorSettingsOverlay.cancelDrag();
+                }
                 hudSettingsOpen = !hudSettingsOpen;
                 hudPlayersOpen = false;
                 hudCreationOpen = false;
@@ -2476,6 +2479,9 @@ public final class VTTScreen extends Screen {
             }
             return true;
         }
+        if (hudSettingsOpen && editorSettingsOverlay.keyPressed(keyCode)) {
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_P
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0
                 && session.isLocalMaster()) {
@@ -3417,6 +3423,9 @@ public final class VTTScreen extends Screen {
                     mapDefinitionRegistry, tokenDefinitionRegistry)) {
                 syncAssetManagerSelection();
             }
+            return true;
+        }
+        if (hudSettingsOpen && editorSettingsOverlay.charTyped(codePoint)) {
             return true;
         }
         if (renamingSceneId != null) {

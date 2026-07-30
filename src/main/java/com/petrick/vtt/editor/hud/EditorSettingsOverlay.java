@@ -4,6 +4,7 @@ import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 
@@ -30,6 +31,9 @@ public final class EditorSettingsOverlay {
     private boolean draggingOpacity;
     private Category selectedCategory = Category.GRID;
     private ThemeColor selectedThemeColor = ThemeColor.OUTLINE;
+    private ThemeColor focusedHudHexColor;
+    private String hudHexBuffer = "";
+    private boolean replaceHudHexOnType;
 
     public void render(
             VRenderContext context,
@@ -96,11 +100,13 @@ public final class EditorSettingsOverlay {
         if (gridCategoryBounds(panel).contains(mouseX, mouseY)) {
             selectedCategory = Category.GRID;
             draggingOpacity = false;
+            focusedHudHexColor = null;
             return Interaction.CONSUMED;
         }
         if (sceneCategoryBounds(panel).contains(mouseX, mouseY)) {
             selectedCategory = Category.SCENE;
             draggingOpacity = false;
+            focusedHudHexColor = null;
             return Interaction.CONSUMED;
         }
         if (hudCategoryBounds(panel).contains(mouseX, mouseY)) {
@@ -110,17 +116,28 @@ public final class EditorSettingsOverlay {
         }
         if (selectedCategory == Category.HUD) {
             for (ThemeColor themeColor : ThemeColor.values()) {
-                if (hudColorRowBounds(panel, themeColor).contains(mouseX, mouseY)) {
+                Bounds row = hudColorRowBounds(panel, themeColor);
+                if (hudHexFieldBounds(row).contains(mouseX, mouseY)) {
                     selectedThemeColor = themeColor;
+                    focusedHudHexColor = themeColor;
+                    hudHexBuffer = colorHex(hudColor(themeColor));
+                    replaceHudHexOnType = true;
+                    return Interaction.CONSUMED;
+                }
+                if (row.contains(mouseX, mouseY)) {
+                    selectedThemeColor = themeColor;
+                    focusedHudHexColor = null;
                     return Interaction.CONSUMED;
                 }
             }
             for (int index = 0; index < HUD_COLOR_PRESETS.length; index++) {
                 if (hudPaletteBounds(panel, index).contains(mouseX, mouseY)) {
+                    focusedHudHexColor = null;
                     applyHudColor(HUD_COLOR_PRESETS[index]);
                     return Interaction.HUD_THEME_CHANGED;
                 }
             }
+            focusedHudHexColor = null;
             return Interaction.CONSUMED;
         }
         if (!editable || scene == null) return Interaction.CONSUMED;
@@ -220,6 +237,55 @@ public final class EditorSettingsOverlay {
         return bounds(screenWidth, screenHeight).contains(mouseX, mouseY);
     }
 
+    public boolean keyPressed(int keyCode) {
+        if (selectedCategory != Category.HUD || focusedHudHexColor == null) return false;
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            focusedHudHexColor = null;
+            hudHexBuffer = "";
+            replaceHudHexOnType = false;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            applyHudHexBuffer();
+            focusedHudHexColor = null;
+            replaceHudHexOnType = false;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (replaceHudHexOnType) {
+                hudHexBuffer = "";
+                replaceHudHexOnType = false;
+            } else if (!hudHexBuffer.isEmpty()) {
+                hudHexBuffer = hudHexBuffer.substring(0, hudHexBuffer.length() - 1);
+            }
+            applyHudHexBuffer();
+            return true;
+        }
+        return true;
+    }
+
+    public boolean charTyped(char codePoint) {
+        if (selectedCategory != Category.HUD || focusedHudHexColor == null) return false;
+        boolean hash = codePoint == '#';
+        boolean hexadecimal = Character.digit(codePoint, 16) >= 0;
+        if (!hash && !hexadecimal) return true;
+        if (replaceHudHexOnType) {
+            hudHexBuffer = "";
+            replaceHudHexOnType = false;
+        }
+        if (hash) {
+            if (!hudHexBuffer.isEmpty()) return true;
+            hudHexBuffer = "#";
+        } else {
+            int digitCount = hudHexBuffer.startsWith("#")
+                    ? hudHexBuffer.length() - 1 : hudHexBuffer.length();
+            if (digitCount >= 6) return true;
+            hudHexBuffer += Character.toUpperCase(codePoint);
+        }
+        applyHudHexBuffer();
+        return true;
+    }
+
     public boolean isEditSceneButtonAt(
             double mouseX,
             double mouseY,
@@ -235,6 +301,8 @@ public final class EditorSettingsOverlay {
 
     public void cancelDrag() {
         draggingOpacity = false;
+        focusedHudHexColor = null;
+        replaceHudHexOnType = false;
     }
 
     public boolean isDraggingOpacity() {
@@ -341,14 +409,25 @@ public final class EditorSettingsOverlay {
                     TEXT, false);
 
             int color = hudColor(themeColor);
-            Bounds preview = new Bounds(row.right() - 78, row.y() + 4, 24, 16);
+            Bounds preview = new Bounds(row.right() - 84, row.y() + 4, 24, 16);
             context.graphics().fill(
                     preview.x(), preview.y(), preview.right(), preview.bottom(),
                     color);
             border(context, preview, EditorHudTheme.outline());
+            Bounds hexField = hudHexFieldBounds(row);
+            boolean focused = themeColor == focusedHudHexColor;
+            context.graphics().fill(
+                    hexField.x(), hexField.y(), hexField.right(), hexField.bottom(),
+                    focused ? 0xFF25252C : 0xFF18181E);
+            border(context, hexField, focused
+                    ? EditorHudTheme.opaqueSelection()
+                    : EditorHudTheme.outline());
+            String value = focused
+                    ? hudHexBuffer + (System.currentTimeMillis() / 500L % 2L == 0L ? "_" : "")
+                    : colorHex(color);
             context.graphics().drawString(
-                    font, colorHex(color), preview.right() + 5, row.y() + 7,
-                    MUTED, false);
+                    font, value, hexField.x() + 3, hexField.y() + 4,
+                    focused ? TEXT : MUTED, false);
         }
 
         context.graphics().drawString(
@@ -375,11 +454,26 @@ public final class EditorSettingsOverlay {
     }
 
     private void applyHudColor(int rgb) {
-        int color = (selectedThemeColor.alpha << 24) | (rgb & 0x00FFFFFF);
-        switch (selectedThemeColor) {
+        applyHudColor(selectedThemeColor, rgb);
+    }
+
+    private void applyHudColor(ThemeColor themeColor, int rgb) {
+        int color = (themeColor.alpha << 24) | (rgb & 0x00FFFFFF);
+        switch (themeColor) {
             case OUTLINE -> EditorHudTheme.setOutline(color);
             case FOLDER_BACKGROUND -> EditorHudTheme.setFolderBackground(color);
             case SELECTION -> EditorHudTheme.setSelection(color);
+        }
+    }
+
+    private void applyHudHexBuffer() {
+        if (focusedHudHexColor == null) return;
+        String value = hudHexBuffer == null ? "" : hudHexBuffer.trim();
+        if (value.startsWith("#")) value = value.substring(1);
+        if (value.length() != 6) return;
+        try {
+            applyHudColor(focusedHudHexColor, Integer.parseUnsignedInt(value, 16));
+        } catch (NumberFormatException ignored) {
         }
     }
 
@@ -576,6 +670,10 @@ public final class EditorSettingsOverlay {
         return new Bounds(
                 panel.x() + CATEGORY_WIDTH + 20 + index * 18,
                 panel.y() + 173, 14, 14);
+    }
+
+    private Bounds hudHexFieldBounds(Bounds row) {
+        return new Bounds(row.right() - 56, row.y() + 3, 52, 19);
     }
 
     private Bounds chooseBackgroundBounds(Bounds panel) {
