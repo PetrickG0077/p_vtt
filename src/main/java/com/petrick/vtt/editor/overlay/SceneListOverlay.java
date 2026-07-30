@@ -1,10 +1,12 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import net.minecraft.resources.ResourceLocation;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +16,10 @@ public final class SceneListOverlay {
     private static final int PADDING = 8;
     private static final int LINE_HEIGHT = 12;
     private static final int OFFSET_FROM_BOTTOM = 40;
+    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
+    private static final ResourceLocation FOLDER_ICON =
+            ResourceLocation.fromNamespaceAndPath(
+                    VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
     private final CatalogFolderBrowser<String> folderBrowser =
             new CatalogFolderBrowser<>();
 
@@ -43,9 +49,15 @@ public final class SceneListOverlay {
         } else {
             for (CatalogFolderBrowser.Row<String> row : rows) {
                 if (row.folder()) {
-                    String prefix = row.displayName().equals("..") ? "↑ " : "▸ ";
-                    context.graphics().drawString(font, prefix + row.displayName(),
-                            x + PADDING, rowY, 0xFFFFCC66, false);
+                    context.graphics().fill(
+                            x + 4, rowY - 1, x + WIDTH - 4,
+                            rowY + LINE_HEIGHT - 1, FOLDER_ROW_BACKGROUND);
+                    context.graphics().blit(
+                            FOLDER_ICON, x + PADDING, rowY,
+                            10, 10, 0.0F, 0.0F, 32, 32, 32, 32);
+                    context.graphics().drawString(
+                            font, row.displayName(),
+                            x + PADDING + 15, rowY, 0xFFFFFFFF, false);
                     rowY += LINE_HEIGHT;
                     continue;
                 }

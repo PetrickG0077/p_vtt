@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.editor.catalog.MapCatalogSelection;
 import com.petrick.vtt.feature.asset.AssetRegistry;
@@ -23,6 +24,10 @@ public final class MapCatalogOverlay {
     private static final int MAX_VISIBLE = 2;
     private static final int OFFSET_FROM_BOTTOM = 40;
     private static final int BORDER = 0xFF66CCFF;
+    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
+    private static final ResourceLocation FOLDER_ICON =
+            ResourceLocation.fromNamespaceAndPath(
+                    VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
     private final CatalogFolderBrowser<MapDefinition> folderBrowser =
             new CatalogFolderBrowser<>();
 
@@ -61,11 +66,13 @@ public final class MapCatalogOverlay {
             CatalogFolderBrowser.Row<MapDefinition> row = rows.get(first + index);
             if (row.folder()) {
                 context.graphics().fill(x + 4, rowY, x + WIDTH - 4,
-                        rowY + ROW_HEIGHT, 0x33225566);
-                context.graphics().drawString(font,
-                        (row.displayName().equals("..") ? "↑ " : "▸ ")
-                                + row.displayName(),
-                        x + PADDING, rowY + 12, 0xFFFFDD88, false);
+                        rowY + ROW_HEIGHT, FOLDER_ROW_BACKGROUND);
+                context.graphics().blit(
+                        FOLDER_ICON, x + PADDING, rowY + 9,
+                        16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+                context.graphics().drawString(
+                        font, row.displayName(),
+                        x + PADDING + 22, rowY + 12, 0xFFFFFFFF, false);
                 rowY += ROW_HEIGHT;
                 continue;
             }

@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
@@ -10,6 +11,7 @@ import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 import java.util.Optional;
@@ -69,6 +71,10 @@ public final class TokenCatalogOverlay {
     private static final int DRAG_PREVIEW_BORDER = 0xFFAA66FF;
 
     private static final int DETAILS_POPUP_WIDTH = 230;
+    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
+    private static final ResourceLocation FOLDER_ICON =
+            ResourceLocation.fromNamespaceAndPath(
+                    VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
 
     private final CanvasVisualRenderer visualRenderer;
     private final CatalogFolderBrowser<TokenDefinition> folderBrowser =
@@ -302,10 +308,12 @@ public final class TokenCatalogOverlay {
     ) {
         context.graphics().fill(
                 x - 3, y, x + PANEL_WIDTH - PADDING * 2,
-                y + TOKEN_ROW_HEIGHT, 0x33225566);
-        String prefix = row.displayName().equals("..") ? "↑ " : "▸ ";
-        drawLine(context, font, prefix + row.displayName(),
-                x + 4, y + 10, HOVER_TEXT_COLOR);
+                y + TOKEN_ROW_HEIGHT, FOLDER_ROW_BACKGROUND);
+        context.graphics().blit(
+                FOLDER_ICON, x + 3, y + 7,
+                16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+        drawLine(context, font, row.displayName(),
+                x + 24, y + 10, 0xFFFFFFFF);
     }
 
     private void renderTokenThumbnail(

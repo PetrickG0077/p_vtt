@@ -50,7 +50,7 @@ public final class AssetManagerOverlay {
     private static final ResourceLocation TRASH_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/trash.png");
     private static final ResourceLocation DUPLICATE_ICON = ResourceLocation.fromNamespaceAndPath(
-            VTT.MOD_ID, "textures/gui/editor_hud/creation.png");
+            VTT.MOD_ID, "textures/gui/editor_hud/duplicate.png");
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
     private final SceneThumbnailRenderer sceneThumbnailRenderer;
