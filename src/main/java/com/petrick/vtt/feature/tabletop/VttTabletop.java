@@ -32,6 +32,8 @@ public final class VttTabletop {
     /** Lightweight scene metadata used by the scene list without loading every scene JSON. */
     private Map<String, String> sceneDisplayNames = new LinkedHashMap<>();
     private Map<String, String> sceneFolders = new LinkedHashMap<>();
+    /** Physical catalog folders synchronized with masters, including empty folders. */
+    private Map<String, List<String>> catalogFolders = new LinkedHashMap<>();
 
     public VttTabletop() {
         this("default", "Default Tabletop");
@@ -149,6 +151,30 @@ public final class VttTabletop {
     private Map<String, String> sceneFolders() {
         if (sceneFolders == null) sceneFolders = new LinkedHashMap<>();
         return sceneFolders;
+    }
+
+    public List<String> getCatalogFolders(String section) {
+        if (section == null) return List.of();
+        List<String> values = catalogFolders().get(section.toUpperCase());
+        return values == null ? List.of() : List.copyOf(values);
+    }
+
+    public void setCatalogFolders(String section, List<String> folders) {
+        if (section == null || section.isBlank()) return;
+        List<String> normalized = folders == null ? List.of() : folders.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.replace('\\', '/').replaceAll("/+", "/")
+                        .replaceAll("^/+|/+$", ""))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+        catalogFolders().put(section.toUpperCase(), new ArrayList<>(normalized));
+    }
+
+    private Map<String, List<String>> catalogFolders() {
+        if (catalogFolders == null) catalogFolders = new LinkedHashMap<>();
+        return catalogFolders;
     }
 
     private String normalizeId(String value) {

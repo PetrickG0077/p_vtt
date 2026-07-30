@@ -19,6 +19,7 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryScanner;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailLoader;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
+import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
@@ -37,6 +38,7 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttReplicationResyncRequestPayload;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -70,6 +72,7 @@ public final class VTTSession {
     private final AnimatedTextureService animatedTextureService;
 
     private final TabletopStorage tabletopStorage;
+    private final VttAssetFolderService assetFolderService;
 
     private AssetLibraryScanResult assetLibraryScanResult;
 
@@ -134,6 +137,11 @@ public final class VTTSession {
                 assetRegistry
         );
         CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
+        this.assetFolderService = new VttAssetFolderService(
+                Minecraft.getInstance().gameDirectory.toPath(), activeTabletop.getId());
+        this.assetFolderService.applyMetadata(
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+        tabletopStorage.saveTabletop(activeTabletop);
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
         loadActiveSceneToCanvasScene();
@@ -155,6 +163,41 @@ public final class VTTSession {
 
     public boolean isLocalMaster() {
         return localRole == VttRole.MASTER;
+    }
+
+    public boolean requestAssetFolderCommand(
+            String operation,
+            VttAssetFolderService.Section section,
+            String source,
+            String value
+    ) {
+        if (!isLocalMaster() || operation == null || section == null) return false;
+        String safeSource = source == null ? "" : source;
+        String safeValue = value == null ? "" : value;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttAssetFolderCommandPayload(
+                    networkAuthorityRevision, operation, section.name(),
+                    safeSource, safeValue));
+            return true;
+        }
+        boolean changed = switch (operation) {
+            case VttAssetFolderCommandPayload.CREATE_FOLDER ->
+                    assetFolderService.createFolder(section, safeSource, safeValue);
+            case VttAssetFolderCommandPayload.RENAME_FOLDER ->
+                    assetFolderService.renameFolder(section, safeSource, safeValue) != null;
+            case VttAssetFolderCommandPayload.MOVE_FOLDER ->
+                    assetFolderService.moveFolder(section, safeSource, safeValue) != null;
+            case VttAssetFolderCommandPayload.MOVE_ITEM ->
+                    assetFolderService.moveItem(section, safeSource, safeValue);
+            case VttAssetFolderCommandPayload.DELETE_FOLDER ->
+                    assetFolderService.deleteEmptyFolder(section, safeSource);
+            default -> false;
+        };
+        if (!changed) return false;
+        assetFolderService.applyMetadata(
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+        tabletopStorage.saveTabletop(activeTabletop);
+        return true;
     }
 
     public boolean isLocalSpectator() {
@@ -765,6 +808,9 @@ public final class VTTSession {
 
         activeTabletop = tabletopStorage.loadOrCreateDefaultTabletop();
         activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
+        assetFolderService.refresh();
+        assetFolderService.applyMetadata(
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
         loadActiveSceneToCanvasScene();
         VTT.LOGGER.info("Restored local VTT session after leaving multiplayer server");
     }

@@ -27,8 +27,10 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /** Central searchable manager for scene, map and token definitions. */
 public final class AssetManagerOverlay {
@@ -51,6 +53,9 @@ public final class AssetManagerOverlay {
             VTT.MOD_ID, "textures/gui/editor_hud/trash.png");
     private static final ResourceLocation DUPLICATE_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/duplicate.png");
+    private static final ResourceLocation FOLDER_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
+    private static final long DRAG_HOLD_MS = 500L;
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
     private final SceneThumbnailRenderer sceneThumbnailRenderer;
@@ -59,15 +64,25 @@ public final class AssetManagerOverlay {
     private String search = "";
     private String selectedId;
     private final EnumMap<Section, Integer> scrollRows = new EnumMap<>(Section.class);
+    private final EnumMap<Section, String> currentFolders = new EnumMap<>(Section.class);
     private String lastClickedKey;
     private long lastClickedAt;
     private boolean searchFocused;
     private boolean draggingScrollbar;
     private double scrollbarGrabOffset;
+    private Item pressedItem;
+    private long pressedAt;
+    private double pressedX;
+    private double pressedY;
+    private Item draggingItem;
+    private String dragTargetFolder;
 
     public AssetManagerOverlay(TabletopStorage tabletopStorage) {
         this.sceneThumbnailRenderer = new SceneThumbnailRenderer(tabletopStorage);
-        for (Section candidate : Section.values()) scrollRows.put(candidate, 0);
+        for (Section candidate : Section.values()) {
+            scrollRows.put(candidate, 0);
+            currentFolders.put(candidate, "");
+        }
     }
 
     public void render(
@@ -87,9 +102,30 @@ public final class AssetManagerOverlay {
         context.graphics().fill(
                 panel.x() + 1, panel.y() + 1, panel.right() - 1,
                 panel.y() + HEADER_HEIGHT, 0xFF4A4A4A);
+        String currentFolder = currentFolder();
+        String title = currentFolder.isBlank()
+                ? "Asset Manager" : "Assets/" + currentFolder;
+        if (!currentFolder.isBlank()) {
+            Bounds back = backBounds(panel);
+            boolean parentDropTarget = draggingItem != null
+                    && parent(currentFolder).equals(dragTargetFolder);
+            if (parentDropTarget) {
+                context.graphics().fill(
+                        back.x() - 3, back.y(), back.right() + 3,
+                        back.bottom(), 0xFF6B3478);
+                thickBorder(context, new Bounds(
+                        back.x() - 3, back.y(), back.width() + 6,
+                        back.height()), 0xFFFFAAFF);
+            }
+            context.graphics().drawString(
+                    font, "<", back.x(), panel.y() + 18,
+                    parentDropTarget ? 0xFFFFFFFF
+                            : back.contains(context.mouseX(), context.mouseY())
+                            ? 0xFF66DDEE : 0xFFFFFFFF, false);
+        }
         context.graphics().drawString(
-                font, "Asset Manager", panel.x() + 14, panel.y() + 18,
-                0xFFFFFFFF, false);
+                font, title, panel.x() + (currentFolder.isBlank() ? 14 : 28),
+                panel.y() + 18, 0xFFFFFFFF, false);
 
         Bounds searchBox = searchBounds(panel);
         context.graphics().fill(
@@ -111,6 +147,17 @@ public final class AssetManagerOverlay {
                     caretX, searchBox.y() + 8, searchBox.bottom() - 8,
                     0xFFFFFFFF);
         }
+
+        Bounds createFolder = createFolderBounds(panel);
+        context.graphics().fill(
+                createFolder.x(), createFolder.y(),
+                createFolder.right(), createFolder.bottom(),
+                createFolder.contains(context.mouseX(), context.mouseY())
+                        ? 0xFF56565C : 0xFF35353A);
+        border(context, createFolder, 0xFFFFFFFF);
+        context.graphics().blit(
+                FOLDER_ICON, createFolder.x() + 7, createFolder.y() + 7,
+                16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
 
         Bounds add = addBounds(panel);
         context.graphics().fill(
@@ -143,14 +190,25 @@ public final class AssetManagerOverlay {
 
         List<Item> items = visibleItems(tabletop, maps, tokens);
         Grid grid = grid(panel, items.size());
+        updateDraggingState(context.mouseX(), context.mouseY(), panel, grid, items);
         for (int index = grid.firstIndex(); index < grid.lastIndex(); index++) {
             int visibleIndex = index - grid.firstIndex();
             int column = visibleIndex % grid.columns();
             int row = visibleIndex / grid.columns();
             int x = grid.x() + column * (CARD_WIDTH + CARD_GAP);
             int y = grid.y() + row * (CARD_HEIGHT + CARD_GAP);
-            renderCard(context, font, new Bounds(x, y, CARD_WIDTH, CARD_HEIGHT),
-                    items.get(index), tabletop, activeScene, assets, thumbnails);
+            Item item = items.get(index);
+            Bounds card = new Bounds(x, y, CARD_WIDTH, CARD_HEIGHT);
+            renderCard(context, font, card,
+                    item, tabletop, activeScene, assets, thumbnails);
+            if (draggingItem != null && sameItem(item, draggingItem)) {
+                context.graphics().fill(
+                        card.x(), card.y(), card.right(), card.bottom(), 0x88000000);
+            }
+            if (draggingItem != null && item.folder()
+                    && item.path().equals(dragTargetFolder)) {
+                thickBorder(context, card, 0xFFFFAAFF);
+            }
         }
         renderScrollbar(context, panel, grid);
         if (items.isEmpty()) {
@@ -158,6 +216,9 @@ public final class AssetManagerOverlay {
                     font, search.isBlank() ? "No assets in this section" : "No search results",
                     panel.x() + panel.width() / 2, panel.y() + HEADER_HEIGHT
                             + TABS_HEIGHT + 30, 0xFF88888E);
+        }
+        if (draggingItem != null) {
+            renderDragPreview(context, font, draggingItem);
         }
         border(context, panel, 0xFFE8E8E8);
     }
@@ -179,13 +240,23 @@ public final class AssetManagerOverlay {
         }
         if (button != 0) {
             searchFocused = false;
+            clearPressedItem();
             return Interaction.handled();
+        }
+        if (!currentFolder().isBlank()
+                && backBounds(panel).contains(mouseX, mouseY)) {
+            return new Interaction(
+                    Action.BACK_FOLDER, section, currentFolder(), parent(currentFolder()), true);
         }
         if (searchBounds(panel).contains(mouseX, mouseY)) {
             searchFocused = true;
             return Interaction.handled();
         }
         searchFocused = false;
+        if (createFolderBounds(panel).contains(mouseX, mouseY)) {
+            return new Interaction(
+                    Action.CREATE_FOLDER, section, currentFolder(), null, true);
+        }
         if (addBounds(panel).contains(mouseX, mouseY)) {
             return new Interaction(Action.ADD, section, null, true);
         }
@@ -194,6 +265,7 @@ public final class AssetManagerOverlay {
                 section = candidate;
                 selectedId = null;
                 draggingScrollbar = false;
+                clearPressedItem();
                 return Interaction.handled();
             }
         }
@@ -223,19 +295,37 @@ public final class AssetManagerOverlay {
             Item item = items.get(index);
             selectedId = item.id();
             if (editBounds(card).contains(mouseX, mouseY) && item.editable()) {
-                return new Interaction(Action.EDIT, item.section(), item.id(), true);
+                return new Interaction(
+                        item.folder() ? Action.RENAME_FOLDER : Action.EDIT,
+                        item.section(), item.id(), item.path(), true);
             }
-            if (duplicateBounds(card).contains(mouseX, mouseY) && item.editable()) {
+            if (!item.folder() && duplicateBounds(card).contains(mouseX, mouseY)
+                    && item.editable()) {
                 return new Interaction(Action.DUPLICATE, item.section(), item.id(), true);
             }
             if (deleteBounds(card).contains(mouseX, mouseY) && item.deletable()) {
-                return new Interaction(Action.DELETE, item.section(), item.id(), true);
+                return new Interaction(
+                        item.folder() ? Action.DELETE_FOLDER : Action.DELETE,
+                        item.section(), item.id(), item.path(), true);
             }
             long now = System.currentTimeMillis();
             String key = item.section().name() + ":" + item.id();
             boolean doubleClick = key.equals(lastClickedKey) && now - lastClickedAt <= 350L;
             lastClickedKey = key;
             lastClickedAt = now;
+            if (item.editable()) {
+                pressedItem = item;
+                pressedAt = now;
+                pressedX = mouseX;
+                pressedY = mouseY;
+            } else {
+                clearPressedItem();
+            }
+            if (doubleClick && item.folder()) {
+                clearPressedItem();
+                return new Interaction(
+                        Action.OPEN_FOLDER, item.section(), item.id(), item.path(), true);
+            }
             return new Interaction(
                     doubleClick && item.editable() ? Action.EDIT : Action.SELECT,
                     item.section(), item.id(), true);
@@ -283,6 +373,7 @@ public final class AssetManagerOverlay {
     }
 
     public boolean mouseDragged(
+            double mouseX,
             double mouseY,
             int button,
             int screenWidth,
@@ -291,7 +382,18 @@ public final class AssetManagerOverlay {
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
     ) {
-        if (!draggingScrollbar || button != 0) return false;
+        if (button != 0) return false;
+        if (!draggingScrollbar) {
+            if (pressedItem != null
+                    && System.currentTimeMillis() - pressedAt >= DRAG_HOLD_MS) {
+                draggingItem = pressedItem;
+                Bounds panel = panel(screenWidth, screenHeight);
+                List<Item> items = visibleItems(tabletop, maps, tokens);
+                updateDragTarget(mouseX, mouseY, panel, grid(panel, items.size()), items);
+                return true;
+            }
+            return pressedItem != null;
+        }
         Bounds panel = panel(screenWidth, screenHeight);
         Grid grid = grid(panel, visibleItems(tabletop, maps, tokens).size());
         Scrollbar scrollbar = scrollbar(panel, grid);
@@ -312,10 +414,34 @@ public final class AssetManagerOverlay {
         return true;
     }
 
-    public boolean mouseReleased(int button) {
-        if (button != 0 || !draggingScrollbar) return false;
-        draggingScrollbar = false;
-        return true;
+    public Interaction mouseReleased(
+            double mouseX,
+            double mouseY,
+            int button,
+            int screenWidth,
+            int screenHeight,
+            VttTabletop tabletop,
+            MapDefinitionRegistry maps,
+            TokenDefinitionRegistry tokens
+    ) {
+        if (button != 0) return Interaction.none();
+        if (draggingScrollbar) {
+            draggingScrollbar = false;
+            clearPressedItem();
+            return Interaction.handled();
+        }
+        if (draggingItem != null) {
+            Item source = draggingItem;
+            String target = dragTargetFolder;
+            clearPressedItem();
+            if (target == null) return Interaction.handled();
+            return new Interaction(
+                    source.folder() ? Action.MOVE_FOLDER : Action.MOVE_ITEM,
+                    source.section(), source.folder() ? source.path() : source.id(),
+                    target, true);
+        }
+        clearPressedItem();
+        return Interaction.handled();
     }
 
     public boolean contains(double x, double y, int screenWidth, int screenHeight) {
@@ -324,10 +450,30 @@ public final class AssetManagerOverlay {
 
     public Section section() { return section; }
     public String selectedId() { return selectedId; }
+    public String currentFolderPath() { return currentFolder(); }
+
+    public void cancelPointerInteraction() {
+        draggingScrollbar = false;
+        clearPressedItem();
+    }
 
     public void select(Section section, String id) {
         this.section = section == null ? Section.SCENES : section;
         this.selectedId = id;
+    }
+
+    public void openFolder(Section section, String path) {
+        if (section != null) this.section = section;
+        currentFolders.put(this.section, normalizeFolder(path));
+        selectedId = null;
+        setScrollRow(0);
+        search = "";
+        searchFocused = false;
+        clearPressedItem();
+    }
+
+    public void goBackFolder() {
+        openFolder(section, parent(currentFolder()));
     }
 
     private void selectFirstGlobalMatch(
@@ -351,6 +497,7 @@ public final class AssetManagerOverlay {
         if (match != null) {
             section = match.section();
             selectedId = match.id();
+            currentFolders.put(section, match.path());
             setScrollRow(0);
         }
     }
@@ -361,11 +508,38 @@ public final class AssetManagerOverlay {
             TokenDefinitionRegistry tokens
     ) {
         String needle = search.toLowerCase(Locale.ROOT);
-        return allItems(tabletop, maps, tokens).stream()
+        List<Item> regularItems = allItems(tabletop, maps, tokens).stream()
                 .filter(item -> item.section() == section)
-                .filter(item -> needle.isBlank()
-                        || item.name().toLowerCase(Locale.ROOT).contains(needle))
                 .toList();
+        if (!needle.isBlank()) {
+            return regularItems.stream()
+                    .filter(item -> item.name().toLowerCase(Locale.ROOT).contains(needle))
+                    .toList();
+        }
+
+        String current = currentFolder();
+        Set<String> knownFolders = new LinkedHashSet<>();
+        if (tabletop != null) {
+            knownFolders.addAll(tabletop.getCatalogFolders(section.name()));
+        }
+        regularItems.stream().map(Item::path)
+                .filter(path -> path != null && !path.isBlank())
+                .forEach(knownFolders::add);
+
+        List<Item> result = new ArrayList<>();
+        knownFolders.stream()
+                .map(path -> immediateChild(current, path))
+                .filter(path -> path != null && !path.isBlank())
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .forEach(path -> result.add(new Item(
+                        section, "folder:" + path, leaf(path), null,
+                        true, true, true, path)));
+        regularItems.stream()
+                .filter(item -> current.equals(normalizeFolder(item.path())))
+                .sorted(Comparator.comparing(Item::name, String.CASE_INSENSITIVE_ORDER))
+                .forEach(result::add);
+        return List.copyOf(result);
     }
 
     private List<Item> allItems(
@@ -378,20 +552,23 @@ public final class AssetManagerOverlay {
             boolean canDeleteScene = tabletop.getSceneIds().size() > 1;
             tabletop.getSceneIds().forEach(id -> result.add(new Item(
                     Section.SCENES, id, tabletop.getSceneDisplayName(id),
-                    null, true, canDeleteScene)));
+                    null, true, canDeleteScene, false,
+                    tabletop.getSceneFolder(id))));
         }
         maps.getAll().stream()
                 .sorted(Comparator.comparing(MapDefinition::displayName))
                 .forEach(map -> result.add(new Item(
                         Section.MAPS, map.id(), map.displayName(), map,
                         CreatedMapStorage.isUserCreatedMap(map),
-                        CreatedMapStorage.isUserCreatedMap(map))));
+                        CreatedMapStorage.isUserCreatedMap(map), false,
+                        maps.folderOf(map.id()))));
         tokens.getAll().stream()
                 .sorted(Comparator.comparing(TokenDefinition::displayName))
                 .forEach(token -> result.add(new Item(
                         Section.TOKENS, token.id(), token.displayName(), token,
                         CreatedTokenStorage.isUserCreatedToken(token),
-                        CreatedTokenStorage.isUserCreatedToken(token))));
+                        CreatedTokenStorage.isUserCreatedToken(token), false,
+                        tokens.folderOf(token.id()))));
         return result;
     }
 
@@ -404,12 +581,18 @@ public final class AssetManagerOverlay {
         boolean hovered = card.contains(context.mouseX(), context.mouseY());
         context.graphics().fill(
                 card.x(), card.y(), card.right(), card.bottom(),
-                selected ? 0xFF304F60 : hovered ? 0xFF303034 : 0xFF202024);
+                selected ? 0xFF5B3275
+                        : item.folder() ? hovered ? 0xFF563069 : 0xFF40234F
+                        : hovered ? 0xFF303034 : 0xFF202024);
         border(context, card, selected ? 0xFF66DDEE : 0xFFE8E8E8);
         Bounds preview = new Bounds(card.x() + 8, card.y() + 8,
                 card.width() - 16, card.height() - 34);
-        renderPreview(
-                context, item, preview, tabletop, activeScene, assets, thumbnails);
+        if (item.folder()) {
+            renderFolderPreview(context, font, item, preview);
+        } else {
+            renderPreview(
+                    context, item, preview, tabletop, activeScene, assets, thumbnails);
+        }
         context.graphics().drawString(
                 font, trim(item.name(), 16), card.x() + 8, card.bottom() - 18,
                 0xFFFFFFFF, false);
@@ -420,13 +603,15 @@ public final class AssetManagerOverlay {
             context.graphics().blit(
                     EDIT_ICON, edit.x() + 1, edit.y() + 1,
                     16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
-            Bounds duplicate = duplicateBounds(card);
-            context.graphics().fill(
-                    duplicate.x(), duplicate.y(), duplicate.right(), duplicate.bottom(),
-                    0xCC101014);
-            context.graphics().blit(
-                    DUPLICATE_ICON, duplicate.x() + 1, duplicate.y() + 1,
-                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+            if (!item.folder()) {
+                Bounds duplicate = duplicateBounds(card);
+                context.graphics().fill(
+                        duplicate.x(), duplicate.y(), duplicate.right(), duplicate.bottom(),
+                        0xCC101014);
+                context.graphics().blit(
+                        DUPLICATE_ICON, duplicate.x() + 1, duplicate.y() + 1,
+                        16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+            }
         }
         if (item.deletable()) {
             Bounds delete = deleteBounds(card);
@@ -436,6 +621,26 @@ public final class AssetManagerOverlay {
                     TRASH_ICON, delete.x() + 1, delete.y() + 1,
                     16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         }
+    }
+
+    private void renderFolderPreview(
+            VRenderContext context,
+            Font font,
+            Item item,
+            Bounds bounds
+    ) {
+        int size = Math.min(64, Math.min(bounds.width(), bounds.height()));
+        int x = bounds.x() + (bounds.width() - size) / 2;
+        int y = bounds.y() + (bounds.height() - size) / 2;
+        context.graphics().blit(
+                FOLDER_ICON, x, y, size, size,
+                0.0F, 0.0F, 32, 32, 32, 32);
+        String initial = item.name().isBlank()
+                ? "?" : item.name().substring(0, 1).toUpperCase(Locale.ROOT);
+        drawScaledCenteredString(
+                context, font, initial,
+                x + size / 2, y + size / 2 + 6,
+                1.4F, 0xFFFFFFFF);
     }
 
     private void renderPreview(
@@ -568,11 +773,19 @@ public final class AssetManagerOverlay {
     }
 
     private Bounds searchBounds(Bounds panel) {
-        return new Bounds(panel.right() - 390, panel.y() + 12, 250, 30);
+        return new Bounds(panel.right() - 390, panel.y() + 12, 212, 30);
+    }
+
+    private Bounds createFolderBounds(Bounds panel) {
+        return new Bounds(panel.right() - 168, panel.y() + 12, 34, 30);
     }
 
     private Bounds addBounds(Bounds panel) {
         return new Bounds(panel.right() - 120, panel.y() + 12, 96, 30);
+    }
+
+    private Bounds backBounds(Bounds panel) {
+        return new Bounds(panel.x() + 10, panel.y() + 10, 14, 32);
     }
 
     private Bounds tabBounds(Bounds panel, Section section) {
@@ -603,6 +816,140 @@ public final class AssetManagerOverlay {
 
     private Bounds deleteBounds(Bounds card) {
         return new Bounds(card.right() - 22, card.bottom() - 24, 18, 18);
+    }
+
+    private void updateDraggingState(
+            double mouseX,
+            double mouseY,
+            Bounds panel,
+            Grid grid,
+            List<Item> items
+    ) {
+        if (draggingItem == null && pressedItem != null
+                && System.currentTimeMillis() - pressedAt >= DRAG_HOLD_MS) {
+            draggingItem = pressedItem;
+        }
+        if (draggingItem != null) {
+            updateDragTarget(mouseX, mouseY, panel, grid, items);
+        }
+    }
+
+    private void updateDragTarget(
+            double mouseX,
+            double mouseY,
+            Bounds panel,
+            Grid grid,
+            List<Item> items
+    ) {
+        dragTargetFolder = null;
+        if (draggingItem == null) return;
+        if (!currentFolder().isBlank() && backBounds(panel).contains(mouseX, mouseY)) {
+            dragTargetFolder = parent(currentFolder());
+            return;
+        }
+        for (int index = grid.firstIndex(); index < grid.lastIndex(); index++) {
+            int visibleIndex = index - grid.firstIndex();
+            int column = visibleIndex % grid.columns();
+            int row = visibleIndex / grid.columns();
+            Bounds card = new Bounds(
+                    grid.x() + column * (CARD_WIDTH + CARD_GAP),
+                    grid.y() + row * (CARD_HEIGHT + CARD_GAP),
+                    CARD_WIDTH, CARD_HEIGHT);
+            Item target = items.get(index);
+            if (!target.folder() || !card.contains(mouseX, mouseY)
+                    || !validDropTarget(draggingItem, target.path())) continue;
+            dragTargetFolder = target.path();
+            return;
+        }
+    }
+
+    private boolean validDropTarget(Item source, String targetFolder) {
+        if (source == null || targetFolder == null) return false;
+        if (!source.folder()) return !normalizeFolder(source.path())
+                .equals(normalizeFolder(targetFolder));
+        String sourcePath = normalizeFolder(source.path());
+        String targetPath = normalizeFolder(targetFolder);
+        return !sourcePath.equals(targetPath)
+                && !targetPath.startsWith(sourcePath + "/");
+    }
+
+    private void renderDragPreview(
+            VRenderContext context,
+            Font font,
+            Item item
+    ) {
+        int x = (int) Math.round(context.mouseX()) + 12;
+        int y = (int) Math.round(context.mouseY()) + 12;
+        int width = Math.min(150, Math.max(80, font.width(item.name()) + 34));
+        context.graphics().fill(x, y, x + width, y + 28, 0xAA201426);
+        context.graphics().blit(
+                item.folder() ? FOLDER_ICON : item.section().icon(),
+                x + 5, y + 6, 16, 16,
+                0.0F, 0.0F, 32, 32, 32, 32);
+        context.graphics().drawString(
+                font, trim(item.name(), 17), x + 26, y + 10,
+                0xCCFFFFFF, false);
+        border(context, new Bounds(x, y, width, 28), 0xCCFFFFFF);
+    }
+
+    private void thickBorder(VRenderContext context, Bounds bounds, int color) {
+        border(context, bounds, color);
+        border(context, new Bounds(
+                bounds.x() + 1, bounds.y() + 1,
+                bounds.width() - 2, bounds.height() - 2), color);
+        border(context, new Bounds(
+                bounds.x() + 2, bounds.y() + 2,
+                bounds.width() - 4, bounds.height() - 4), color);
+    }
+
+    private boolean sameItem(Item first, Item second) {
+        return first != null && second != null
+                && first.section() == second.section()
+                && first.id().equals(second.id());
+    }
+
+    private void clearPressedItem() {
+        pressedItem = null;
+        pressedAt = 0L;
+        pressedX = 0.0;
+        pressedY = 0.0;
+        draggingItem = null;
+        dragTargetFolder = null;
+    }
+
+    private String currentFolder() {
+        return currentFolders.getOrDefault(section, "");
+    }
+
+    private String immediateChild(String current, String candidate) {
+        String normalizedCurrent = normalizeFolder(current);
+        String normalizedCandidate = normalizeFolder(candidate);
+        if (normalizedCandidate.equals(normalizedCurrent)) return null;
+        String prefix = normalizedCurrent.isBlank() ? "" : normalizedCurrent + "/";
+        if (!normalizedCandidate.startsWith(prefix)) return null;
+        String remaining = normalizedCandidate.substring(prefix.length());
+        if (remaining.isBlank()) return null;
+        int slash = remaining.indexOf('/');
+        String child = slash < 0 ? remaining : remaining.substring(0, slash);
+        return prefix + child;
+    }
+
+    private String parent(String path) {
+        String normalized = normalizeFolder(path);
+        int slash = normalized.lastIndexOf('/');
+        return slash < 0 ? "" : normalized.substring(0, slash);
+    }
+
+    private String leaf(String path) {
+        String normalized = normalizeFolder(path);
+        int slash = normalized.lastIndexOf('/');
+        return slash < 0 ? normalized : normalized.substring(slash + 1);
+    }
+
+    private String normalizeFolder(String path) {
+        if (path == null || path.isBlank()) return "";
+        return path.replace('\\', '/').replaceAll("/+", "/")
+                .replaceAll("^/+|/+$", "");
     }
 
     private void border(VRenderContext context, Bounds bounds, int color) {
@@ -647,20 +994,29 @@ public final class AssetManagerOverlay {
         private ResourceLocation icon() { return icon; }
     }
 
-    public enum Action { NONE, SELECT, ADD, EDIT, DUPLICATE, DELETE }
+    public enum Action {
+        NONE, SELECT, ADD, EDIT, DUPLICATE, DELETE,
+        CREATE_FOLDER, OPEN_FOLDER, BACK_FOLDER, RENAME_FOLDER,
+        DELETE_FOLDER, MOVE_ITEM, MOVE_FOLDER
+    }
 
-    public record Interaction(Action action, Section section, String id, boolean consumed) {
+    public record Interaction(
+            Action action, Section section, String id, String value, boolean consumed
+    ) {
+        public Interaction(Action action, Section section, String id, boolean consumed) {
+            this(action, section, id, null, consumed);
+        }
         public static Interaction none() {
-            return new Interaction(Action.NONE, null, null, false);
+            return new Interaction(Action.NONE, null, null, null, false);
         }
         public static Interaction handled() {
-            return new Interaction(Action.NONE, null, null, true);
+            return new Interaction(Action.NONE, null, null, null, true);
         }
     }
 
     private record Item(
             Section section, String id, String name, Object value,
-            boolean editable, boolean deletable
+            boolean editable, boolean deletable, boolean folder, String path
     ) {}
     private record Bounds(int x, int y, int width, int height) {
         int right() { return x + width; }

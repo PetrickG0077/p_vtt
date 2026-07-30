@@ -79,6 +79,12 @@ public final class TokenDefinitionRegistry {
         return id == null ? "" : foldersById.getOrDefault(id, "");
     }
 
+    public void setFolder(String id, String folderPath) {
+        if (id != null && definitionsById.containsKey(id)) {
+            foldersById.put(id, normalizeFolder(folderPath));
+        }
+    }
+
     private String normalizeFolder(String value) {
         if (value == null || value.isBlank() || ".".equals(value)) return "";
         return value.replace('\\', '/').replaceAll("^/+|/+$", "");

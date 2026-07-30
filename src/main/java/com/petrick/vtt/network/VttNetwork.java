@@ -38,6 +38,8 @@ import com.petrick.vtt.network.server.VttServerPlayerModeHandler;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import com.petrick.vtt.network.server.VttServerPresentationHandler;
+import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
+import com.petrick.vtt.network.server.VttServerAssetFolderHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -124,6 +126,9 @@ public final class VttNetwork {
         registrar.playToServer(VttPresentationCommandPayload.TYPE,
                 VttPresentationCommandPayload.STREAM_CODEC,
                 VttServerPresentationHandler::handle);
+        registrar.playToServer(VttAssetFolderCommandPayload.TYPE,
+                VttAssetFolderCommandPayload.STREAM_CODEC,
+                VttServerAssetFolderHandler::handle);
         registrar.playToClient(VttPresentationUpdatePayload.TYPE,
                 VttPresentationUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handlePresentationUpdate);

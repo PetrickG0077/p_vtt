@@ -25,6 +25,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometrySpatialIndex;
 import com.petrick.vtt.feature.tabletop.vision.VisionSegment;
 import com.petrick.vtt.feature.asset.DebugAssets;
+import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
@@ -33,6 +34,7 @@ import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
+import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.lang.reflect.Type;
@@ -60,6 +62,7 @@ public final class VttServerTabletopState {
     private final VttTabletopPlayerPreferences playerPreferences;
     private VttScene activeScene;
     private final TabletopStorage storage;
+    private final VttAssetFolderService assetFolderService;
     private final SceneMovementCollision movementCollision = new SceneMovementCollision();
     private final SceneObjectSpatialIndex objectSpatialIndex = new SceneObjectSpatialIndex();
     private final SceneVisionGeometrySpatialIndex visionGeometryIndex =
@@ -88,6 +91,9 @@ public final class VttServerTabletopState {
 
         this.storage = new TabletopStorage(paths);
         this.tabletop = storage.loadOrCreateDefaultTabletop();
+        this.assetFolderService = new VttAssetFolderService(
+                FMLPaths.GAMEDIR.get(), tabletop.getId());
+        this.assetFolderService.applyMetadata(tabletop, null, null);
         this.playerPreferences = storage.loadOrCreatePlayerPreferences(tabletop.getId());
         this.activeScene = storage.loadOrCreateActiveScene(tabletop);
         this.objectSpatialIndex.rebuild(activeScene);
@@ -140,6 +146,39 @@ public final class VttServerTabletopState {
 
     public VttTabletop activeTabletop() {
         return tabletop;
+    }
+
+    public synchronized boolean applyAssetFolderCommand(
+            VttAssetFolderCommandPayload request
+    ) {
+        if (request == null) return false;
+        VttAssetFolderService.Section section;
+        try {
+            section = VttAssetFolderService.Section.valueOf(request.section());
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        boolean changed = switch (request.operation()) {
+            case VttAssetFolderCommandPayload.CREATE_FOLDER ->
+                    assetFolderService.createFolder(section, request.source(), request.value());
+            case VttAssetFolderCommandPayload.RENAME_FOLDER ->
+                    assetFolderService.renameFolder(
+                            section, request.source(), request.value()) != null;
+            case VttAssetFolderCommandPayload.MOVE_FOLDER ->
+                    assetFolderService.moveFolder(
+                            section, request.source(), request.value()) != null;
+            case VttAssetFolderCommandPayload.MOVE_ITEM ->
+                    assetFolderService.moveItem(
+                            section, request.source(), request.value());
+            case VttAssetFolderCommandPayload.DELETE_FOLDER ->
+                    assetFolderService.deleteEmptyFolder(section, request.source());
+            default -> false;
+        };
+        if (!changed) return false;
+        assetFolderService.applyMetadata(tabletop, null, null);
+        storage.saveTabletop(tabletop);
+        advanceAuthorityRevision();
+        return true;
     }
 
     public synchronized boolean isPlayerSpectator(UUID playerId) {

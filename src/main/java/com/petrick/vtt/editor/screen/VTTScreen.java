@@ -36,6 +36,7 @@ import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.VttOwnedTokenOption;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
 import com.petrick.vtt.feature.asset.AssetRegistry;
@@ -69,6 +70,7 @@ import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -234,6 +236,10 @@ public final class VTTScreen extends Screen {
     private boolean hudCreationOpen;
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
+    private AssetManagerOverlay.Section assetFolderDialogSection;
+    private String assetFolderDialogPath;
+    private String assetFolderNameBuffer;
+    private boolean renamingAssetFolder;
     private PendingAssetDeletion pendingAssetDeletion;
     private boolean pendingAssetManagerSceneDuplicate;
     private long pendingAssetManagerSceneDuplicateUntil;
@@ -489,6 +495,9 @@ public final class VTTScreen extends Screen {
                     session.getActiveScene(),
                     mapDefinitionRegistry, tokenDefinitionRegistry,
                     assetRegistry, session.getAssetThumbnailRegistry());
+            if (assetFolderNameBuffer != null) {
+                renderAssetFolderDialog(context);
+            }
         }
 
         if (tokenCreationDraft != null) {
@@ -635,6 +644,9 @@ public final class VTTScreen extends Screen {
             hudCreationOpen = false;
             pendingAssetDeletion = null;
         }
+        if (!hudCreationOpen && assetFolderNameBuffer != null) {
+            closeAssetFolderDialog();
+        }
         editorHudOverlay.render(context, this.font, editorHudState());
         if (hudSettingsOpen && session.getActiveScene() != null
                 && mapPickerTarget != MapPickerTarget.ACTIVE_SCENE) {
@@ -703,6 +715,9 @@ public final class VTTScreen extends Screen {
             double mouseX, double mouseY, int button
     ) {
         if (!hudCreationOpen || !session.isLocalMaster()) return false;
+        if (assetFolderNameBuffer != null) {
+            return handleAssetFolderDialogMouseClicked(mouseX, mouseY, button);
+        }
         AssetManagerOverlay.Interaction interaction = assetManagerOverlay.mouseClicked(
                 mouseX, mouseY, button, this.width, this.height,
                 session.getActiveTabletop(), mapDefinitionRegistry,
@@ -716,6 +731,40 @@ public final class VTTScreen extends Screen {
             AssetManagerOverlay.Interaction interaction
     ) {
         if (interaction.section() == null) return;
+        if (interaction.action() == AssetManagerOverlay.Action.BACK_FOLDER) {
+            assetManagerOverlay.goBackFolder();
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.OPEN_FOLDER) {
+            assetManagerOverlay.openFolder(interaction.section(), interaction.value());
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.CREATE_FOLDER) {
+            beginAssetFolderDialog(
+                    interaction.section(), interaction.id(), "", false);
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.RENAME_FOLDER) {
+            beginAssetFolderDialog(
+                    interaction.section(), interaction.value(),
+                    folderLeaf(interaction.value()), true);
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.DELETE_FOLDER) {
+            requestAssetFolderCommand(
+                    VttAssetFolderCommandPayload.DELETE_FOLDER,
+                    interaction.section(), interaction.value(), "");
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.MOVE_ITEM
+                || interaction.action() == AssetManagerOverlay.Action.MOVE_FOLDER) {
+            requestAssetFolderCommand(
+                    interaction.action() == AssetManagerOverlay.Action.MOVE_FOLDER
+                            ? VttAssetFolderCommandPayload.MOVE_FOLDER
+                            : VttAssetFolderCommandPayload.MOVE_ITEM,
+                    interaction.section(), interaction.id(), interaction.value());
+            return;
+        }
         if (interaction.action() == AssetManagerOverlay.Action.SELECT) {
             selectAssetManagerItem(interaction.section(), interaction.id());
             return;
@@ -750,6 +799,74 @@ public final class VTTScreen extends Screen {
         } else if (interaction.action() == AssetManagerOverlay.Action.DELETE) {
             beginAssetManagerDeletion(interaction.section(), interaction.id());
         }
+    }
+
+    private void beginAssetFolderDialog(
+            AssetManagerOverlay.Section section,
+            String path,
+            String initialName,
+            boolean rename
+    ) {
+        assetManagerOverlay.cancelPointerInteraction();
+        assetFolderDialogSection = section;
+        assetFolderDialogPath = path == null ? "" : path;
+        assetFolderNameBuffer = initialName == null ? "" : initialName;
+        renamingAssetFolder = rename;
+    }
+
+    private void closeAssetFolderDialog() {
+        assetFolderDialogSection = null;
+        assetFolderDialogPath = null;
+        assetFolderNameBuffer = null;
+        renamingAssetFolder = false;
+    }
+
+    private void confirmAssetFolderDialog() {
+        if (assetFolderDialogSection == null || assetFolderNameBuffer == null
+                || assetFolderNameBuffer.isBlank()) return;
+        requestAssetFolderCommand(
+                renamingAssetFolder
+                        ? VttAssetFolderCommandPayload.RENAME_FOLDER
+                        : VttAssetFolderCommandPayload.CREATE_FOLDER,
+                assetFolderDialogSection, assetFolderDialogPath,
+                assetFolderNameBuffer.trim());
+        closeAssetFolderDialog();
+    }
+
+    private void requestAssetFolderCommand(
+            String operation,
+            AssetManagerOverlay.Section section,
+            String source,
+            String value
+    ) {
+        if (section == null) return;
+        VttAssetFolderService.Section storageSection =
+                VttAssetFolderService.Section.valueOf(section.name());
+        boolean requested = session.requestAssetFolderCommand(
+                operation, storageSection, source, value);
+        if (!requested) {
+            VttClientEditorNotice.show(
+                    VttAssetFolderCommandPayload.DELETE_FOLDER.equals(operation)
+                            ? "Folder must be empty before it can be deleted"
+                            : "Could not update asset folder");
+            return;
+        }
+        String message = switch (operation) {
+            case VttAssetFolderCommandPayload.CREATE_FOLDER -> "Folder created";
+            case VttAssetFolderCommandPayload.RENAME_FOLDER -> "Folder renamed";
+            case VttAssetFolderCommandPayload.MOVE_FOLDER -> "Folder moved";
+            case VttAssetFolderCommandPayload.MOVE_ITEM -> "Asset moved";
+            case VttAssetFolderCommandPayload.DELETE_FOLDER -> "Folder deleted";
+            default -> "Asset folders updated";
+        };
+        VttClientEditorNotice.show(message);
+    }
+
+    private String folderLeaf(String path) {
+        if (path == null || path.isBlank()) return "";
+        String normalized = path.replace('\\', '/');
+        int slash = normalized.lastIndexOf('/');
+        return slash < 0 ? normalized : normalized.substring(slash + 1);
     }
 
     private void duplicateAssetManagerItem(
@@ -835,7 +952,7 @@ public final class VTTScreen extends Screen {
         PendingAssetDeletion deletion = createPendingAssetDeletion(section, id);
         if (deletion == null) return;
         pendingAssetDeletion = deletion;
-        assetManagerOverlay.mouseReleased(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        assetManagerOverlay.cancelPointerInteraction();
     }
 
     private PendingAssetDeletion createPendingAssetDeletion(
@@ -1169,6 +1286,10 @@ public final class VTTScreen extends Screen {
             case CREATION -> {
                 if (master) {
                     hudCreationOpen = !hudCreationOpen;
+                    if (!hudCreationOpen) {
+                        closeAssetFolderDialog();
+                        assetManagerOverlay.cancelPointerInteraction();
+                    }
                     if (hudCreationOpen) panelVisibility.hideBottomCatalogs();
                     hudPlayersOpen = false;
                     hudSettingsOpen = false;
@@ -1993,7 +2114,13 @@ public final class VTTScreen extends Screen {
             return sceneBackgroundEditor.mouseReleased(button);
         }
         if (hudCreationOpen) {
-            assetManagerOverlay.mouseReleased(button);
+            if (assetFolderNameBuffer != null) return true;
+            AssetManagerOverlay.Interaction interaction =
+                    assetManagerOverlay.mouseReleased(
+                            mouseX, mouseY, button, this.width, this.height,
+                            session.getActiveTabletop(), mapDefinitionRegistry,
+                            tokenDefinitionRegistry);
+            handleAssetManagerInteraction(interaction);
             return true;
         }
         if (hudSettingsOpen && session.getActiveScene() != null
@@ -2080,8 +2207,9 @@ public final class VTTScreen extends Screen {
                     getKeyboardModifiers());
         }
         if (hudCreationOpen) {
+            if (assetFolderNameBuffer != null) return true;
             assetManagerOverlay.mouseDragged(
-                    mouseY, button, this.width, this.height,
+                    mouseX, mouseY, button, this.width, this.height,
                     session.getActiveTabletop(), mapDefinitionRegistry,
                     tokenDefinitionRegistry);
             return true;
@@ -2318,8 +2446,21 @@ public final class VTTScreen extends Screen {
             return true;
         }
         if (hudCreationOpen) {
+            if (assetFolderNameBuffer != null) {
+                if (keyCode == GLFW.GLFW_KEY_ENTER
+                        || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                    confirmAssetFolderDialog();
+                } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                    closeAssetFolderDialog();
+                } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE
+                        && !assetFolderNameBuffer.isEmpty()) {
+                    assetFolderNameBuffer = assetFolderNameBuffer.substring(
+                            0, assetFolderNameBuffer.length() - 1);
+                }
+                return true;
+            }
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                assetManagerOverlay.mouseReleased(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+                assetManagerOverlay.cancelPointerInteraction();
                 hudCreationOpen = false;
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 assetManagerOverlay.backspace(
@@ -3253,6 +3394,18 @@ public final class VTTScreen extends Screen {
         if (pendingAssetDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) return true;
         if (hudCreationOpen) {
+            if (assetFolderNameBuffer != null) {
+                if (isAllowedRenameCharacter(codePoint)
+                        && assetFolderNameBuffer.length() < 64
+                        && codePoint != '/' && codePoint != '\\'
+                        && codePoint != ':' && codePoint != '*'
+                        && codePoint != '?' && codePoint != '"'
+                        && codePoint != '<' && codePoint != '>'
+                        && codePoint != '|') {
+                    assetFolderNameBuffer += codePoint;
+                }
+                return true;
+            }
             if (assetManagerOverlay.charTyped(
                     codePoint, session.getActiveTabletop(),
                     mapDefinitionRegistry, tokenDefinitionRegistry)) {
@@ -3953,6 +4106,84 @@ public final class VTTScreen extends Screen {
                 0xFFFFFFFF, false);
         context.graphics().drawString(this.font, "Enter: rename   Esc: cancel", x + 10, y + 48,
                 0xFFAAAAAA, false);
+    }
+
+    private void renderAssetFolderDialog(VRenderContext context) {
+        int dialogWidth = 340;
+        int dialogHeight = 120;
+        int x = (context.screenWidth() - dialogWidth) / 2;
+        int y = (context.screenHeight() - dialogHeight) / 2;
+        renderSceneDialogFrame(context, x, y, dialogWidth, dialogHeight);
+
+        String title = renamingAssetFolder ? "Rename Folder" : "Create Folder";
+        context.graphics().drawCenteredString(
+                this.font, title, x + dialogWidth / 2, y + 12, 0xFFFFFFFF);
+        context.graphics().drawString(
+                this.font, "Name", x + 14, y + 36, 0xFFCCCCCC, false);
+        context.graphics().fill(
+                x + 54, y + 31, x + dialogWidth - 14, y + 52, 0xFF17171C);
+        context.graphics().hLine(
+                x + 54, x + dialogWidth - 14, y + 31, 0xFF66DDEE);
+        context.graphics().hLine(
+                x + 54, x + dialogWidth - 14, y + 52, 0xFF66DDEE);
+        context.graphics().vLine(
+                x + 54, y + 31, y + 52, 0xFF66DDEE);
+        context.graphics().vLine(
+                x + dialogWidth - 14, y + 31, y + 52, 0xFF66DDEE);
+        context.graphics().drawString(
+                this.font, assetFolderNameBuffer + "_",
+                x + 61, y + 38, 0xFFFFFFFF, false);
+
+        int buttonY = y + 73;
+        int buttonWidth = 128;
+        renderAssetFolderDialogButton(
+                context, x + 14, buttonY, buttonWidth,
+                renamingAssetFolder ? "Rename" : "Create", true);
+        renderAssetFolderDialogButton(
+                context, x + dialogWidth - buttonWidth - 14,
+                buttonY, buttonWidth, "Cancel", false);
+    }
+
+    private void renderAssetFolderDialogButton(
+            VRenderContext context,
+            int x,
+            int y,
+            int width,
+            String label,
+            boolean primary
+    ) {
+        context.graphics().fill(
+                x, y, x + width, y + 28,
+                primary ? 0xFF285E70 : 0xFF303036);
+        context.graphics().hLine(x, x + width, y, 0xFFFFFFFF);
+        context.graphics().hLine(x, x + width, y + 28, 0xFFFFFFFF);
+        context.graphics().vLine(x, y, y + 28, 0xFFFFFFFF);
+        context.graphics().vLine(x + width, y, y + 28, 0xFFFFFFFF);
+        context.graphics().drawCenteredString(
+                this.font, label, x + width / 2, y + 10, 0xFFFFFFFF);
+    }
+
+    private boolean handleAssetFolderDialogMouseClicked(
+            double mouseX,
+            double mouseY,
+            int button
+    ) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
+        int dialogWidth = 340;
+        int dialogHeight = 120;
+        int x = (this.width - dialogWidth) / 2;
+        int y = (this.height - dialogHeight) / 2;
+        int buttonY = y + 73;
+        int buttonWidth = 128;
+        if (mouseX >= x + 14 && mouseX <= x + 14 + buttonWidth
+                && mouseY >= buttonY && mouseY <= buttonY + 28) {
+            confirmAssetFolderDialog();
+        } else if (mouseX >= x + dialogWidth - buttonWidth - 14
+                && mouseX <= x + dialogWidth - 14
+                && mouseY >= buttonY && mouseY <= buttonY + 28) {
+            closeAssetFolderDialog();
+        }
+        return true;
     }
 
     private void renderDeleteSceneConfirmation(VRenderContext context) {
