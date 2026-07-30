@@ -98,7 +98,7 @@ public final class AssetManagerOverlay {
         Bounds panel = panel(context.screenWidth(), context.screenHeight());
         context.graphics().fill(
                 panel.x(), panel.y(), panel.right(), panel.bottom(), 0xF21B1B1F);
-        border(context, panel, 0xFFE8E8E8);
+        border(context, panel, EditorHudTheme.outline());
         context.graphics().fill(
                 panel.x() + 1, panel.y() + 1, panel.right() - 1,
                 panel.y() + HEADER_HEIGHT, 0xFF4A4A4A);
@@ -112,16 +112,16 @@ public final class AssetManagerOverlay {
             if (parentDropTarget) {
                 context.graphics().fill(
                         back.x() - 3, back.y(), back.right() + 3,
-                        back.bottom(), 0xFF6B3478);
+                        back.bottom(), EditorHudTheme.selection());
                 thickBorder(context, new Bounds(
                         back.x() - 3, back.y(), back.width() + 6,
-                        back.height()), 0xFFFFAAFF);
+                        back.height()), EditorHudTheme.opaqueSelection());
             }
             context.graphics().drawString(
                     font, "<", back.x(), panel.y() + 18,
                     parentDropTarget ? 0xFFFFFFFF
                             : back.contains(context.mouseX(), context.mouseY())
-                            ? 0xFF66DDEE : 0xFFFFFFFF, false);
+                            ? EditorHudTheme.opaqueSelection() : 0xFFFFFFFF, false);
         }
         context.graphics().drawString(
                 font, title, panel.x() + (currentFolder.isBlank() ? 14 : 28),
@@ -131,7 +131,8 @@ public final class AssetManagerOverlay {
         context.graphics().fill(
                 searchBox.x(), searchBox.y(), searchBox.right(), searchBox.bottom(),
                 searchFocused ? 0xFF242D33 : 0xFF202024);
-        border(context, searchBox, searchFocused ? 0xFF66DDEE : 0xFFFFFFFF);
+        border(context, searchBox, searchFocused
+                ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline());
         String searchText = search.isBlank()
                 ? (searchFocused ? "" : "Search...")
                 : search;
@@ -207,7 +208,7 @@ public final class AssetManagerOverlay {
             }
             if (draggingItem != null && item.folder()
                     && item.path().equals(dragTargetFolder)) {
-                thickBorder(context, card, 0xFFFFAAFF);
+                thickBorder(context, card, EditorHudTheme.opaqueSelection());
             }
         }
         renderScrollbar(context, panel, grid);
@@ -220,7 +221,7 @@ public final class AssetManagerOverlay {
         if (draggingItem != null) {
             renderDragPreview(context, font, draggingItem);
         }
-        border(context, panel, 0xFFE8E8E8);
+        border(context, panel, EditorHudTheme.outline());
     }
 
     public Interaction mouseClicked(
@@ -581,10 +582,13 @@ public final class AssetManagerOverlay {
         boolean hovered = card.contains(context.mouseX(), context.mouseY());
         context.graphics().fill(
                 card.x(), card.y(), card.right(), card.bottom(),
-                selected ? 0xFF5B3275
-                        : item.folder() ? hovered ? 0xFF563069 : 0xFF40234F
+                selected ? EditorHudTheme.selection()
+                        : item.folder() ? hovered
+                        ? EditorHudTheme.folderHover()
+                        : EditorHudTheme.folderBackground()
                         : hovered ? 0xFF303034 : 0xFF202024);
-        border(context, card, selected ? 0xFF66DDEE : 0xFFE8E8E8);
+        border(context, card, selected
+                ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline());
         Bounds preview = new Bounds(card.x() + 8, card.y() + 8,
                 card.width() - 16, card.height() - 34);
         if (item.folder()) {
@@ -736,7 +740,7 @@ public final class AssetManagerOverlay {
         boolean hovered = track.contains(context.mouseX(), context.mouseY());
         context.graphics().fill(
                 thumb.x(), thumb.y(), thumb.right(), thumb.bottom(),
-                draggingScrollbar ? 0xFF66DDEE
+                draggingScrollbar ? EditorHudTheme.opaqueSelection()
                         : hovered ? 0xFFB8EAF2 : 0xFFD8D8DC);
     }
 

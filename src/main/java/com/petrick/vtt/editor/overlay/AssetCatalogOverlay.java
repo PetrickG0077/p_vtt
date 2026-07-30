@@ -7,6 +7,7 @@ import com.petrick.vtt.editor.catalog.AssetCatalogTreeBuilder;
 import com.petrick.vtt.editor.catalog.AssetCatalogTreeNode;
 import com.petrick.vtt.editor.catalog.AssetCatalogTreeState;
 import com.petrick.vtt.editor.catalog.AssetCatalogVisibleRow;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
@@ -59,8 +60,6 @@ public final class AssetCatalogOverlay {
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
-    private static final int PANEL_BORDER = 0xFFFFAA33;
-
     private static final int SEARCH_BORDER = 0xFFFF7733;
 
     private static final int SEARCH_BORDER_INACTIVE = 0xFFAA6633;
@@ -76,8 +75,6 @@ public final class AssetCatalogOverlay {
     private static final int HOVER_TEXT_COLOR = 0xFFFFDD88;
 
     private static final int FOLDER_TEXT_COLOR = 0xFFFFCC66;
-
-    private static final int SELECTED_ROW_BACKGROUND = 0x55FFAA33;
 
     private static final int HOVERED_ROW_BACKGROUND = 0x33222222;
 
@@ -231,7 +228,7 @@ public final class AssetCatalogOverlay {
                     rows.size(),
                     maxVisibleRows,
                     firstVisibleIndex,
-                    PANEL_BORDER
+                    EditorHudTheme.outline()
             );
         }
 
@@ -332,7 +329,7 @@ public final class AssetCatalogOverlay {
     ) {
         if (selected || hovered) {
             int rowBackground = selected
-                    ? SELECTED_ROW_BACKGROUND
+                    ? EditorHudTheme.selectionWithAlpha(0x55)
                     : HOVERED_ROW_BACKGROUND;
 
             context.graphics().fill(
@@ -347,6 +344,10 @@ public final class AssetCatalogOverlay {
         int indentX = x + row.depth() * INDENT_WIDTH;
 
         if (row.isFolder()) {
+            context.graphics().fill(
+                    x - 3, y,
+                    x + PANEL_WIDTH - PADDING * 2, y + ROW_HEIGHT,
+                    EditorHudTheme.folderBackground());
             renderFolderRow(
                     context,
                     font,
@@ -516,10 +517,12 @@ public final class AssetCatalogOverlay {
             );
         }
 
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void renderLibraryFilePlaceholder(
@@ -1150,10 +1153,12 @@ public final class AssetCatalogOverlay {
                 PANEL_BACKGROUND
         );
 
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void drawLine(

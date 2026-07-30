@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.dialog;
 
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.TokenStateDraft;
 import com.petrick.vtt.editor.token.VttPlayerOption;
@@ -36,8 +37,6 @@ public final class TokenCreationDialog {
 
     private static final int PANEL_BACKGROUND = 0xEE000000;
 
-    private static final int PANEL_BORDER = 0xFF8844DD;
-
     private static final int TITLE_COLOR = 0xFFFFFFFF;
 
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -46,15 +45,7 @@ public final class TokenCreationDialog {
 
     private static final int INPUT_BACKGROUND = 0xAA050505;
 
-    private static final int INPUT_BORDER = 0xFF8844DD;
-
-    private static final int INPUT_ACTIVE_BORDER = 0xFFFFAA33;
-
     private static final int BUTTON_BACKGROUND = 0x66000000;
-
-    private static final int BUTTON_BORDER = 0xFF8844DD;
-
-    private static final int BUTTON_HOVER_BORDER = 0xFFFFAA33;
 
     private static final int IMAGE_BOX_SIZE = 92;
 
@@ -87,8 +78,6 @@ public final class TokenCreationDialog {
     private static final int STATE_ROW_BUTTON_GAP = 3;
 
     private static final int MAX_VISIBLE_STATES = 2;
-
-    private static final int SELECTED_STATE_BACKGROUND = 0x553399FF;
 
     private static final int HOVERED_STATE_BACKGROUND = 0x33222222;
 
@@ -607,7 +596,7 @@ public final class TokenCreationDialog {
                 y,
                 DIALOG_WIDTH,
                 DIALOG_HEIGHT,
-                PANEL_BORDER
+                EditorHudTheme.outline()
         );
     }
 
@@ -639,7 +628,7 @@ public final class TokenCreationDialog {
                 y,
                 IMAGE_BOX_SIZE,
                 IMAGE_BOX_SIZE,
-                hovered ? BUTTON_HOVER_BORDER : BUTTON_BORDER
+                hovered ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline()
         );
 
         if (draft.hasSelectedImage()) {
@@ -731,7 +720,8 @@ public final class TokenCreationDialog {
                 y,
                 INPUT_WIDTH,
                 INPUT_HEIGHT,
-                activeField == field ? INPUT_ACTIVE_BORDER : INPUT_BORDER
+                activeField == field
+                        ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline()
         );
 
         String visibleValue = value;
@@ -774,7 +764,9 @@ public final class TokenCreationDialog {
             context.graphics().fill(x, rowY, x + INPUT_WIDTH, rowY + PLAYER_ROW_HEIGHT,
                     selected ? 0xEE332255 : 0xEE080808);
             drawBorder(context, x, rowY, INPUT_WIDTH, PLAYER_ROW_HEIGHT,
-                    selected ? INPUT_ACTIVE_BORDER : INPUT_BORDER);
+                    selected
+                            ? EditorHudTheme.opaqueSelection()
+                            : EditorHudTheme.outline());
             context.graphics().drawString(font, truncateText(choice.label(), 28),
                     x + 5, rowY + 5, TEXT_COLOR, false);
         }
@@ -841,7 +833,7 @@ public final class TokenCreationDialog {
                 y,
                 STATE_PANEL_WIDTH,
                 STATE_PANEL_HEIGHT,
-                PANEL_BORDER
+                EditorHudTheme.outline()
         );
 
         context.graphics().drawString(
@@ -948,7 +940,8 @@ public final class TokenCreationDialog {
         int barHeight = STATE_ROW_HEIGHT * MAX_VISIBLE_STATES;
 
         EditorScrollbar.render(context, barX, barY, 3, barHeight,
-                stateCount, MAX_VISIBLE_STATES, stateListScrollOffset, PANEL_BORDER);
+                stateCount, MAX_VISIBLE_STATES, stateListScrollOffset,
+                EditorHudTheme.outline());
     }
 
     private void renderStateRow(
@@ -976,7 +969,9 @@ public final class TokenCreationDialog {
                     y - 1,
                     x + width,
                     y + STATE_ROW_HEIGHT - 1,
-                    selected ? SELECTED_STATE_BACKGROUND : HOVERED_STATE_BACKGROUND
+                    selected
+                            ? EditorHudTheme.selectionWithAlpha(0x55)
+                            : HOVERED_STATE_BACKGROUND
             );
         }
 
@@ -1309,7 +1304,8 @@ public final class TokenCreationDialog {
                 y,
                 inputWidth,
                 INPUT_HEIGHT,
-                activeField == Field.STATE_NAME ? INPUT_ACTIVE_BORDER : INPUT_BORDER
+                activeField == Field.STATE_NAME
+                        ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline()
         );
 
         String visibleText = activeField == Field.STATE_NAME
@@ -1348,7 +1344,7 @@ public final class TokenCreationDialog {
                 y,
                 BUTTON_WIDTH,
                 BUTTON_HEIGHT,
-                hovered ? BUTTON_HOVER_BORDER : BUTTON_BORDER
+                hovered ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline()
         );
 
         drawCenteredString(
@@ -1385,7 +1381,7 @@ public final class TokenCreationDialog {
                 y,
                 width,
                 height,
-                hovered ? BUTTON_HOVER_BORDER : BUTTON_BORDER
+                hovered ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline()
         );
 
         drawCenteredString(

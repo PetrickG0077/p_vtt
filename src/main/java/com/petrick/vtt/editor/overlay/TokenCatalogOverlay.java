@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.feature.asset.animation.AnimatedTextureService;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
@@ -50,8 +51,6 @@ public final class TokenCatalogOverlay {
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
-    private static final int PANEL_BORDER = 0xFFAA66FF;
-
     private static final int THUMBNAIL_BORDER = 0xFFDDDDDD;
 
     private static final int TITLE_COLOR = 0xFFFFFFFF;
@@ -62,16 +61,11 @@ public final class TokenCatalogOverlay {
 
     private static final int HOVER_TEXT_COLOR = 0xFFFFDD88;
 
-    private static final int SELECTED_ROW_BACKGROUND = 0x553399FF;
-
     private static final int HOVERED_ROW_BACKGROUND = 0x33222222;
 
     private static final int DRAG_PREVIEW_BACKGROUND = 0xCC000000;
 
-    private static final int DRAG_PREVIEW_BORDER = 0xFFAA66FF;
-
     private static final int DETAILS_POPUP_WIDTH = 230;
-    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
     private static final ResourceLocation FOLDER_ICON =
             ResourceLocation.fromNamespaceAndPath(
                     VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
@@ -189,7 +183,7 @@ public final class TokenCatalogOverlay {
                     rows.size(),
                     MAX_VISIBLE_TOKENS,
                     firstDefinition,
-                    PANEL_BORDER
+                    EditorHudTheme.outline()
             );
         }
 
@@ -252,7 +246,7 @@ public final class TokenCatalogOverlay {
     ) {
         if (selected || hovered) {
             int rowBackground = selected
-                    ? SELECTED_ROW_BACKGROUND
+                    ? EditorHudTheme.selectionWithAlpha(0x55)
                     : HOVERED_ROW_BACKGROUND;
 
             context.graphics().fill(
@@ -308,7 +302,7 @@ public final class TokenCatalogOverlay {
     ) {
         context.graphics().fill(
                 x - 3, y, x + PANEL_WIDTH - PADDING * 2,
-                y + TOKEN_ROW_HEIGHT, FOLDER_ROW_BACKGROUND);
+                y + TOKEN_ROW_HEIGHT, EditorHudTheme.folderBackground());
         context.graphics().blit(
                 FOLDER_ICON, x + 3, y + 7,
                 16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
@@ -384,10 +378,14 @@ public final class TokenCatalogOverlay {
                 DRAG_PREVIEW_BACKGROUND
         );
 
-        context.graphics().hLine(x, x + width, y, DRAG_PREVIEW_BORDER);
-        context.graphics().hLine(x, x + width, y + height, DRAG_PREVIEW_BORDER);
-        context.graphics().vLine(x, y, y + height, DRAG_PREVIEW_BORDER);
-        context.graphics().vLine(x + width, y, y + height, DRAG_PREVIEW_BORDER);
+        context.graphics().hLine(
+                x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
 
         drawLine(
                 context,
@@ -728,10 +726,12 @@ public final class TokenCatalogOverlay {
                 PANEL_BACKGROUND
         );
 
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void drawLine(

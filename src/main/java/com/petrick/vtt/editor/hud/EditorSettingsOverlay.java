@@ -13,11 +13,8 @@ public final class EditorSettingsOverlay {
     private static final int HEIGHT = 230;
     private static final int CATEGORY_WIDTH = 92;
     private static final int PANEL_BACKGROUND = 0xF0101014;
-    private static final int PANEL_BORDER = 0xFFE8E8E8;
-    private static final int SELECTED_BACKGROUND = 0xE0245266;
     private static final int CONTROL_BACKGROUND = 0xE018181E;
     private static final int CONTROL_HOVER = 0xE032323C;
-    private static final int ACTIVE = 0xFF66DDEE;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF99999F;
     private static final int[] COLOR_PRESETS = {
@@ -38,10 +35,12 @@ public final class EditorSettingsOverlay {
         Bounds panel = bounds(context.screenWidth(), context.screenHeight());
         context.graphics().fill(panel.x(), panel.y(), panel.right(), panel.bottom(),
                 PANEL_BACKGROUND);
-        border(context, panel, PANEL_BORDER);
+        border(context, panel, EditorHudTheme.outline());
         context.graphics().drawCenteredString(
                 font, "Settings", panel.x() + panel.width() / 2, panel.y() + 8, TEXT);
-        context.graphics().hLine(panel.x() + 8, panel.right() - 8, panel.y() + 21, PANEL_BORDER);
+        context.graphics().hLine(
+                panel.x() + 8, panel.right() - 8, panel.y() + 21,
+                EditorHudTheme.outline());
 
         renderCategory(context, font, gridCategoryBounds(panel), "Grid",
                 selectedCategory == Category.GRID);
@@ -220,7 +219,7 @@ public final class EditorSettingsOverlay {
         if (selected) {
             context.graphics().fill(
                     bounds.x(), bounds.y(), bounds.right(), bounds.bottom(),
-                    SELECTED_BACKGROUND);
+                    EditorHudTheme.selection());
         }
         context.graphics().drawCenteredString(
                 font, label, bounds.x() + bounds.width() / 2, bounds.y() + 6,
@@ -323,7 +322,9 @@ public final class EditorSettingsOverlay {
             int color = 0xFF000000 | COLOR_PRESETS[index];
             context.graphics().fill(swatch.x(), swatch.y(), swatch.right(), swatch.bottom(), color);
             border(context, swatch,
-                    grid.getColorRgb() == COLOR_PRESETS[index] ? ACTIVE : PANEL_BORDER);
+                    grid.getColorRgb() == COLOR_PRESETS[index]
+                            ? EditorHudTheme.opaqueSelection()
+                            : EditorHudTheme.outline());
             if (!editable) {
                 context.graphics().fill(
                         swatch.x(), swatch.y(), swatch.right(), swatch.bottom(), 0x55000000);
@@ -417,7 +418,7 @@ public final class EditorSettingsOverlay {
         context.graphics().fill(
                 toggle.x(), toggle.y(), toggle.right(), toggle.bottom(),
                 grid.isTopLayer() ? 0xFF246677 : 0xFF3A3A40);
-        border(context, toggle, editable ? PANEL_BORDER : MUTED);
+        border(context, toggle, editable ? EditorHudTheme.outline() : MUTED);
         int knobLeft = grid.isTopLayer() ? toggle.right() - 11 : toggle.x() + 2;
         context.graphics().fill(
                 knobLeft, toggle.y() + 2, knobLeft + 9, toggle.bottom() - 2,
@@ -433,7 +434,7 @@ public final class EditorSettingsOverlay {
         context.graphics().fill(
                 bounds.x(), bounds.y(), bounds.right(), bounds.bottom(),
                 hovered ? CONTROL_HOVER : CONTROL_BACKGROUND);
-        border(context, bounds, editable ? PANEL_BORDER : 0xFF55555A);
+        border(context, bounds, editable ? EditorHudTheme.outline() : 0xFF55555A);
     }
 
     private void updateOpacity(VttSceneGrid grid, Bounds slider, double mouseX) {

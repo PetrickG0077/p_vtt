@@ -17,12 +17,9 @@ public final class EditorHudOverlay {
     private static final int GAP = 2;
     private static final int PADDING = 3;
     private static final int PANEL_BACKGROUND = 0xD8101014;
-    private static final int PANEL_BORDER = 0xFFE8E8E8;
     private static final int BUTTON_BACKGROUND = 0xE018181E;
     private static final int BUTTON_HOVER = 0xE032323C;
-    private static final int BUTTON_ACTIVE = 0xE0245266;
     private static final int BUTTON_DISABLED = 0xD0181818;
-    private static final int ACTIVE_BORDER = 0xFF66DDEE;
     private static final int OPEN_BORDER = 0xFFFFC45A;
     private static final int DISABLED_BORDER = 0xFF55555A;
     private static final int TEXT = 0xFFF4F4F4;
@@ -182,16 +179,18 @@ public final class EditorHudOverlay {
 
     private void renderPanel(VRenderContext context, int x, int y, int width, int height) {
         context.graphics().fill(x, y, x + width, y + height, PANEL_BACKGROUND);
-        border(context, x, y, width, height, PANEL_BORDER);
+        border(context, x, y, width, height, EditorHudTheme.outline());
     }
 
     private void renderButton(VRenderContext context, Font font, Button button) {
         boolean hovered = button.contains(context.mouseX(), context.mouseY());
         int background = !button.enabled() ? BUTTON_DISABLED
-                : button.active() ? BUTTON_ACTIVE : hovered ? BUTTON_HOVER : BUTTON_BACKGROUND;
+                : button.active() ? EditorHudTheme.selection()
+                : hovered ? BUTTON_HOVER : BUTTON_BACKGROUND;
         int border = !button.enabled() ? DISABLED_BORDER
-                : button.active() ? (button.action().isPopup() ? OPEN_BORDER : ACTIVE_BORDER)
-                : PANEL_BORDER;
+                : button.active() ? (button.action().isPopup()
+                ? OPEN_BORDER : EditorHudTheme.opaqueSelection())
+                : EditorHudTheme.outline();
         context.graphics().fill(button.x(), button.y(), button.x() + button.size(),
                 button.y() + button.size(), background);
         border(context, button.x(), button.y(), button.size(), button.size(), border);
@@ -240,7 +239,7 @@ public final class EditorHudOverlay {
                 if (selectedRow || hovered) {
                     context.graphics().fill(row.x(), row.y(), row.x() + row.width(),
                             row.y() + row.height(),
-                            selectedRow ? BUTTON_ACTIVE : BUTTON_HOVER);
+                            selectedRow ? EditorHudTheme.selection() : BUTTON_HOVER);
                 }
                 boolean ownsSelectedToken = player.id().equals(state.selectedSceneTokenOwnerId());
                 String markers = (local ? " (you)" : "")
@@ -248,7 +247,7 @@ public final class EditorHudOverlay {
                 String name = trim(player.displayName(),
                         Math.max(8, 22 - markers.length())) + markers;
                 context.graphics().drawString(font, name, row.x() + 3, y,
-                        local ? ACTIVE_BORDER : TEXT, false);
+                        local ? EditorHudTheme.opaqueSelection() : TEXT, false);
                 String role = player.spectator() ? "SPECTATOR" : player.role().name();
                 context.graphics().drawString(font, role,
                         row.x() + row.width() - font.width(role) - 3, y,
@@ -315,7 +314,8 @@ public final class EditorHudOverlay {
             boolean hovered = row.contains(context.mouseX(), context.mouseY());
             if (selected || hovered) {
                 context.graphics().fill(row.x(), row.y(), row.x() + row.width(),
-                        row.y() + row.height(), selected ? BUTTON_ACTIVE : BUTTON_HOVER);
+                        row.y() + row.height(),
+                        selected ? EditorHudTheme.selection() : BUTTON_HOVER);
             }
             String status = (!token.visible() ? " [hidden]" : "")
                     + (!token.visionEnabled() ? " [no vision]" : "");
@@ -339,7 +339,7 @@ public final class EditorHudOverlay {
         context.graphics().fill(row.x(), row.y(), row.x() + row.width(), row.y() + row.height(),
                 hovered ? BUTTON_HOVER : BUTTON_BACKGROUND);
         border(context, row.x(), row.y(), row.width(), row.height(),
-                enabled ? PANEL_BORDER : DISABLED_BORDER);
+                enabled ? EditorHudTheme.outline() : DISABLED_BORDER);
         context.graphics().drawString(font, label, row.x() + 5, row.y() + 4,
                 enabled ? TEXT : MUTED, false);
     }
@@ -509,7 +509,7 @@ public final class EditorHudOverlay {
         int x = Math.max(3, Math.min(context.screenWidth() - width - 3, context.mouseX() + 10));
         int y = Math.max(3, Math.min(context.screenHeight() - 17, context.mouseY() + 10));
         context.graphics().fill(x, y, x + width, y + 15, 0xEE08080A);
-        border(context, x, y, width, 15, PANEL_BORDER);
+        border(context, x, y, width, 15, EditorHudTheme.outline());
         context.graphics().drawString(font, text, x + 4, y + 4,
                 button.enabled() ? TEXT : MUTED, false);
     }

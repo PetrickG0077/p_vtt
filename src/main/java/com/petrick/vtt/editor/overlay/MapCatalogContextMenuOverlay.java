@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.editor.catalog.MapCatalogContextMenu;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -18,7 +19,7 @@ public final class MapCatalogContextMenuOverlay {
         int y = menu.getY();
         int height = PADDING * 2 + OPTION_HEIGHT * 3;
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xEE101010);
-        border(context, x, y, WIDTH, height, 0xFF555555);
+        border(context, x, y, WIDTH, height, EditorHudTheme.outline());
         option(context, font, x, y, 0, "Edit", false);
         option(context, font, x, y, 1, "Duplicate", false);
         option(context, font, x, y, 2, "Delete", true);

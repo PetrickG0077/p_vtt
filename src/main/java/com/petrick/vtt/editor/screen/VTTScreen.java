@@ -17,6 +17,7 @@ import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.dialog.TokenCreationDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.hud.EditorHudOverlay;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.editor.hud.EditorSettingsOverlay;
 import com.petrick.vtt.editor.hud.AssetDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetManagerOverlay;
@@ -260,6 +261,7 @@ public final class VTTScreen extends Screen {
         super(Component.literal("Virtual Tabletop"));
 
         this.session = VTT.getApplication().getActiveSession();
+        EditorHudTheme.initialize(Minecraft.getInstance().gameDirectory.toPath());
 
         this.camera = new Camera2D();
         this.assetRegistry = session.getAssetRegistry();
@@ -3671,7 +3673,7 @@ public final class VTTScreen extends Screen {
         int y = context.screenHeight() / 2 - height / 2 + 70;
 
         int background = 0xDD000000;
-        int border = 0xFF66CCFF;
+        int border = EditorHudTheme.outline();
         int textColor = 0xFFFFFFFF;
         int mutedColor = 0xFFAAAAAA;
 
@@ -4123,13 +4125,17 @@ public final class VTTScreen extends Screen {
         context.graphics().fill(
                 x + 54, y + 31, x + dialogWidth - 14, y + 52, 0xFF17171C);
         context.graphics().hLine(
-                x + 54, x + dialogWidth - 14, y + 31, 0xFF66DDEE);
+                x + 54, x + dialogWidth - 14, y + 31,
+                EditorHudTheme.opaqueSelection());
         context.graphics().hLine(
-                x + 54, x + dialogWidth - 14, y + 52, 0xFF66DDEE);
+                x + 54, x + dialogWidth - 14, y + 52,
+                EditorHudTheme.opaqueSelection());
         context.graphics().vLine(
-                x + 54, y + 31, y + 52, 0xFF66DDEE);
+                x + 54, y + 31, y + 52,
+                EditorHudTheme.opaqueSelection());
         context.graphics().vLine(
-                x + dialogWidth - 14, y + 31, y + 52, 0xFF66DDEE);
+                x + dialogWidth - 14, y + 31, y + 52,
+                EditorHudTheme.opaqueSelection());
         context.graphics().drawString(
                 this.font, assetFolderNameBuffer + "_",
                 x + 61, y + 38, 0xFFFFFFFF, false);
@@ -4154,11 +4160,15 @@ public final class VTTScreen extends Screen {
     ) {
         context.graphics().fill(
                 x, y, x + width, y + 28,
-                primary ? 0xFF285E70 : 0xFF303036);
-        context.graphics().hLine(x, x + width, y, 0xFFFFFFFF);
-        context.graphics().hLine(x, x + width, y + 28, 0xFFFFFFFF);
-        context.graphics().vLine(x, y, y + 28, 0xFFFFFFFF);
-        context.graphics().vLine(x + width, y, y + 28, 0xFFFFFFFF);
+                primary ? EditorHudTheme.selection() : 0xFF303036);
+        context.graphics().hLine(
+                x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + 28, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x, y, y + 28, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + 28, EditorHudTheme.outline());
         context.graphics().drawCenteredString(
                 this.font, label, x + width / 2, y + 10, 0xFFFFFFFF);
     }
@@ -4201,10 +4211,12 @@ public final class VTTScreen extends Screen {
 
     private void renderSceneDialogFrame(VRenderContext context, int x, int y, int width, int height) {
         context.graphics().fill(x, y, x + width, y + height, 0xEE000000);
-        context.graphics().hLine(x, x + width, y, 0xFFFFAA44);
-        context.graphics().hLine(x, x + width, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x, y, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x + width, y, y + height, 0xFFFFAA44);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void handleActiveSceneChange() {

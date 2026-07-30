@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
@@ -22,11 +23,9 @@ public final class SceneOutlinerOverlay {
     private static final int MAX_VISIBLE_MAPS = 5;
     private static final int MAX_VISIBLE_OBJECTS = 10;
     private static final int PANEL_BACKGROUND = 0xAA000000;
-    private static final int PANEL_BORDER = 0xFF66CC66;
     private static final int TITLE_COLOR = 0xFFFFFFFF;
     private static final int TEXT_COLOR = 0xFFDDDDDD;
     private static final int MUTED_TEXT_COLOR = 0xFF888888;
-    private static final int SELECTED_TEXT_COLOR = 0xFF66FF66;
 
     private int mapScrollOffset;
     private int objectScrollOffset;
@@ -59,7 +58,7 @@ public final class SceneOutlinerOverlay {
                         + "[" + map.getLayerIndex() + "] " + map.getDisplayName();
                 drawLine(context, font, text, textX,
                         layout.firstMapY() + index * LINE_HEIGHT,
-                        selected ? SELECTED_TEXT_COLOR
+                        selected ? EditorHudTheme.opaqueSelection()
                                 : map.isVisible() ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
             if (maps.size() > MAX_VISIBLE_MAPS) {
@@ -68,7 +67,7 @@ public final class SceneOutlinerOverlay {
                         textX, layout.mapRangeY(), MUTED_TEXT_COLOR);
                 EditorScrollbar.render(context, scrollbarX(), layout.firstMapY(), 4,
                         MAX_VISIBLE_MAPS * LINE_HEIGHT, maps.size(), MAX_VISIBLE_MAPS,
-                        mapScrollOffset, PANEL_BORDER);
+                        mapScrollOffset, EditorHudTheme.outline());
             }
         }
 
@@ -88,7 +87,7 @@ public final class SceneOutlinerOverlay {
                         + " {" + object.activeStateId() + "}";
                 drawLine(context, font, text, textX,
                         layout.firstObjectY() + index * LINE_HEIGHT,
-                        selected ? SELECTED_TEXT_COLOR
+                        selected ? EditorHudTheme.opaqueSelection()
                                 : object.visible() ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
             if (objects.size() > MAX_VISIBLE_OBJECTS) {
@@ -97,7 +96,8 @@ public final class SceneOutlinerOverlay {
                         textX, layout.objectRangeY(), MUTED_TEXT_COLOR);
                 EditorScrollbar.render(context, scrollbarX(), layout.firstObjectY(), 4,
                         MAX_VISIBLE_OBJECTS * LINE_HEIGHT, objects.size(),
-                        MAX_VISIBLE_OBJECTS, objectScrollOffset, PANEL_BORDER);
+                        MAX_VISIBLE_OBJECTS, objectScrollOffset,
+                        EditorHudTheme.outline());
             }
         }
     }
@@ -262,10 +262,12 @@ public final class SceneOutlinerOverlay {
             VRenderContext context, int x, int y, int width, int height
     ) {
         context.graphics().fill(x, y, x + width, y + height, PANEL_BACKGROUND);
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void drawLine(

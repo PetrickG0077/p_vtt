@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.editor.catalog.SceneContextMenu;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -18,10 +19,12 @@ public final class SceneContextMenuOverlay {
         int y = menu.getY();
         int height = PADDING * 2 + OPTION_HEIGHT * 3;
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xEE101010);
-        context.graphics().hLine(x, x + WIDTH, y, 0xFF666666);
-        context.graphics().hLine(x, x + WIDTH, y + height, 0xFF666666);
-        context.graphics().vLine(x, y, y + height, 0xFF666666);
-        context.graphics().vLine(x + WIDTH, y, y + height, 0xFF666666);
+        context.graphics().hLine(x, x + WIDTH, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + WIDTH, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + WIDTH, y, y + height, EditorHudTheme.outline());
         renderOption(context, font, "Duplicate", x, y, 0, 0xFFFFFFFF);
         renderOption(context, font, "Rename", x, y, 1, 0xFFFFFFFF);
         renderOption(context, font, "Delete", x, y, 2, 0xFFFF5555);

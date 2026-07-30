@@ -1,6 +1,7 @@
 package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -16,8 +17,6 @@ public final class TokenCatalogContextMenuOverlay {
     private static final int PADDING = 4;
 
     private static final int BACKGROUND_COLOR = 0xEE101010;
-
-    private static final int BORDER_COLOR = 0xFF555555;
 
     private static final int HOVER_COLOR = 0xFF3A3A22;
 
@@ -55,10 +54,12 @@ public final class TokenCatalogContextMenuOverlay {
                 BACKGROUND_COLOR
         );
 
-        context.graphics().hLine(x, x + WIDTH, y, BORDER_COLOR);
-        context.graphics().hLine(x, x + WIDTH, y + height, BORDER_COLOR);
-        context.graphics().vLine(x, y, y + height, BORDER_COLOR);
-        context.graphics().vLine(x + WIDTH, y, y + height, BORDER_COLOR);
+        context.graphics().hLine(x, x + WIDTH, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + WIDTH, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + WIDTH, y, y + height, EditorHudTheme.outline());
 
         renderOption(context, font, "Edit", x, y, 0, false);
         renderOption(context, font, "View in explorer", x, y, 1, false);

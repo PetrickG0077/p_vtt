@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.overlay;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
 import com.petrick.vtt.editor.catalog.MapCatalogSelection;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
@@ -23,8 +24,6 @@ public final class MapCatalogOverlay {
     private static final int THUMBNAIL_SIZE = 28;
     private static final int MAX_VISIBLE = 2;
     private static final int OFFSET_FROM_BOTTOM = 40;
-    private static final int BORDER = 0xFF66CCFF;
-    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
     private static final ResourceLocation FOLDER_ICON =
             ResourceLocation.fromNamespaceAndPath(
                     VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
@@ -48,7 +47,7 @@ public final class MapCatalogOverlay {
         int y = panelY(context.screenHeight(), height);
 
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xDD000000);
-        border(context, x, y, WIDTH, height, BORDER);
+        border(context, x, y, WIDTH, height, EditorHudTheme.outline());
         context.graphics().drawString(font, folderBrowser.breadcrumb("Map Catalog"),
                 x + PADDING, y + PADDING,
                 0xFFFFFFFF, false);
@@ -66,7 +65,7 @@ public final class MapCatalogOverlay {
             CatalogFolderBrowser.Row<MapDefinition> row = rows.get(first + index);
             if (row.folder()) {
                 context.graphics().fill(x + 4, rowY, x + WIDTH - 4,
-                        rowY + ROW_HEIGHT, FOLDER_ROW_BACKGROUND);
+                        rowY + ROW_HEIGHT, EditorHudTheme.folderBackground());
                 context.graphics().blit(
                         FOLDER_ICON, x + PADDING, rowY + 9,
                         16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
@@ -81,7 +80,9 @@ public final class MapCatalogOverlay {
             boolean hovered = rowContains(x, rowY, context.mouseX(), context.mouseY());
             if (selected || hovered) {
                 context.graphics().fill(x + 4, rowY, x + WIDTH - 4, rowY + ROW_HEIGHT,
-                        selected ? 0x553399FF : 0x33222222);
+                        selected
+                                ? EditorHudTheme.selectionWithAlpha(0x55)
+                                : 0x33222222);
             }
             renderThumbnail(context, definition, assetRegistry, thumbnails,
                     x + PADDING, rowY + 3);
@@ -102,7 +103,8 @@ public final class MapCatalogOverlay {
                     (first + 1) + "-" + (first + visible) + " / " + rows.size(),
                     x + PADDING, rowY + 2, 0xFF999999, false);
             EditorScrollbar.render(context, x + WIDTH - 9, firstRowY(y), 4,
-                    MAX_VISIBLE * ROW_HEIGHT, rows.size(), MAX_VISIBLE, first, BORDER);
+                    MAX_VISIBLE * ROW_HEIGHT, rows.size(), MAX_VISIBLE, first,
+                    EditorHudTheme.outline());
         }
     }
 
@@ -161,7 +163,7 @@ public final class MapCatalogOverlay {
         int y = (int) Math.round(mouseY) + 12;
         int width = font.width(label) + 12;
         context.graphics().fill(x, y, x + width, y + 18, 0xEE08080C);
-        border(context, x, y, width, 18, BORDER);
+        border(context, x, y, width, 18, EditorHudTheme.outline());
         context.graphics().drawString(font, label, x + 6, y + 5, 0xFFFFFFFF, false);
     }
 

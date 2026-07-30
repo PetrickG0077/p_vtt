@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.core.math.Rectd;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
@@ -33,7 +34,6 @@ public final class  SelectionInspectorOverlay {
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
-    private static final int PANEL_BORDER = 0xFF3399FF;
 
     private static final int TITLE_COLOR = 0xFFFFFFFF;
 
@@ -530,10 +530,12 @@ public final class  SelectionInspectorOverlay {
                 PANEL_BACKGROUND
         );
 
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 
     private void drawLine(

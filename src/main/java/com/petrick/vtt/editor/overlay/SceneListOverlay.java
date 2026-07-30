@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.overlay;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.editor.catalog.CatalogFolderBrowser;
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -16,7 +17,6 @@ public final class SceneListOverlay {
     private static final int PADDING = 8;
     private static final int LINE_HEIGHT = 12;
     private static final int OFFSET_FROM_BOTTOM = 40;
-    private static final int FOLDER_ROW_BACKGROUND = 0xAA4B236E;
     private static final ResourceLocation FOLDER_ICON =
             ResourceLocation.fromNamespaceAndPath(
                     VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
@@ -34,10 +34,12 @@ public final class SceneListOverlay {
         int x = panelX(context.screenWidth());
         int y = panelY(context.screenHeight(), height);
         context.graphics().fill(x, y, x + WIDTH, y + height, 0xDD000000);
-        context.graphics().hLine(x, x + WIDTH, y, 0xFFFFAA44);
-        context.graphics().hLine(x, x + WIDTH, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x, y, y + height, 0xFFFFAA44);
-        context.graphics().vLine(x + WIDTH, y, y + height, 0xFFFFAA44);
+        context.graphics().hLine(x, x + WIDTH, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + WIDTH, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + WIDTH, y, y + height, EditorHudTheme.outline());
         context.graphics().drawString(
                 font, folderBrowser.breadcrumb("Scenes"),
                 x + PADDING, y + PADDING, 0xFFFFFFFF, false);
@@ -51,7 +53,8 @@ public final class SceneListOverlay {
                 if (row.folder()) {
                     context.graphics().fill(
                             x + 4, rowY - 1, x + WIDTH - 4,
-                            rowY + LINE_HEIGHT - 1, FOLDER_ROW_BACKGROUND);
+                            rowY + LINE_HEIGHT - 1,
+                            EditorHudTheme.folderBackground());
                     context.graphics().blit(
                             FOLDER_ICON, x + PADDING, rowY,
                             10, 10, 0.0F, 0.0F, 32, 32, 32, 32);
@@ -65,7 +68,9 @@ public final class SceneListOverlay {
                 boolean active = activeScene != null && id.equals(activeScene.getId());
                 String name = active ? activeScene.getDisplayName() : tabletop.getSceneDisplayName(id);
                 context.graphics().drawString(font, (active ? "> " : "  ") + name,
-                        x + PADDING, rowY, active ? 0xFFFFCC66 : 0xFFDDDDDD, false);
+                        x + PADDING, rowY,
+                        active ? EditorHudTheme.opaqueSelection() : 0xFFDDDDDD,
+                        false);
                 rowY += LINE_HEIGHT;
             }
         }

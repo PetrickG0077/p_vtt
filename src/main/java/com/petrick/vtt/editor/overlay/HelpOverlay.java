@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.overlay;
 
+import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -22,7 +23,6 @@ public final class HelpOverlay {
 
     private static final int PANEL_BACKGROUND = 0xAA000000;
 
-    private static final int PANEL_BORDER = 0xFF66CCFF;
 
     private static final int TITLE_COLOR = 0xFFFFFFFF;
 
@@ -181,9 +181,11 @@ public final class HelpOverlay {
                 PANEL_BACKGROUND
         );
 
-        context.graphics().hLine(x, x + width, y, PANEL_BORDER);
-        context.graphics().hLine(x, x + width, y + height, PANEL_BORDER);
-        context.graphics().vLine(x, y, y + height, PANEL_BORDER);
-        context.graphics().vLine(x + width, y, y + height, PANEL_BORDER);
+        context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
+        context.graphics().hLine(
+                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(
+                x + width, y, y + height, EditorHudTheme.outline());
     }
 }
