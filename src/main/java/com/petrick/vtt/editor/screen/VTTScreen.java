@@ -1156,7 +1156,11 @@ public final class VTTScreen extends Screen {
         EditorSettingsOverlay.Interaction interaction = editorSettingsOverlay.mouseClicked(
                 mouseX, mouseY, button, width, height,
                 session.getActiveScene(), session.isLocalMaster());
-        if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
+        if (interaction == EditorSettingsOverlay.Interaction.HUD_THEME_CHANGED) {
+            inputController.endEditorAction();
+            VttClientEditorNotice.show("HUD theme saved");
+            return true;
+        } else if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
             persistGridSettings();
         } else if (interaction == EditorSettingsOverlay.Interaction.CHOOSE_BACKGROUND) {
             inputController.endEditorAction();

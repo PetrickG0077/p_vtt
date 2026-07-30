@@ -21,9 +21,15 @@ public final class EditorSettingsOverlay {
             0xFFFFFF, 0xA0A0A0, 0xFF5555, 0x55FF55,
             0x5555FF, 0x55FFFF, 0xFFFF55, 0xFF55FF
     };
+    private static final int[] HUD_COLOR_PRESETS = {
+            0xFFFFFF, 0xB8B8B8, 0x68686E, 0x202024,
+            0x66DDEE, 0x3399FF, 0x7655FF, 0xAA55FF,
+            0xFF5577, 0xFF9F43, 0xFFE066, 0x55D98B
+    };
 
     private boolean draggingOpacity;
     private Category selectedCategory = Category.GRID;
+    private ThemeColor selectedThemeColor = ThemeColor.OUTLINE;
 
     public void render(
             VRenderContext context,
@@ -46,9 +52,15 @@ public final class EditorSettingsOverlay {
                 selectedCategory == Category.GRID);
         renderCategory(context, font, sceneCategoryBounds(panel), "Scene",
                 selectedCategory == Category.SCENE);
+        renderCategory(context, font, hudCategoryBounds(panel), "HUD",
+                selectedCategory == Category.HUD);
         context.graphics().vLine(panel.x() + CATEGORY_WIDTH + 8,
                 panel.y() + 29, panel.bottom() - 8, 0xFF66666C);
 
+        if (selectedCategory == Category.HUD) {
+            renderHudTheme(context, font, panel);
+            return;
+        }
         if (selectedCategory == Category.SCENE) {
             renderScene(context, font, panel, scene, editable);
             return;
@@ -89,6 +101,26 @@ public final class EditorSettingsOverlay {
         if (sceneCategoryBounds(panel).contains(mouseX, mouseY)) {
             selectedCategory = Category.SCENE;
             draggingOpacity = false;
+            return Interaction.CONSUMED;
+        }
+        if (hudCategoryBounds(panel).contains(mouseX, mouseY)) {
+            selectedCategory = Category.HUD;
+            draggingOpacity = false;
+            return Interaction.CONSUMED;
+        }
+        if (selectedCategory == Category.HUD) {
+            for (ThemeColor themeColor : ThemeColor.values()) {
+                if (hudColorRowBounds(panel, themeColor).contains(mouseX, mouseY)) {
+                    selectedThemeColor = themeColor;
+                    return Interaction.CONSUMED;
+                }
+            }
+            for (int index = 0; index < HUD_COLOR_PRESETS.length; index++) {
+                if (hudPaletteBounds(panel, index).contains(mouseX, mouseY)) {
+                    applyHudColor(HUD_COLOR_PRESETS[index]);
+                    return Interaction.HUD_THEME_CHANGED;
+                }
+            }
             return Interaction.CONSUMED;
         }
         if (!editable || scene == null) return Interaction.CONSUMED;
@@ -281,6 +313,80 @@ public final class EditorSettingsOverlay {
                 "Reset", editable && scene.getInitialCameraView() != null);
     }
 
+    private void renderHudTheme(
+            VRenderContext context,
+            Font font,
+            Bounds panel
+    ) {
+        int contentX = panel.x() + CATEGORY_WIDTH + 20;
+        context.graphics().drawString(
+                font, "HUD Theme", contentX, panel.y() + 31, TEXT, false);
+        context.graphics().drawString(
+                font, "Saved locally and applied immediately",
+                contentX, panel.y() + 44, MUTED, false);
+
+        for (ThemeColor themeColor : ThemeColor.values()) {
+            Bounds row = hudColorRowBounds(panel, themeColor);
+            boolean selected = themeColor == selectedThemeColor;
+            boolean hovered = row.contains(context.mouseX(), context.mouseY());
+            context.graphics().fill(
+                    row.x(), row.y(), row.right(), row.bottom(),
+                    selected ? EditorHudTheme.selection()
+                            : hovered ? CONTROL_HOVER : CONTROL_BACKGROUND);
+            border(context, row, selected
+                    ? EditorHudTheme.opaqueSelection()
+                    : EditorHudTheme.outline());
+            context.graphics().drawString(
+                    font, themeColor.label, row.x() + 7, row.y() + 7,
+                    TEXT, false);
+
+            int color = hudColor(themeColor);
+            Bounds preview = new Bounds(row.right() - 78, row.y() + 4, 24, 16);
+            context.graphics().fill(
+                    preview.x(), preview.y(), preview.right(), preview.bottom(),
+                    color);
+            border(context, preview, EditorHudTheme.outline());
+            context.graphics().drawString(
+                    font, colorHex(color), preview.right() + 5, row.y() + 7,
+                    MUTED, false);
+        }
+
+        context.graphics().drawString(
+                font, "Color", contentX, panel.y() + 157, MUTED, false);
+        for (int index = 0; index < HUD_COLOR_PRESETS.length; index++) {
+            Bounds swatch = hudPaletteBounds(panel, index);
+            int rgb = HUD_COLOR_PRESETS[index];
+            context.graphics().fill(
+                    swatch.x(), swatch.y(), swatch.right(), swatch.bottom(),
+                    0xFF000000 | rgb);
+            boolean current = (hudColor(selectedThemeColor) & 0x00FFFFFF) == rgb;
+            border(context, swatch, current
+                    ? EditorHudTheme.opaqueSelection()
+                    : EditorHudTheme.outline());
+        }
+    }
+
+    private int hudColor(ThemeColor color) {
+        return switch (color) {
+            case OUTLINE -> EditorHudTheme.outline();
+            case FOLDER_BACKGROUND -> EditorHudTheme.folderBackground();
+            case SELECTION -> EditorHudTheme.selection();
+        };
+    }
+
+    private void applyHudColor(int rgb) {
+        int color = (selectedThemeColor.alpha << 24) | (rgb & 0x00FFFFFF);
+        switch (selectedThemeColor) {
+            case OUTLINE -> EditorHudTheme.setOutline(color);
+            case FOLDER_BACKGROUND -> EditorHudTheme.setFolderBackground(color);
+            case SELECTION -> EditorHudTheme.setSelection(color);
+        }
+    }
+
+    private String colorHex(int color) {
+        return String.format(Locale.ROOT, "#%06X", color & 0x00FFFFFF);
+    }
+
     private void renderSceneButton(
             VRenderContext context,
             Font font,
@@ -348,7 +454,7 @@ public final class EditorSettingsOverlay {
         int knobX = slider.x() + (int) Math.round(grid.getOpacity() * slider.width());
         context.graphics().fill(
                 slider.x(), slider.y() + 3, knobX, slider.y() + 6,
-                editable ? ACTIVE : MUTED);
+                editable ? EditorHudTheme.opaqueSelection() : MUTED);
         context.graphics().fill(
                 knobX - 3, slider.y(), knobX + 4, slider.bottom(),
                 editable ? 0xFFFFFFFF : MUTED);
@@ -455,6 +561,23 @@ public final class EditorSettingsOverlay {
         return new Bounds(panel.x() + 8, panel.y() + 68, CATEGORY_WIDTH - 9, 22);
     }
 
+    private Bounds hudCategoryBounds(Bounds panel) {
+        return new Bounds(panel.x() + 8, panel.y() + 93, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds hudColorRowBounds(Bounds panel, ThemeColor color) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 60 + color.ordinal() * 31,
+                220, 25);
+    }
+
+    private Bounds hudPaletteBounds(Bounds panel, int index) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20 + index * 18,
+                panel.y() + 173, 14, 14);
+    }
+
     private Bounds chooseBackgroundBounds(Bounds panel) {
         return new Bounds(panel.x() + CATEGORY_WIDTH + 20, panel.y() + 125, 72, 22);
     }
@@ -516,6 +639,7 @@ public final class EditorSettingsOverlay {
         NONE,
         CONSUMED,
         CHANGED,
+        HUD_THEME_CHANGED,
         CHOOSE_BACKGROUND,
         REMOVE_BACKGROUND,
         EDIT_SCENE,
@@ -525,7 +649,22 @@ public final class EditorSettingsOverlay {
 
     private enum Category {
         GRID,
-        SCENE
+        SCENE,
+        HUD
+    }
+
+    private enum ThemeColor {
+        OUTLINE("Outline", 0xFF),
+        FOLDER_BACKGROUND("Folders", 0xAA),
+        SELECTION("Select", 0xE0);
+
+        private final String label;
+        private final int alpha;
+
+        ThemeColor(String label, int alpha) {
+            this.label = label;
+            this.alpha = alpha;
+        }
     }
 
     private record Bounds(int x, int y, int width, int height) {
