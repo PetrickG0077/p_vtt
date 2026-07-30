@@ -237,6 +237,7 @@ public final class VTTScreen extends Screen {
     private boolean hudCreationOpen;
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
+    private String returnToAssetManagerFolder;
     private AssetManagerOverlay.Section assetFolderDialogSection;
     private String assetFolderDialogPath;
     private String assetFolderNameBuffer;
@@ -244,6 +245,12 @@ public final class VTTScreen extends Screen {
     private PendingAssetDeletion pendingAssetDeletion;
     private boolean pendingAssetManagerSceneDuplicate;
     private long pendingAssetManagerSceneDuplicateUntil;
+    private String pendingAssetManagerSceneFolder;
+    private Set<String> pendingAssetManagerSceneKnownIds;
+    private String pendingServerCreatedTokenId;
+    private String pendingServerCreatedTokenFolder;
+    private long pendingServerCreatedTokenSnapshotVersion;
+    private long pendingServerCreatedTokenUntil;
     private Set<String> pendingServerTokenDuplicateIds;
     private String pendingServerTokenDuplicateName;
     private long pendingServerTokenDuplicateUntil;
@@ -507,7 +514,8 @@ public final class VTTScreen extends Screen {
                     context,
                     this.font,
                     tokenCreationDraft,
-                    getConnectedPlayerOptions()
+                    getConnectedPlayerOptions(),
+                    assetManagerTargetFolder(AssetManagerOverlay.Section.TOKENS)
             );
 
             if (tokenImagePickerActive) {
@@ -880,8 +888,12 @@ public final class VTTScreen extends Screen {
                 pendingAssetManagerSceneDuplicate = true;
                 pendingAssetManagerSceneDuplicateUntil =
                         System.currentTimeMillis() + 15_000L;
+                pendingAssetManagerSceneFolder =
+                        session.getActiveTabletop().getSceneFolder(id);
+                pendingAssetManagerSceneKnownIds = new HashSet<>(
+                        session.getActiveTabletop().getSceneIds());
                 if (!session.requestDuplicateScene(id)) {
-                    pendingAssetManagerSceneDuplicate = false;
+                    clearPendingAssetManagerScenePlacement();
                     VttClientEditorNotice.show("Could not duplicate scene");
                 }
             }
@@ -916,10 +928,10 @@ public final class VTTScreen extends Screen {
     private void resolvePendingServerTokenDuplicateSelection() {
         if (pendingAssetManagerSceneDuplicate
                 && System.currentTimeMillis() > pendingAssetManagerSceneDuplicateUntil) {
-            pendingAssetManagerSceneDuplicate = false;
-            pendingAssetManagerSceneDuplicateUntil = 0L;
-            VttClientEditorNotice.show("Scene duplication timed out");
+            clearPendingAssetManagerScenePlacement();
+            VttClientEditorNotice.show("Scene creation or duplication timed out");
         }
+        resolvePendingServerCreatedTokenFolder();
         if (pendingServerTokenDuplicateIds == null) return;
         TokenDefinition duplicate = tokenDefinitionRegistry.getAll().stream()
                 .filter(CreatedTokenStorage::isUserCreatedToken)
@@ -945,6 +957,36 @@ public final class VTTScreen extends Screen {
         pendingServerTokenDuplicateIds = null;
         pendingServerTokenDuplicateName = null;
         pendingServerTokenDuplicateUntil = 0L;
+    }
+
+    private void resolvePendingServerCreatedTokenFolder() {
+        if (pendingServerCreatedTokenId == null) return;
+        if (System.currentTimeMillis() > pendingServerCreatedTokenUntil) {
+            pendingServerCreatedTokenId = null;
+            pendingServerCreatedTokenFolder = null;
+            pendingServerCreatedTokenSnapshotVersion = 0L;
+            pendingServerCreatedTokenUntil = 0L;
+            VttClientEditorNotice.show("Token folder placement timed out");
+            return;
+        }
+        if (session.getNetworkSnapshotVersion()
+                <= pendingServerCreatedTokenSnapshotVersion) return;
+        if (tokenDefinitionRegistry.findById(pendingServerCreatedTokenId).isEmpty()) return;
+        String id = pendingServerCreatedTokenId;
+        String folder = pendingServerCreatedTokenFolder;
+        pendingServerCreatedTokenId = null;
+        pendingServerCreatedTokenFolder = null;
+        pendingServerCreatedTokenSnapshotVersion = 0L;
+        pendingServerCreatedTokenUntil = 0L;
+        moveCreatedAssetToFolder(
+                AssetManagerOverlay.Section.TOKENS, id, folder);
+    }
+
+    private void clearPendingAssetManagerScenePlacement() {
+        pendingAssetManagerSceneDuplicate = false;
+        pendingAssetManagerSceneDuplicateUntil = 0L;
+        pendingAssetManagerSceneFolder = null;
+        pendingAssetManagerSceneKnownIds = null;
     }
 
     private void beginAssetManagerDeletion(
@@ -1049,22 +1091,47 @@ public final class VTTScreen extends Screen {
 
     private void rememberAssetManagerReturn(AssetManagerOverlay.Section section) {
         returnToAssetManagerSection = section;
+        returnToAssetManagerFolder = assetManagerOverlay.currentFolderPath();
     }
 
     private boolean willReturnToAssetManager(AssetManagerOverlay.Section section) {
         return returnToAssetManagerSection == section;
     }
 
+    private String assetManagerTargetFolder(AssetManagerOverlay.Section section) {
+        if (returnToAssetManagerSection != section
+                || returnToAssetManagerFolder == null) return "";
+        return returnToAssetManagerFolder;
+    }
+
+    private void moveCreatedAssetToFolder(
+            AssetManagerOverlay.Section section,
+            String id,
+            String folder
+    ) {
+        if (section == null || id == null || id.isBlank()
+                || folder == null || folder.isBlank()) return;
+        requestAssetFolderCommand(
+                VttAssetFolderCommandPayload.MOVE_ITEM,
+                section, id, folder);
+    }
+
     private void returnToAssetManagerIfRequested() {
         AssetManagerOverlay.Section target = returnToAssetManagerSection;
-        if (target == null) return;
+        if (target == null) {
+            returnToAssetManagerFolder = null;
+            return;
+        }
+        String targetFolder = returnToAssetManagerFolder;
         returnToAssetManagerSection = null;
+        returnToAssetManagerFolder = null;
         String selectedId = switch (target) {
             case SCENES -> session.getActiveTabletop() == null
                     ? null : session.getActiveTabletop().getActiveSceneId();
             case MAPS -> mapCatalogSelection.getSelectedMapDefinitionId();
             case TOKENS -> tokenCatalogSelection.getSelectedTokenDefinitionId();
         };
+        assetManagerOverlay.openFolder(target, targetFolder);
         assetManagerOverlay.select(target, selectedId);
         hudCreationOpen = true;
         hudPlayersOpen = false;
@@ -1836,6 +1903,8 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        String targetFolder =
+                assetManagerTargetFolder(AssetManagerOverlay.Section.TOKENS);
         TokenDefinition createdDefinition = CreatedTokenDefinitions.createAndRegister(
                 tokenCreationDraft,
                 tokenDefinitionRegistry,
@@ -1848,8 +1917,19 @@ public final class VTTScreen extends Screen {
                 tokenCreationDraft.setErrorMessage("Could not send token to server");
                 return;
             }
+            if (!targetFolder.isBlank()) {
+                pendingServerCreatedTokenId = createdDefinition.id();
+                pendingServerCreatedTokenFolder = targetFolder;
+                pendingServerCreatedTokenSnapshotVersion =
+                        session.getNetworkSnapshotVersion();
+                pendingServerCreatedTokenUntil =
+                        System.currentTimeMillis() + 15_000L;
+            }
         } else {
             CreatedTokenStorage.saveCreatedToken(tokenCreationDraft, createdDefinition);
+            moveCreatedAssetToFolder(
+                    AssetManagerOverlay.Section.TOKENS,
+                    createdDefinition.id(), targetFolder);
         }
 
         tokenCatalogSelection.select(createdDefinition.id());
@@ -3733,8 +3813,24 @@ public final class VTTScreen extends Screen {
 
     private void confirmNewScene() {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
+        String targetFolder =
+                assetManagerTargetFolder(AssetManagerOverlay.Section.SCENES);
+        Set<String> existingSceneIds = new HashSet<>(
+                session.getActiveTabletop().getSceneIds());
         if (session.requestCreateScene(
                 newSceneNameBuffer, newSceneMapDefinition)) {
+            pendingAssetManagerSceneDuplicate = true;
+            pendingAssetManagerSceneDuplicateUntil =
+                    System.currentTimeMillis() + 15_000L;
+            pendingAssetManagerSceneFolder = targetFolder;
+            pendingAssetManagerSceneKnownIds = existingSceneIds;
+            if (!session.isNetworkAuthorityActive()) {
+                String createdSceneId =
+                        session.getActiveTabletop().getActiveSceneId();
+                moveCreatedAssetToFolder(
+                        AssetManagerOverlay.Section.SCENES,
+                        createdSceneId, targetFolder);
+            }
             selectionManager.clearSelection();
             inputController.selectHandTool();
             closeNewSceneDialog();
@@ -3774,6 +3870,8 @@ public final class VTTScreen extends Screen {
             return;
         }
         try {
+            String targetFolder =
+                    assetManagerTargetFolder(AssetManagerOverlay.Section.MAPS);
             MapDefinition existing = editingMapDefinitionId == null ? null
                     : mapDefinitionRegistry.findById(editingMapDefinitionId).orElse(null);
             MapDefinition definition = existing == null
@@ -3785,6 +3883,11 @@ public final class VTTScreen extends Screen {
                     newMapPreviewWidth, newMapPreviewHeight, newMapTextureMode);
             mapDefinitionRegistry.register(
                     definition, CreatedMapStorage.folderOf(definition));
+            if (existing == null) {
+                moveCreatedAssetToFolder(
+                        AssetManagerOverlay.Section.MAPS,
+                        definition.id(), targetFolder);
+            }
             if (existing != null && session.getActiveScene() != null) {
                 session.getActiveScene().getMaps().stream()
                         .filter(map -> map != null
@@ -4237,7 +4340,9 @@ public final class VTTScreen extends Screen {
                 ? null : session.getActiveScene().getId();
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
         boolean reopenDuplicatedSceneInAssetManager =
-                pendingAssetManagerSceneDuplicate && activeSceneId != null;
+                pendingAssetManagerSceneDuplicate && activeSceneId != null
+                        && (pendingAssetManagerSceneKnownIds == null
+                        || !pendingAssetManagerSceneKnownIds.contains(activeSceneId));
         if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
@@ -4257,11 +4362,20 @@ public final class VTTScreen extends Screen {
         tokenImagePickerActive = false;
         closeHudPopups();
         if (reopenDuplicatedSceneInAssetManager) {
+            String targetFolder = pendingAssetManagerSceneFolder;
+            String currentFolder = session.getActiveTabletop()
+                    .getSceneFolder(activeSceneId);
+            if (!java.util.Objects.equals(currentFolder, targetFolder)) {
+                moveCreatedAssetToFolder(
+                        AssetManagerOverlay.Section.SCENES,
+                        activeSceneId, targetFolder);
+            }
             hudCreationOpen = true;
+            assetManagerOverlay.openFolder(
+                    AssetManagerOverlay.Section.SCENES, targetFolder);
             assetManagerOverlay.select(
                     AssetManagerOverlay.Section.SCENES, activeSceneId);
-            pendingAssetManagerSceneDuplicate = false;
-            pendingAssetManagerSceneDuplicateUntil = 0L;
+            clearPendingAssetManagerScenePlacement();
         }
         applyActiveSceneInitialCamera();
         initialCameraApplied = true;
@@ -4275,6 +4389,13 @@ public final class VTTScreen extends Screen {
         int y = context.screenHeight() / 2 - height / 2;
         renderSceneDialogFrame(context, x, y, width, height);
         context.graphics().drawString(this.font, "Create Scene", x + 10, y + 10, 0xFFFFFFFF, false);
+        String sceneFolder =
+                assetManagerTargetFolder(AssetManagerOverlay.Section.SCENES);
+        if (!sceneFolder.isBlank()) {
+            context.graphics().drawString(
+                    this.font, "Create in: Assets/" + ellipsize(sceneFolder, 25),
+                    x + 128, y + 10, 0xFFAAAAAA, false);
+        }
         context.graphics().drawString(this.font, "Name:", x + 10, y + 30,
                 0xFFAAAAAA, false);
         context.graphics().fill(x + 55, y + 24, x + width - 10, y + 43, 0xCC111116);
@@ -4333,6 +4454,13 @@ public final class VTTScreen extends Screen {
                 editingMapDefinitionId == null ? "Create Map" : "Edit Map",
                 x + 10, y + 10,
                 0xFFFFFFFF, false);
+        String mapFolder =
+                assetManagerTargetFolder(AssetManagerOverlay.Section.MAPS);
+        if (editingMapDefinitionId == null && !mapFolder.isBlank()) {
+            context.graphics().drawString(
+                    this.font, "Create in: Assets/" + ellipsize(mapFolder, 25),
+                    x + 128, y + 10, 0xFFAAAAAA, false);
+        }
         context.graphics().drawString(this.font, "Name:", x + 10, y + 30,
                 0xFFAAAAAA, false);
         context.graphics().fill(x + 55, y + 24, x + width - 10, y + 43, 0xCC111116);

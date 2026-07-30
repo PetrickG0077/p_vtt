@@ -604,6 +604,14 @@ public final class VTTSession {
                 || !tabletopStorage.saveScene(activeTabletop.getId(), duplicate)) {
             return false;
         }
+        String sourceFolder = activeTabletop.getSceneFolder(sceneId);
+        if (sourceFolder != null && !sourceFolder.isBlank()) {
+            assetFolderService.moveItem(
+                    VttAssetFolderService.Section.SCENES,
+                    duplicateId, sourceFolder);
+            assetFolderService.applyMetadata(
+                    activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+        }
         activeTabletop.addSceneId(duplicateId);
         activeTabletop.setSceneDisplayName(duplicateId, displayName);
         activeTabletop.setActiveSceneId(duplicateId);

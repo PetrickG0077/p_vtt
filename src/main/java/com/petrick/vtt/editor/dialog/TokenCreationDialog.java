@@ -95,7 +95,8 @@ public final class TokenCreationDialog {
             VRenderContext context,
             Font font,
             TokenCreationDraft draft,
-            List<VttPlayerOption> playerOptions
+            List<VttPlayerOption> playerOptions,
+            String creationFolder
     ) {
         int x = getDialogX(context);
         int y = getDialogY(context);
@@ -111,6 +112,12 @@ public final class TokenCreationDialog {
                 y + 14,
                 TITLE_COLOR
         );
+        if (!draft.isEditing() && creationFolder != null
+                && !creationFolder.isBlank()) {
+            drawCenteredString(
+                    context, font, "Create in: Assets/" + creationFolder,
+                    x + DIALOG_WIDTH / 2, y + 35, MUTED_TEXT_COLOR);
+        }
 
         renderImageButton(context, font, draft, x + 26, y + 52);
 

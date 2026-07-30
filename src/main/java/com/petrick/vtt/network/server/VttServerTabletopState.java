@@ -469,6 +469,13 @@ public final class VttServerTabletopState {
                 source, duplicateId, displayName);
         if (duplicate == null
                 || !saveSceneImmediately(duplicate, "scene duplication")) return false;
+        String sourceFolder = tabletop.getSceneFolder(sceneId);
+        if (sourceFolder != null && !sourceFolder.isBlank()) {
+            assetFolderService.moveItem(
+                    VttAssetFolderService.Section.SCENES,
+                    duplicateId, sourceFolder);
+            assetFolderService.applyMetadata(tabletop, null, null);
+        }
         tabletop.addSceneId(duplicateId);
         tabletop.setSceneDisplayName(duplicateId, displayName);
         tabletop.setActiveSceneId(duplicateId);
