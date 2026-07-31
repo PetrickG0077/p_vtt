@@ -159,6 +159,9 @@ public final class AssetManagerOverlay {
         context.graphics().blit(
                 FOLDER_ICON, createFolder.x() + 7, createFolder.y() + 7,
                 16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
+        context.graphics().drawCenteredString(
+                font, "+", createFolder.x() + createFolder.width() / 2,
+                createFolder.y() + 11, 0xFFFFFFFF);
 
         Bounds add = addBounds(panel);
         context.graphics().fill(
@@ -781,7 +784,7 @@ public final class AssetManagerOverlay {
     }
 
     private Bounds createFolderBounds(Bounds panel) {
-        return new Bounds(panel.right() - 168, panel.y() + 12, 34, 30);
+        return new Bounds(panel.right() - 164, panel.y() + 12, 30, 30);
     }
 
     private Bounds addBounds(Bounds panel) {
