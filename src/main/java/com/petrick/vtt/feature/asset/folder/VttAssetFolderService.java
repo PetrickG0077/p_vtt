@@ -12,6 +12,8 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -180,6 +182,109 @@ public final class VttAssetFolderService {
         }
     }
 
+    public synchronized FolderInspection inspectFolder(Section section, String folder) {
+        Path target = resolveFolder(section, folder, false);
+        if (target == null) return FolderInspection.missing(folder);
+
+        int folderCount = 0;
+        int itemCount = 0;
+        try (Stream<Path> descendants = Files.walk(target, MAX_DEPTH)) {
+            for (Path path : descendants.filter(path -> !path.equals(target)).toList()) {
+                if (Files.isDirectory(path)) {
+                    folderCount++;
+                } else {
+                    itemCount++;
+                }
+            }
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not inspect VTT asset folder: {}", target, exception);
+            return FolderInspection.missing(folder);
+        }
+
+        List<String> conflicts = new ArrayList<>();
+        Path parent = target.getParent();
+        try (Stream<Path> children = Files.list(target)) {
+            for (Path child : children.toList()) {
+                Path destination = parent.resolve(child.getFileName()).normalize();
+                if (Files.exists(destination)) {
+                    conflicts.add(child.getFileName().toString());
+                }
+            }
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not inspect VTT asset folder children: {}", target, exception);
+            return FolderInspection.missing(folder);
+        }
+        conflicts.sort(String.CASE_INSENSITIVE_ORDER);
+        return new FolderInspection(
+                true,
+                relative(section, target),
+                relative(section, parent),
+                folderCount,
+                itemCount,
+                conflicts);
+    }
+
+    /**
+     * Moves every direct child to the source folder's parent and removes the now-empty
+     * folder. Existing destinations are rejected before any move begins. If an I/O
+     * failure happens mid-operation, already moved children are moved back when possible.
+     */
+    public synchronized boolean moveContentsToParentAndDelete(
+            Section section, String folder
+    ) {
+        Path source = resolveFolder(section, folder, false);
+        if (source == null) return false;
+        FolderInspection inspection = inspectFolder(section, folder);
+        if (!inspection.exists() || inspection.hasConflicts()) return false;
+        if (inspection.empty()) return deleteEmptyFolder(section, folder);
+
+        Path parent = source.getParent();
+        List<Path> children;
+        try (Stream<Path> stream = Files.list(source)) {
+            children = stream.sorted((left, right) ->
+                    left.getFileName().toString().compareToIgnoreCase(
+                            right.getFileName().toString())).toList();
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to list VTT asset folder: {}", source, exception);
+            return false;
+        }
+
+        for (Path child : children) {
+            Path destination = parent.resolve(child.getFileName()).normalize();
+            if (!isInsideRoot(section, destination) || Files.exists(destination)) {
+                return false;
+            }
+        }
+
+        List<Path> moved = new ArrayList<>();
+        try {
+            for (Path child : children) {
+                move(child, parent.resolve(child.getFileName()).normalize());
+                moved.add(child);
+            }
+            Files.delete(source);
+            refresh();
+            return true;
+        } catch (IOException exception) {
+            Collections.reverse(moved);
+            for (Path original : moved) {
+                Path current = parent.resolve(original.getFileName()).normalize();
+                try {
+                    if (Files.exists(current) && !Files.exists(original)) {
+                        move(current, original);
+                    }
+                } catch (IOException rollbackException) {
+                    exception.addSuppressed(rollbackException);
+                }
+            }
+            refresh();
+            VTT.LOGGER.error(
+                    "Failed to move contents and delete VTT asset folder: {}",
+                    source, exception);
+            return false;
+        }
+    }
+
     private List<String> scanFolders(Path root) throws IOException {
         try (Stream<Path> paths = Files.walk(root, MAX_DEPTH)) {
             return paths.filter(Files::isDirectory)
@@ -309,4 +414,31 @@ public final class VttAssetFolderService {
     }
 
     public enum Section { SCENES, MAPS, TOKENS }
+
+    public record FolderInspection(
+            boolean exists,
+            String folder,
+            String parentFolder,
+            int folderCount,
+            int itemCount,
+            List<String> conflicts
+    ) {
+        public FolderInspection {
+            folder = folder == null ? "" : folder;
+            parentFolder = parentFolder == null ? "" : parentFolder;
+            conflicts = conflicts == null ? List.of() : List.copyOf(conflicts);
+        }
+
+        public static FolderInspection missing(String folder) {
+            return new FolderInspection(false, folder, "", 0, 0, List.of());
+        }
+
+        public boolean empty() {
+            return folderCount == 0 && itemCount == 0;
+        }
+
+        public boolean hasConflicts() {
+            return !conflicts.isEmpty();
+        }
+    }
 }

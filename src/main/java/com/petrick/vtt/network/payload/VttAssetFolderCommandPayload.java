@@ -20,6 +20,8 @@ public record VttAssetFolderCommandPayload(
     public static final String MOVE_FOLDER = "MOVE_FOLDER";
     public static final String MOVE_ITEM = "MOVE_ITEM";
     public static final String DELETE_FOLDER = "DELETE_FOLDER";
+    public static final String MOVE_CONTENTS_AND_DELETE_FOLDER =
+            "FLATTEN_FOLDER";
 
     public static final Type<VttAssetFolderCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "asset_folder_command"));

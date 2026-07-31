@@ -172,6 +172,9 @@ public final class VttServerTabletopState {
                             section, request.source(), request.value());
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, request.source());
+            case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
+                    assetFolderService.moveContentsToParentAndDelete(
+                            section, request.source());
             default -> false;
         };
         if (!changed) return false;

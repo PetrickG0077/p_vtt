@@ -191,6 +191,9 @@ public final class VTTSession {
                     assetFolderService.moveItem(section, safeSource, safeValue);
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, safeSource);
+            case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
+                    assetFolderService.moveContentsToParentAndDelete(
+                            section, safeSource);
             default -> false;
         };
         if (!changed) return false;
@@ -198,6 +201,12 @@ public final class VTTSession {
                 activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
         tabletopStorage.saveTabletop(activeTabletop);
         return true;
+    }
+
+    public VttAssetFolderService.FolderInspection inspectAssetFolder(
+            VttAssetFolderService.Section section, String folder
+    ) {
+        return assetFolderService.inspectFolder(section, folder);
     }
 
     public boolean isLocalSpectator() {
