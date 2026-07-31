@@ -56,6 +56,8 @@ public final class AssetManagerOverlay {
     private static final ResourceLocation FOLDER_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
     private static final long DRAG_HOLD_MS = 500L;
+    private static final long DRAG_AUTO_SCROLL_INTERVAL_MS = 120L;
+    private static final int DRAG_AUTO_SCROLL_EDGE = 28;
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
     private final SceneThumbnailRenderer sceneThumbnailRenderer;
@@ -76,6 +78,8 @@ public final class AssetManagerOverlay {
     private double pressedY;
     private Item draggingItem;
     private String dragTargetFolder;
+    private long lastDragAutoScrollAt;
+    private List<Breadcrumb> renderedBreadcrumbs = List.of();
 
     public AssetManagerOverlay(TabletopStorage tabletopStorage) {
         this.sceneThumbnailRenderer = new SceneThumbnailRenderer(tabletopStorage);
@@ -103,8 +107,6 @@ public final class AssetManagerOverlay {
                 panel.x() + 1, panel.y() + 1, panel.right() - 1,
                 panel.y() + HEADER_HEIGHT, 0xFF4A4A4A);
         String currentFolder = currentFolder();
-        String title = currentFolder.isBlank()
-                ? "Asset Manager" : "Assets/" + currentFolder;
         if (!currentFolder.isBlank()) {
             Bounds back = backBounds(panel);
             boolean parentDropTarget = draggingItem != null
@@ -123,9 +125,7 @@ public final class AssetManagerOverlay {
                             : back.contains(context.mouseX(), context.mouseY())
                             ? EditorHudTheme.opaqueSelection() : 0xFFFFFFFF, false);
         }
-        context.graphics().drawString(
-                font, title, panel.x() + (currentFolder.isBlank() ? 14 : 28),
-                panel.y() + 18, 0xFFFFFFFF, false);
+        renderBreadcrumbs(context, font, panel, searchBounds(panel));
 
         Bounds searchBox = searchBounds(panel);
         context.graphics().fill(
@@ -160,8 +160,8 @@ public final class AssetManagerOverlay {
                 FOLDER_ICON, createFolder.x() + 7, createFolder.y() + 7,
                 16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         context.graphics().drawCenteredString(
-                font, "+", createFolder.x() + createFolder.width() / 2,
-                createFolder.y() + 11, 0xFFFFFFFF);
+                font, "+", createFolder.x() + 1 + createFolder.width() / 2,
+                createFolder.y() + 1 + 11, 0xFFFFFFFF);
 
         Bounds add = addBounds(panel);
         context.graphics().fill(
@@ -194,7 +194,12 @@ public final class AssetManagerOverlay {
 
         List<Item> items = visibleItems(tabletop, maps, tokens);
         Grid grid = grid(panel, items.size());
-        updateDraggingState(context.mouseX(), context.mouseY(), panel, grid, items);
+        updateDraggingState();
+        if (autoScrollWhileDragging(
+                context.mouseX(), context.mouseY(), panel, grid)) {
+            grid = grid(panel, items.size());
+        }
+        updateDragTarget(context.mouseX(), context.mouseY(), panel, grid, items);
         for (int index = grid.firstIndex(); index < grid.lastIndex(); index++) {
             int visibleIndex = index - grid.firstIndex();
             int column = visibleIndex % grid.columns();
@@ -251,6 +256,13 @@ public final class AssetManagerOverlay {
                 && backBounds(panel).contains(mouseX, mouseY)) {
             return new Interaction(
                     Action.BACK_FOLDER, section, currentFolder(), parent(currentFolder()), true);
+        }
+        for (Breadcrumb breadcrumb : renderedBreadcrumbs) {
+            if (breadcrumb.path().equals(currentFolder())
+                    || !breadcrumb.bounds().contains(mouseX, mouseY)) continue;
+            return new Interaction(
+                    Action.OPEN_FOLDER, section, breadcrumb.path(),
+                    breadcrumb.path(), true);
         }
         if (searchBounds(panel).contains(mouseX, mouseY)) {
             searchFocused = true;
@@ -459,6 +471,12 @@ public final class AssetManagerOverlay {
     public void cancelPointerInteraction() {
         draggingScrollbar = false;
         clearPressedItem();
+    }
+
+    public boolean cancelActiveDrag() {
+        boolean active = draggingScrollbar || draggingItem != null || pressedItem != null;
+        if (active) cancelPointerInteraction();
+        return active;
     }
 
     public void select(Section section, String id) {
@@ -800,6 +818,102 @@ public final class AssetManagerOverlay {
                 panel.y() + HEADER_HEIGHT, 140, TABS_HEIGHT);
     }
 
+    private void renderBreadcrumbs(
+            VRenderContext context,
+            Font font,
+            Bounds panel,
+            Bounds searchBox
+    ) {
+        String current = currentFolder();
+        if (current.isBlank()) {
+            renderedBreadcrumbs = List.of();
+            context.graphics().drawString(
+                    font, "Asset Manager", panel.x() + 14,
+                    panel.y() + 18, 0xFFFFFFFF, false);
+            return;
+        }
+
+        List<BreadcrumbPart> parts = new ArrayList<>();
+        parts.add(new BreadcrumbPart("Assets", ""));
+        String path = "";
+        for (String segment : current.split("/")) {
+            path = path.isBlank() ? segment : path + "/" + segment;
+            parts.add(new BreadcrumbPart(segment, path));
+        }
+
+        int startX = panel.x() + 28;
+        int availableWidth = Math.max(0, searchBox.x() - 8 - startX);
+        boolean collapsed = false;
+        while (breadcrumbWidth(font, parts) > availableWidth && parts.size() > 2) {
+            parts.remove(1);
+            collapsed = true;
+        }
+        if (collapsed) parts.add(1, new BreadcrumbPart("...", null));
+
+        List<Breadcrumb> rendered = new ArrayList<>();
+        int x = startX;
+        for (int index = 0; index < parts.size(); index++) {
+            if (index > 0) {
+                String separator = " > ";
+                context.graphics().drawString(
+                        font, separator, x, panel.y() + 18, 0xFF88888E, false);
+                x += font.width(separator);
+            }
+            BreadcrumbPart part = parts.get(index);
+            int remaining = Math.max(0, searchBox.x() - 8 - x);
+            String label = trimToWidth(font, part.label(), remaining);
+            if (label.isEmpty()) break;
+            Bounds bounds = new Bounds(
+                    x - 2, panel.y() + 12,
+                    font.width(label) + 4, 30);
+            boolean currentPart = current.equals(part.path());
+            boolean hovered = part.path() != null
+                    && !currentPart
+                    && bounds.contains(context.mouseX(), context.mouseY());
+            boolean dropTarget = draggingItem != null
+                    && part.path() != null
+                    && part.path().equals(dragTargetFolder);
+            if (dropTarget) {
+                context.graphics().fill(
+                        bounds.x(), bounds.y(), bounds.right(), bounds.bottom(),
+                        EditorHudTheme.selection());
+                thickBorder(context, bounds, EditorHudTheme.opaqueSelection());
+            }
+            context.graphics().drawString(
+                    font, label, x, panel.y() + 18,
+                    dropTarget || currentPart ? 0xFFFFFFFF
+                            : hovered ? EditorHudTheme.opaqueSelection() : 0xFFCCCCCC,
+                    false);
+            if (part.path() != null) {
+                rendered.add(new Breadcrumb(part.path(), bounds));
+            }
+            x += font.width(label);
+        }
+        renderedBreadcrumbs = List.copyOf(rendered);
+    }
+
+    private int breadcrumbWidth(Font font, List<BreadcrumbPart> parts) {
+        int width = 0;
+        for (int index = 0; index < parts.size(); index++) {
+            if (index > 0) width += font.width(" > ");
+            width += font.width(parts.get(index).label());
+        }
+        return width;
+    }
+
+    private String trimToWidth(Font font, String value, int maximumWidth) {
+        if (value == null || maximumWidth <= 0) return "";
+        if (font.width(value) <= maximumWidth) return value;
+        String suffix = "...";
+        if (font.width(suffix) > maximumWidth) return "";
+        int length = value.length();
+        while (length > 0
+                && font.width(value.substring(0, length) + suffix) > maximumWidth) {
+            length--;
+        }
+        return length == 0 ? suffix : value.substring(0, length) + suffix;
+    }
+
     private Bounds fitInside(Bounds container, double contentWidth, double contentHeight) {
         if (contentWidth <= 0.0 || contentHeight <= 0.0) return container;
         double scale = Math.min(
@@ -825,20 +939,39 @@ public final class AssetManagerOverlay {
         return new Bounds(card.right() - 22, card.bottom() - 24, 18, 18);
     }
 
-    private void updateDraggingState(
-            double mouseX,
-            double mouseY,
-            Bounds panel,
-            Grid grid,
-            List<Item> items
-    ) {
+    private void updateDraggingState() {
         if (draggingItem == null && pressedItem != null
                 && System.currentTimeMillis() - pressedAt >= DRAG_HOLD_MS) {
             draggingItem = pressedItem;
         }
-        if (draggingItem != null) {
-            updateDragTarget(mouseX, mouseY, panel, grid, items);
+    }
+
+    private boolean autoScrollWhileDragging(
+            double mouseX,
+            double mouseY,
+            Bounds panel,
+            Grid grid
+    ) {
+        if (draggingItem == null || grid.maximumScrollRow() <= 0
+                || mouseX < grid.x() || mouseX > panel.right() - 16
+                || mouseY < grid.y() || mouseY > grid.y() + grid.height()) {
+            return false;
         }
+        int direction = 0;
+        if (mouseY <= grid.y() + DRAG_AUTO_SCROLL_EDGE) {
+            direction = -1;
+        } else if (mouseY >= grid.y() + grid.height() - DRAG_AUTO_SCROLL_EDGE) {
+            direction = 1;
+        }
+        if (direction == 0) return false;
+
+        long now = System.currentTimeMillis();
+        if (now - lastDragAutoScrollAt < DRAG_AUTO_SCROLL_INTERVAL_MS) return false;
+        int previous = scrollRow();
+        setScrollRow(Math.max(0, Math.min(
+                grid.maximumScrollRow(), previous + direction)));
+        lastDragAutoScrollAt = now;
+        return scrollRow() != previous;
     }
 
     private void updateDragTarget(
@@ -853,6 +986,13 @@ public final class AssetManagerOverlay {
         if (!currentFolder().isBlank() && backBounds(panel).contains(mouseX, mouseY)) {
             dragTargetFolder = parent(currentFolder());
             return;
+        }
+        for (Breadcrumb breadcrumb : renderedBreadcrumbs) {
+            if (breadcrumb.bounds().contains(mouseX, mouseY)
+                    && validDropTarget(draggingItem, breadcrumb.path())) {
+                dragTargetFolder = breadcrumb.path();
+                return;
+            }
         }
         for (int index = grid.firstIndex(); index < grid.lastIndex(); index++) {
             int visibleIndex = index - grid.firstIndex();
@@ -922,6 +1062,7 @@ public final class AssetManagerOverlay {
         pressedY = 0.0;
         draggingItem = null;
         dragTargetFolder = null;
+        lastDragAutoScrollAt = 0L;
     }
 
     private String currentFolder() {
@@ -1025,6 +1166,8 @@ public final class AssetManagerOverlay {
             Section section, String id, String name, Object value,
             boolean editable, boolean deletable, boolean folder, String path
     ) {}
+    private record BreadcrumbPart(String label, String path) {}
+    private record Breadcrumb(String path, Bounds bounds) {}
     private record Bounds(int x, int y, int width, int height) {
         int right() { return x + width; }
         int bottom() { return y + height; }

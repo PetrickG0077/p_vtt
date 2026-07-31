@@ -2646,8 +2646,9 @@ public final class VTTScreen extends Screen {
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                assetManagerOverlay.cancelPointerInteraction();
-                hudCreationOpen = false;
+                if (!assetManagerOverlay.cancelActiveDrag()) {
+                    hudCreationOpen = false;
+                }
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 assetManagerOverlay.backspace(
                         session.getActiveTabletop(), mapDefinitionRegistry,
