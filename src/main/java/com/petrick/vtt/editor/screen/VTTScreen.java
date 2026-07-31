@@ -741,6 +741,7 @@ public final class VTTScreen extends Screen {
         }
         AssetManagerOverlay.Interaction interaction = assetManagerOverlay.mouseClicked(
                 mouseX, mouseY, button, this.width, this.height,
+                getKeyboardModifiers(),
                 session.getActiveTabletop(), mapDefinitionRegistry,
                 tokenDefinitionRegistry);
         if (!interaction.consumed()) return false;
@@ -771,6 +772,12 @@ public final class VTTScreen extends Screen {
                     folderLeaf(interaction.value()), true);
             return;
         }
+        if (interaction.action() == AssetManagerOverlay.Action.DUPLICATE_FOLDER) {
+            requestAssetFolderCommand(
+                    VttAssetFolderCommandPayload.DUPLICATE_FOLDER,
+                    interaction.section(), interaction.value(), "");
+            return;
+        }
         if (interaction.action() == AssetManagerOverlay.Action.DELETE_FOLDER) {
             beginAssetFolderDeletion(interaction.section(), interaction.value());
             return;
@@ -782,6 +789,15 @@ public final class VTTScreen extends Screen {
                             ? VttAssetFolderCommandPayload.MOVE_FOLDER
                             : VttAssetFolderCommandPayload.MOVE_ITEM,
                     interaction.section(), interaction.id(), interaction.value());
+            return;
+        }
+        if (interaction.action() == AssetManagerOverlay.Action.MOVE_SELECTION) {
+            String encodedSources = interaction.moveEntries().stream()
+                    .map(entry -> (entry.folder() ? "F:" + entry.path() : "I:" + entry.id()))
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            requestAssetFolderCommand(
+                    VttAssetFolderCommandPayload.MOVE_SELECTION,
+                    interaction.section(), encodedSources, interaction.value());
             return;
         }
         if (interaction.action() == AssetManagerOverlay.Action.SELECT) {
@@ -873,8 +889,10 @@ public final class VTTScreen extends Screen {
         String message = switch (operation) {
             case VttAssetFolderCommandPayload.CREATE_FOLDER -> "Folder created";
             case VttAssetFolderCommandPayload.RENAME_FOLDER -> "Folder renamed";
+            case VttAssetFolderCommandPayload.DUPLICATE_FOLDER -> "Folder duplicated";
             case VttAssetFolderCommandPayload.MOVE_FOLDER -> "Folder moved";
             case VttAssetFolderCommandPayload.MOVE_ITEM -> "Asset moved";
+            case VttAssetFolderCommandPayload.MOVE_SELECTION -> "Assets moved";
             case VttAssetFolderCommandPayload.DELETE_FOLDER -> "Folder deleted";
             case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
                     "Folder contents moved and folder deleted";
@@ -2646,7 +2664,8 @@ public final class VTTScreen extends Screen {
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                if (!assetManagerOverlay.cancelActiveDrag()) {
+                if (!assetManagerOverlay.cancelActiveDrag()
+                        && !assetManagerOverlay.clearMultiSelection()) {
                     hudCreationOpen = false;
                 }
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {

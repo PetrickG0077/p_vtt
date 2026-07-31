@@ -23,6 +23,7 @@ import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.resources.ResourceLocation;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -65,6 +66,8 @@ public final class AssetManagerOverlay {
     private Section section = Section.SCENES;
     private String search = "";
     private String selectedId;
+    private final LinkedHashSet<String> selectedIds = new LinkedHashSet<>();
+    private String selectionAnchorId;
     private final EnumMap<Section, Integer> scrollRows = new EnumMap<>(Section.class);
     private final EnumMap<Section, String> currentFolders = new EnumMap<>(Section.class);
     private String lastClickedKey;
@@ -77,6 +80,7 @@ public final class AssetManagerOverlay {
     private double pressedX;
     private double pressedY;
     private Item draggingItem;
+    private List<Item> draggingItems = List.of();
     private String dragTargetFolder;
     private long lastDragAutoScrollAt;
     private List<Breadcrumb> renderedBreadcrumbs = List.of();
@@ -161,7 +165,7 @@ public final class AssetManagerOverlay {
                 16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         context.graphics().drawCenteredString(
                 font, "+", createFolder.x() + 1 + createFolder.width() / 2,
-                createFolder.y() + 1 + 11, 0xFFFFFFFF);
+                createFolder.y() + 2 + 11, 0xFFFFFFFF);
 
         Bounds add = addBounds(panel);
         context.graphics().fill(
@@ -191,10 +195,18 @@ public final class AssetManagerOverlay {
                     tab.y() + (tab.height() - font.lineHeight) / 2,
                     active ? 0xFFFFFFFF : 0xFFCCCCCC, false);
         }
+        if (selectedIds.size() > 1 && panel.width() >= 560) {
+            context.graphics().drawString(
+                    font, selectedIds.size() + " selected",
+                    panel.x() + 438,
+                    panel.y() + HEADER_HEIGHT
+                            + (TABS_HEIGHT - font.lineHeight) / 2,
+                    0xFFCCCCCC, false);
+        }
 
         List<Item> items = visibleItems(tabletop, maps, tokens);
         Grid grid = grid(panel, items.size());
-        updateDraggingState();
+        updateDraggingState(items);
         if (autoScrollWhileDragging(
                 context.mouseX(), context.mouseY(), panel, grid)) {
             grid = grid(panel, items.size());
@@ -210,7 +222,8 @@ public final class AssetManagerOverlay {
             Bounds card = new Bounds(x, y, CARD_WIDTH, CARD_HEIGHT);
             renderCard(context, font, card,
                     item, tabletop, activeScene, assets, thumbnails);
-            if (draggingItem != null && sameItem(item, draggingItem)) {
+            if (draggingItem != null && draggingItems.stream()
+                    .anyMatch(source -> sameItem(item, source))) {
                 context.graphics().fill(
                         card.x(), card.y(), card.right(), card.bottom(), 0x88000000);
             }
@@ -227,7 +240,7 @@ public final class AssetManagerOverlay {
                             + TABS_HEIGHT + 30, 0xFF88888E);
         }
         if (draggingItem != null) {
-            renderDragPreview(context, font, draggingItem);
+            renderDragPreview(context, font, draggingItem, draggingItems.size());
         }
         border(context, panel, EditorHudTheme.outline());
     }
@@ -238,6 +251,7 @@ public final class AssetManagerOverlay {
             int button,
             int screenWidth,
             int screenHeight,
+            int modifiers,
             VttTabletop tabletop,
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
@@ -279,7 +293,7 @@ public final class AssetManagerOverlay {
         for (Section candidate : Section.values()) {
             if (tabBounds(panel, candidate).contains(mouseX, mouseY)) {
                 section = candidate;
-                selectedId = null;
+                clearSelection();
                 draggingScrollbar = false;
                 clearPressedItem();
                 return Interaction.handled();
@@ -309,17 +323,30 @@ public final class AssetManagerOverlay {
                     CARD_WIDTH, CARD_HEIGHT);
             if (!card.contains(mouseX, mouseY)) continue;
             Item item = items.get(index);
-            selectedId = item.id();
+            boolean control = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+            boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+            if (shift && selectionAnchorId != null) {
+                selectRange(items, selectionAnchorId, item.id(), control);
+            } else if (control) {
+                toggleSelection(item.id());
+            } else if (!selectedIds.contains(item.id())) {
+                selectOnly(item.id());
+            }
             if (editBounds(card).contains(mouseX, mouseY) && item.editable()) {
+                selectOnly(item.id());
                 return new Interaction(
                         item.folder() ? Action.RENAME_FOLDER : Action.EDIT,
                         item.section(), item.id(), item.path(), true);
             }
-            if (!item.folder() && duplicateBounds(card).contains(mouseX, mouseY)
+            if (duplicateBounds(card).contains(mouseX, mouseY)
                     && item.editable()) {
-                return new Interaction(Action.DUPLICATE, item.section(), item.id(), true);
+                selectOnly(item.id());
+                return new Interaction(
+                        item.folder() ? Action.DUPLICATE_FOLDER : Action.DUPLICATE,
+                        item.section(), item.id(), item.path(), true);
             }
             if (deleteBounds(card).contains(mouseX, mouseY) && item.deletable()) {
+                selectOnly(item.id());
                 return new Interaction(
                         item.folder() ? Action.DELETE_FOLDER : Action.DELETE,
                         item.section(), item.id(), item.path(), true);
@@ -329,7 +356,7 @@ public final class AssetManagerOverlay {
             boolean doubleClick = key.equals(lastClickedKey) && now - lastClickedAt <= 350L;
             lastClickedKey = key;
             lastClickedAt = now;
-            if (item.editable()) {
+            if (item.editable() && selectedIds.contains(item.id())) {
                 pressedItem = item;
                 pressedAt = now;
                 pressedX = mouseX;
@@ -346,6 +373,7 @@ public final class AssetManagerOverlay {
                     doubleClick && item.editable() ? Action.EDIT : Action.SELECT,
                     item.section(), item.id(), true);
         }
+        clearSelection();
         return Interaction.handled();
     }
 
@@ -405,6 +433,12 @@ public final class AssetManagerOverlay {
                 draggingItem = pressedItem;
                 Bounds panel = panel(screenWidth, screenHeight);
                 List<Item> items = visibleItems(tabletop, maps, tokens);
+                draggingItems = selectedIds.contains(pressedItem.id())
+                        ? items.stream()
+                        .filter(item -> item.editable()
+                                && selectedIds.contains(item.id()))
+                        .toList()
+                        : List.of(pressedItem);
                 updateDragTarget(mouseX, mouseY, panel, grid(panel, items.size()), items);
                 return true;
             }
@@ -448,9 +482,19 @@ public final class AssetManagerOverlay {
         }
         if (draggingItem != null) {
             Item source = draggingItem;
+            List<MoveEntry> sources = draggingItems.stream()
+                    .map(item -> new MoveEntry(
+                            item.folder(), item.id(), item.path()))
+                    .toList();
             String target = dragTargetFolder;
             clearPressedItem();
             if (target == null) return Interaction.handled();
+            clearSelection();
+            if (sources.size() > 1) {
+                return new Interaction(
+                        Action.MOVE_SELECTION, source.section(), source.id(),
+                        target, true, sources);
+            }
             return new Interaction(
                     source.folder() ? Action.MOVE_FOLDER : Action.MOVE_ITEM,
                     source.section(), source.folder() ? source.path() : source.id(),
@@ -466,6 +510,7 @@ public final class AssetManagerOverlay {
 
     public Section section() { return section; }
     public String selectedId() { return selectedId; }
+    public int selectedCount() { return selectedIds.size(); }
     public String currentFolderPath() { return currentFolder(); }
 
     public void cancelPointerInteraction() {
@@ -479,15 +524,21 @@ public final class AssetManagerOverlay {
         return active;
     }
 
+    public boolean clearMultiSelection() {
+        if (selectedIds.size() <= 1) return false;
+        clearSelection();
+        return true;
+    }
+
     public void select(Section section, String id) {
         this.section = section == null ? Section.SCENES : section;
-        this.selectedId = id;
+        selectOnly(id);
     }
 
     public void openFolder(Section section, String path) {
         if (section != null) this.section = section;
         currentFolders.put(this.section, normalizeFolder(path));
-        selectedId = null;
+        clearSelection();
         setScrollRow(0);
         search = "";
         searchFocused = false;
@@ -498,13 +549,59 @@ public final class AssetManagerOverlay {
         openFolder(section, parent(currentFolder()));
     }
 
+    private void selectOnly(String id) {
+        selectedIds.clear();
+        selectedId = id;
+        selectionAnchorId = id;
+        if (id != null && !id.isBlank()) selectedIds.add(id);
+    }
+
+    private void clearSelection() {
+        selectedIds.clear();
+        selectedId = null;
+        selectionAnchorId = null;
+    }
+
+    private void toggleSelection(String id) {
+        if (id == null || id.isBlank()) return;
+        if (!selectedIds.remove(id)) selectedIds.add(id);
+        selectedId = selectedIds.contains(id)
+                ? id : selectedIds.stream().reduce((first, second) -> second).orElse(null);
+        selectionAnchorId = id;
+    }
+
+    private void selectRange(
+            List<Item> items,
+            String anchorId,
+            String targetId,
+            boolean additive
+    ) {
+        int anchor = -1;
+        int target = -1;
+        for (int index = 0; index < items.size(); index++) {
+            if (items.get(index).id().equals(anchorId)) anchor = index;
+            if (items.get(index).id().equals(targetId)) target = index;
+        }
+        if (anchor < 0 || target < 0) {
+            selectOnly(targetId);
+            return;
+        }
+        if (!additive) selectedIds.clear();
+        int start = Math.min(anchor, target);
+        int end = Math.max(anchor, target);
+        for (int index = start; index <= end; index++) {
+            selectedIds.add(items.get(index).id());
+        }
+        selectedId = targetId;
+    }
+
     private void selectFirstGlobalMatch(
             VttTabletop tabletop,
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
     ) {
         if (search.isBlank()) {
-            selectedId = null;
+            clearSelection();
             setScrollRow(0);
             return;
         }
@@ -518,7 +615,7 @@ public final class AssetManagerOverlay {
                         .findFirst().orElse(null));
         if (match != null) {
             section = match.section();
-            selectedId = match.id();
+            selectOnly(match.id());
             currentFolders.put(section, match.path());
             setScrollRow(0);
         }
@@ -599,7 +696,7 @@ public final class AssetManagerOverlay {
             VttTabletop tabletop, VttScene activeScene,
             AssetRegistry assets, AssetThumbnailRegistry thumbnails
     ) {
-        boolean selected = item.id().equals(selectedId);
+        boolean selected = selectedIds.contains(item.id());
         boolean hovered = card.contains(context.mouseX(), context.mouseY());
         context.graphics().fill(
                 card.x(), card.y(), card.right(), card.bottom(),
@@ -628,15 +725,13 @@ public final class AssetManagerOverlay {
             context.graphics().blit(
                     EDIT_ICON, edit.x() + 1, edit.y() + 1,
                     16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
-            if (!item.folder()) {
-                Bounds duplicate = duplicateBounds(card);
-                context.graphics().fill(
-                        duplicate.x(), duplicate.y(), duplicate.right(), duplicate.bottom(),
-                        0xCC101014);
-                context.graphics().blit(
-                        DUPLICATE_ICON, duplicate.x() + 1, duplicate.y() + 1,
-                        16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
-            }
+            Bounds duplicate = duplicateBounds(card);
+            context.graphics().fill(
+                    duplicate.x(), duplicate.y(), duplicate.right(), duplicate.bottom(),
+                    0xCC101014);
+            context.graphics().blit(
+                    DUPLICATE_ICON, duplicate.x() + 1, duplicate.y() + 1,
+                    16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
         }
         if (item.deletable()) {
             Bounds delete = deleteBounds(card);
@@ -939,10 +1034,16 @@ public final class AssetManagerOverlay {
         return new Bounds(card.right() - 22, card.bottom() - 24, 18, 18);
     }
 
-    private void updateDraggingState() {
+    private void updateDraggingState(List<Item> items) {
         if (draggingItem == null && pressedItem != null
                 && System.currentTimeMillis() - pressedAt >= DRAG_HOLD_MS) {
             draggingItem = pressedItem;
+            draggingItems = selectedIds.contains(pressedItem.id())
+                    ? items.stream()
+                    .filter(item -> item.editable()
+                            && selectedIds.contains(item.id()))
+                    .toList()
+                    : List.of(pressedItem);
         }
     }
 
@@ -989,7 +1090,7 @@ public final class AssetManagerOverlay {
         }
         for (Breadcrumb breadcrumb : renderedBreadcrumbs) {
             if (breadcrumb.bounds().contains(mouseX, mouseY)
-                    && validDropTarget(draggingItem, breadcrumb.path())) {
+                    && validDropTarget(draggingItems, breadcrumb.path())) {
                 dragTargetFolder = breadcrumb.path();
                 return;
             }
@@ -1004,7 +1105,7 @@ public final class AssetManagerOverlay {
                     CARD_WIDTH, CARD_HEIGHT);
             Item target = items.get(index);
             if (!target.folder() || !card.contains(mouseX, mouseY)
-                    || !validDropTarget(draggingItem, target.path())) continue;
+                    || !validDropTarget(draggingItems, target.path())) continue;
             dragTargetFolder = target.path();
             return;
         }
@@ -1020,10 +1121,17 @@ public final class AssetManagerOverlay {
                 && !targetPath.startsWith(sourcePath + "/");
     }
 
+    private boolean validDropTarget(List<Item> sources, String targetFolder) {
+        return sources != null && !sources.isEmpty()
+                && sources.stream().allMatch(
+                source -> validDropTarget(source, targetFolder));
+    }
+
     private void renderDragPreview(
             VRenderContext context,
             Font font,
-            Item item
+            Item item,
+            int itemCount
     ) {
         int x = (int) Math.round(context.mouseX()) + 12;
         int y = (int) Math.round(context.mouseY()) + 12;
@@ -1034,7 +1142,8 @@ public final class AssetManagerOverlay {
                 x + 5, y + 6, 16, 16,
                 0.0F, 0.0F, 32, 32, 32, 32);
         context.graphics().drawString(
-                font, trim(item.name(), 17), x + 26, y + 10,
+                font, itemCount > 1 ? itemCount + " selected" : trim(item.name(), 17),
+                x + 26, y + 10,
                 0xCCFFFFFF, false);
         border(context, new Bounds(x, y, width, 28), 0xCCFFFFFF);
     }
@@ -1061,6 +1170,7 @@ public final class AssetManagerOverlay {
         pressedX = 0.0;
         pressedY = 0.0;
         draggingItem = null;
+        draggingItems = List.of();
         dragTargetFolder = null;
         lastDragAutoScrollAt = 0L;
     }
@@ -1143,24 +1253,40 @@ public final class AssetManagerOverlay {
     }
 
     public enum Action {
-        NONE, SELECT, ADD, EDIT, DUPLICATE, DELETE,
+        NONE, SELECT, ADD, EDIT, DUPLICATE, DUPLICATE_FOLDER, DELETE,
         CREATE_FOLDER, OPEN_FOLDER, BACK_FOLDER, RENAME_FOLDER,
-        DELETE_FOLDER, MOVE_ITEM, MOVE_FOLDER
+        DELETE_FOLDER, MOVE_ITEM, MOVE_FOLDER, MOVE_SELECTION
     }
 
     public record Interaction(
-            Action action, Section section, String id, String value, boolean consumed
+            Action action,
+            Section section,
+            String id,
+            String value,
+            boolean consumed,
+            List<MoveEntry> moveEntries
     ) {
+        public Interaction(
+                Action action, Section section, String id,
+                String value, boolean consumed
+        ) {
+            this(action, section, id, value, consumed, List.of());
+        }
         public Interaction(Action action, Section section, String id, boolean consumed) {
-            this(action, section, id, null, consumed);
+            this(action, section, id, null, consumed, List.of());
+        }
+        public Interaction {
+            moveEntries = moveEntries == null ? List.of() : List.copyOf(moveEntries);
         }
         public static Interaction none() {
-            return new Interaction(Action.NONE, null, null, null, false);
+            return new Interaction(Action.NONE, null, null, null, false, List.of());
         }
         public static Interaction handled() {
-            return new Interaction(Action.NONE, null, null, null, true);
+            return new Interaction(Action.NONE, null, null, null, true, List.of());
         }
     }
+
+    public record MoveEntry(boolean folder, String id, String path) {}
 
     private record Item(
             Section section, String id, String name, Object value,

@@ -185,10 +185,14 @@ public final class VTTSession {
                     assetFolderService.createFolder(section, safeSource, safeValue);
             case VttAssetFolderCommandPayload.RENAME_FOLDER ->
                     assetFolderService.renameFolder(section, safeSource, safeValue) != null;
+            case VttAssetFolderCommandPayload.DUPLICATE_FOLDER ->
+                    duplicateAssetFolder(section, safeSource);
             case VttAssetFolderCommandPayload.MOVE_FOLDER ->
                     assetFolderService.moveFolder(section, safeSource, safeValue) != null;
             case VttAssetFolderCommandPayload.MOVE_ITEM ->
                     assetFolderService.moveItem(section, safeSource, safeValue);
+            case VttAssetFolderCommandPayload.MOVE_SELECTION ->
+                    assetFolderService.moveSelection(section, safeSource, safeValue);
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, safeSource);
             case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
@@ -200,6 +204,26 @@ public final class VTTSession {
         assetFolderService.applyMetadata(
                 activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
         tabletopStorage.saveTabletop(activeTabletop);
+        return true;
+    }
+
+    private boolean duplicateAssetFolder(
+            VttAssetFolderService.Section section,
+            String folder
+    ) {
+        VttAssetFolderService.FolderDuplicateResult result =
+                assetFolderService.duplicateFolder(section, folder);
+        if (result == null) return false;
+        for (VttAssetFolderService.DuplicatedScene scene : result.scenes()) {
+            activeTabletop.addSceneId(scene.id());
+            activeTabletop.setSceneDisplayName(scene.id(), scene.displayName());
+            activeTabletop.setSceneFolder(scene.id(), scene.folder());
+        }
+        if (section == VttAssetFolderService.Section.MAPS) {
+            CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
+        } else if (section == VttAssetFolderService.Section.TOKENS) {
+            CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
+        }
         return true;
     }
 

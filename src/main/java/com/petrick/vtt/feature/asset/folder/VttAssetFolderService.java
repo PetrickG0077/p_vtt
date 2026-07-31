@@ -1,5 +1,7 @@
 package com.petrick.vtt.feature.asset.folder;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.petrick.vtt.VTT;
@@ -14,16 +16,20 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /** Safe physical folder operations for scene, map and token definition catalogs. */
 public final class VttAssetFolderService {
     private static final int MAX_DEPTH = 16;
     private static final int MAX_NAME_LENGTH = 64;
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Path gameDirectory;
     private final String tabletopId;
@@ -127,6 +133,76 @@ public final class VttAssetFolderService {
         }
     }
 
+    /** Duplicates a complete folder tree while assigning new public IDs to JSON assets. */
+    public synchronized FolderDuplicateResult duplicateFolder(
+            Section section, String folder
+    ) {
+        Path source = resolveFolder(section, folder, false);
+        if (source == null) return null;
+        Path target = uniqueCopyFolder(section, source);
+        if (target == null) return null;
+
+        Set<String> reservedIds = new HashSet<>(
+                itemFolders.getOrDefault(section, Map.of()).keySet());
+        List<DuplicatedScene> scenes = new ArrayList<>();
+        try (Stream<Path> paths = Files.walk(source, MAX_DEPTH)) {
+            for (Path path : paths.sorted().toList()) {
+                Path relative = source.relativize(path);
+                Path destination = target.resolve(relative).normalize();
+                if (!isInsideRoot(section, destination)) throw new IOException(
+                        "Duplicate destination escaped asset root");
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                    continue;
+                }
+                Files.createDirectories(destination.getParent());
+                if (path.getFileName().toString().toLowerCase().endsWith(".json")) {
+                    JsonObject json;
+                    try (Reader reader = Files.newBufferedReader(path)) {
+                        json = JsonParser.parseReader(reader).getAsJsonObject();
+                    }
+                    String idField = switch (section) {
+                        case SCENES -> "id";
+                        case MAPS -> "mapDefinitionId";
+                        case TOKENS -> "tokenDefinitionId";
+                    };
+                    if (json.has(idField) && json.get(idField).isJsonPrimitive()) {
+                        String newId = uniqueCopyId(
+                                json.get(idField).getAsString(), reservedIds);
+                        json.addProperty(idField, newId);
+                        String displayName = json.has("displayName")
+                                && json.get("displayName").isJsonPrimitive()
+                                ? json.get("displayName").getAsString() : newId;
+                        String copiedDisplayName = displayName + " Copy";
+                        json.addProperty("displayName", copiedDisplayName);
+                        if (section == Section.SCENES) {
+                            String sceneFileName = newId.trim().toLowerCase()
+                                    .replace('\\', '/')
+                                    .replaceAll("[^a-z0-9/_-]", "_") + ".json";
+                            destination = destination.getParent()
+                                    .resolve(sceneFileName).normalize();
+                            Files.createDirectories(destination.getParent());
+                            scenes.add(new DuplicatedScene(
+                                    newId,
+                                    copiedDisplayName,
+                                    relative(section, destination.getParent())));
+                        }
+                    }
+                    Files.writeString(destination, GSON.toJson(json));
+                } else {
+                    Files.copy(path, destination);
+                }
+            }
+            refresh();
+            return new FolderDuplicateResult(relative(section, target), scenes);
+        } catch (RuntimeException | IOException exception) {
+            deleteCreatedTree(target);
+            refresh();
+            VTT.LOGGER.error("Failed to duplicate VTT asset folder: {}", source, exception);
+            return null;
+        }
+    }
+
     public synchronized String moveFolder(
             Section section, String folder, String targetParentFolder
     ) {
@@ -160,6 +236,68 @@ public final class VttAssetFolderService {
             return true;
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to move VTT asset item: {}", source, exception);
+            return false;
+        }
+    }
+
+    /** Moves a same-section selection as one validated filesystem operation. */
+    public synchronized boolean moveSelection(
+            Section section,
+            String encodedSources,
+            String targetFolder
+    ) {
+        Path parent = resolveFolder(section, targetFolder, true);
+        if (parent == null || encodedSources == null || encodedSources.isBlank()) {
+            return false;
+        }
+
+        List<Path> sources = new ArrayList<>();
+        Set<Path> uniqueSources = new HashSet<>();
+        for (String encoded : encodedSources.split("\\R")) {
+            if (encoded.length() < 3 || encoded.charAt(1) != ':') return false;
+            Path source = switch (encoded.charAt(0)) {
+                case 'F' -> resolveFolder(section, encoded.substring(2), false);
+                case 'I' -> findItemFile(section, encoded.substring(2));
+                default -> null;
+            };
+            if (source == null || !uniqueSources.add(source)) return false;
+            if (Files.isDirectory(source)
+                    && (parent.equals(source) || parent.startsWith(source))) return false;
+            if (source.getParent().equals(parent)) return false;
+            sources.add(source);
+        }
+        if (sources.isEmpty() || sources.size() > 256) return false;
+
+        Set<Path> destinations = new HashSet<>();
+        for (Path source : sources) {
+            Path destination = parent.resolve(source.getFileName()).normalize();
+            if (!isInsideRoot(section, destination)
+                    || Files.exists(destination)
+                    || !destinations.add(destination)) return false;
+        }
+
+        List<Path> movedSources = new ArrayList<>();
+        try {
+            for (Path source : sources) {
+                move(source, parent.resolve(source.getFileName()).normalize());
+                movedSources.add(source);
+            }
+            refresh();
+            return true;
+        } catch (IOException exception) {
+            Collections.reverse(movedSources);
+            for (Path original : movedSources) {
+                Path current = parent.resolve(original.getFileName()).normalize();
+                try {
+                    if (Files.exists(current) && !Files.exists(original)) {
+                        move(current, original);
+                    }
+                } catch (IOException rollbackException) {
+                    exception.addSuppressed(rollbackException);
+                }
+            }
+            refresh();
+            VTT.LOGGER.error("Failed to move VTT asset selection", exception);
             return false;
         }
     }
@@ -282,6 +420,45 @@ public final class VttAssetFolderService {
                     "Failed to move contents and delete VTT asset folder: {}",
                     source, exception);
             return false;
+        }
+    }
+
+    private Path uniqueCopyFolder(Section section, Path source) {
+        Path parent = source.getParent();
+        String originalName = source.getFileName().toString();
+        for (int copyIndex = 1; copyIndex <= 999; copyIndex++) {
+            String suffix = copyIndex == 1 ? " Copy" : " Copy " + copyIndex;
+            String candidateName = sanitizeFolderName(originalName + suffix);
+            if (candidateName == null) return null;
+            Path candidate = parent.resolve(candidateName).normalize();
+            if (isInsideRoot(section, candidate) && !Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String uniqueCopyId(String originalId, Set<String> reservedIds) {
+        String base = originalId == null || originalId.isBlank()
+                ? "asset_copy" : originalId + "_copy";
+        String candidate = base;
+        int copyIndex = 2;
+        while (!reservedIds.add(candidate)) {
+            candidate = base + "_" + copyIndex++;
+        }
+        return candidate;
+    }
+
+    private void deleteCreatedTree(Path target) {
+        if (target == null || !Files.exists(target)) return;
+        try (Stream<Path> paths = Files.walk(target, MAX_DEPTH)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException rollbackException) {
+            VTT.LOGGER.error(
+                    "Failed to clean incomplete duplicated asset folder: {}",
+                    target, rollbackException);
         }
     }
 
@@ -441,4 +618,16 @@ public final class VttAssetFolderService {
             return !conflicts.isEmpty();
         }
     }
+
+    public record FolderDuplicateResult(
+            String folder,
+            List<DuplicatedScene> scenes
+    ) {
+        public FolderDuplicateResult {
+            folder = folder == null ? "" : folder;
+            scenes = scenes == null ? List.of() : List.copyOf(scenes);
+        }
+    }
+
+    public record DuplicatedScene(String id, String displayName, String folder) {}
 }

@@ -22,7 +22,7 @@ public final class VttServerAssetFolderHandler {
                 || request.section() == null
                 || request.source() == null
                 || request.value() == null
-                || request.source().length() > 256
+                || request.source().length() > 32767
                 || request.value().length() > 256) return;
 
         VttServerTabletopState state = VttServerTabletopState.get();

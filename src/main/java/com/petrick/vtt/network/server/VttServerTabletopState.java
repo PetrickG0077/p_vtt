@@ -164,11 +164,16 @@ public final class VttServerTabletopState {
             case VttAssetFolderCommandPayload.RENAME_FOLDER ->
                     assetFolderService.renameFolder(
                             section, request.source(), request.value()) != null;
+            case VttAssetFolderCommandPayload.DUPLICATE_FOLDER ->
+                    duplicateAssetFolder(section, request.source());
             case VttAssetFolderCommandPayload.MOVE_FOLDER ->
                     assetFolderService.moveFolder(
                             section, request.source(), request.value()) != null;
             case VttAssetFolderCommandPayload.MOVE_ITEM ->
                     assetFolderService.moveItem(
+                            section, request.source(), request.value());
+            case VttAssetFolderCommandPayload.MOVE_SELECTION ->
+                    assetFolderService.moveSelection(
                             section, request.source(), request.value());
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, request.source());
@@ -181,6 +186,21 @@ public final class VttServerTabletopState {
         assetFolderService.applyMetadata(tabletop, null, null);
         storage.saveTabletop(tabletop);
         advanceAuthorityRevision();
+        return true;
+    }
+
+    private boolean duplicateAssetFolder(
+            VttAssetFolderService.Section section,
+            String folder
+    ) {
+        VttAssetFolderService.FolderDuplicateResult result =
+                assetFolderService.duplicateFolder(section, folder);
+        if (result == null) return false;
+        for (VttAssetFolderService.DuplicatedScene scene : result.scenes()) {
+            tabletop.addSceneId(scene.id());
+            tabletop.setSceneDisplayName(scene.id(), scene.displayName());
+            tabletop.setSceneFolder(scene.id(), scene.folder());
+        }
         return true;
     }
 
