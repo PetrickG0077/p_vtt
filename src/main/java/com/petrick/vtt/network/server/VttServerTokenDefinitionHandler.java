@@ -7,6 +7,7 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenSaveData;
 import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
+import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
@@ -31,55 +32,81 @@ public final class VttServerTokenDefinitionHandler {
     private VttServerTokenDefinitionHandler() {}
 
     public static void handle(VttTokenDefinitionUpsertPayload payload, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player)) return;
-        if (!VttServerRequestRateLimiter.allow(
-                player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION)) return;
-        if (!VttServerPlayerEvents.isMaster(player)) {
-            VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
-                    "permission denied");
+        if (!(context.player() instanceof ServerPlayer player) || payload == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
+        if (!authorize(player, payload.requestId(), state)) return;
+        if (!validRequestId(payload.requestId()) || payload.tokenJson() == null) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.INVALID_REQUEST,
+                    "Invalid token definition request", state.authorityRevision(), "");
+            return;
+        }
+        if (payload.authorityRevision() != state.authorityRevision()) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.STALE_REVISION,
+                    "Token catalog changed on the server; resynchronizing",
+                    state.authorityRevision(), "");
             return;
         }
         try {
             CreatedTokenSaveData data = GSON.fromJson(payload.tokenJson(), CreatedTokenSaveData.class);
             validate(data);
+            boolean created = !loadDefinitions().containsKey(data.tokenDefinitionId);
             save(data);
-            VttServerTabletopState state = VttServerTabletopState.get();
             state.updateTokenDefinitionOwnership(data.tokenDefinitionId, data.player);
-
-            broadcastReload(player, state, "UPSERT", "Token definition updated");
+            state.markAssetCatalogChanged();
+            String message = created ? "Token created" : "Token updated";
+            respond(player, payload.requestId(), true,
+                    VttTokenDefinitionResultPayload.OK, message,
+                    state.authorityRevision(), data.tokenDefinitionId);
+            broadcastReload(player, state, "UPSERT", message);
             VTT.LOGGER.info("Saved server VTT token definition: {}", data.tokenDefinitionId);
         } catch (RuntimeException | IOException exception) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.REJECTED,
+                    failureMessage(exception), state.authorityRevision(), "");
             VTT.LOGGER.error("Rejected invalid VTT token definition update from {}",
                     player.getGameProfile().getName(), exception);
         }
     }
 
     public static void handleCommand(VttTokenDefinitionCommandPayload payload, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player)) return;
-        if (!VttServerRequestRateLimiter.allow(
-                player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION)) return;
-        if (!VttServerPlayerEvents.isMaster(player)) {
-            VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
-                    "permission denied");
+        if (!(context.player() instanceof ServerPlayer player) || payload == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
+        if (!authorize(player, payload.requestId(), state)) return;
+        if (!validRequestId(payload.requestId())) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.INVALID_REQUEST,
+                    "Invalid token request", state.authorityRevision(), "");
             return;
         }
-        if (payload == null || payload.operation() == null || payload.definitionId() == null
+        if (payload.authorityRevision() != state.authorityRevision()) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.STALE_REVISION,
+                    "Token catalog changed on the server; resynchronizing",
+                    state.authorityRevision(), "");
+            return;
+        }
+        if (payload.operation() == null || payload.definitionId() == null
                 || payload.definitionId().length() > 256
                 || !payload.definitionId().startsWith("user/tokens/")) {
-            VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION,
-                    "invalid definition command");
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.INVALID_REQUEST,
+                    "Invalid token definition command", state.authorityRevision(), "");
             return;
         }
 
         try {
-            VttServerTabletopState state = VttServerTabletopState.get();
             if (VttTokenDefinitionCommandPayload.DELETE.equals(payload.operation())) {
                 List<String> usages =
                         state.scenesUsingTokenDefinition(payload.definitionId());
                 if (!usages.isEmpty()) {
+                    respond(player, payload.requestId(), false,
+                            VttTokenDefinitionResultPayload.REJECTED,
+                            usages.size() == 1
+                                    ? "Token is used in scene: " + usages.getFirst()
+                                    : "Token is still used in " + usages.size() + " scenes",
+                            state.authorityRevision(), payload.definitionId());
                     VTT.LOGGER.warn(
                             "Rejected deletion of server VTT token definition {} "
                                     + "because it is used in {}",
@@ -87,30 +114,47 @@ public final class VttServerTokenDefinitionHandler {
                     return;
                 }
             }
-            boolean changed = switch (payload.operation()) {
-                case VttTokenDefinitionCommandPayload.DUPLICATE -> duplicate(payload.definitionId());
-                case VttTokenDefinitionCommandPayload.DELETE -> delete(payload.definitionId());
-                default -> false;
-            };
-            if (!changed) {
-                VTT.LOGGER.warn("Rejected VTT token definition command {} for {}",
-                        payload.operation(), payload.definitionId());
+            String resultingId;
+            String message;
+            if (VttTokenDefinitionCommandPayload.DUPLICATE.equals(payload.operation())) {
+                resultingId = duplicate(payload.definitionId());
+                message = "Token duplicated";
+            } else if (VttTokenDefinitionCommandPayload.DELETE.equals(payload.operation())) {
+                resultingId = delete(payload.definitionId()) ? "" : null;
+                message = "Token deleted";
+            } else {
+                respond(player, payload.requestId(), false,
+                        VttTokenDefinitionResultPayload.INVALID_REQUEST,
+                        "Unknown token definition command", state.authorityRevision(), "");
                 return;
             }
-
-            broadcastReload(player, state, payload.operation(),
-                    VttTokenDefinitionCommandPayload.DUPLICATE.equals(payload.operation())
-                            ? "Token duplicated" : "Token deleted");
+            if (resultingId == null) {
+                respond(player, payload.requestId(), false,
+                        VttTokenDefinitionResultPayload.REJECTED,
+                        "Could not " + (VttTokenDefinitionCommandPayload.DUPLICATE.equals(
+                                payload.operation()) ? "duplicate" : "delete") + " the token",
+                        state.authorityRevision(), "");
+                return;
+            }
+            state.markAssetCatalogChanged();
+            respond(player, payload.requestId(), true,
+                    VttTokenDefinitionResultPayload.OK, message,
+                    state.authorityRevision(), resultingId);
+            broadcastReload(player, state, payload.operation(), message);
         } catch (RuntimeException | IOException exception) {
+            respond(player, payload.requestId(), false,
+                    VttTokenDefinitionResultPayload.REJECTED,
+                    "Could not update the token definition on the server",
+                    state.authorityRevision(), "");
             VTT.LOGGER.error("Failed VTT token definition command {} for {}",
                     payload.operation(), payload.definitionId(), exception);
         }
     }
 
-    private static boolean duplicate(String definitionId) throws IOException {
+    private static String duplicate(String definitionId) throws IOException {
         Map<String, TokenFile> definitions = loadDefinitions();
         TokenFile source = definitions.get(definitionId);
-        if (source == null) return false;
+        if (source == null) return null;
         validate(source.data());
 
         CreatedTokenSaveData copy = GSON.fromJson(GSON.toJson(source.data()), CreatedTokenSaveData.class);
@@ -120,7 +164,47 @@ public final class VttServerTokenDefinitionHandler {
         save(copy, source.path().getParent());
         VTT.LOGGER.info("Duplicated server VTT token definition: {} -> {}",
                 definitionId, copy.tokenDefinitionId);
+        return copy.tokenDefinitionId;
+    }
+
+    private static boolean authorize(
+            ServerPlayer player, String requestId, VttServerTabletopState state) {
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            respond(player, requestId, false,
+                    VttTokenDefinitionResultPayload.PERMISSION_DENIED,
+                    "Only masters can update token definitions",
+                    state.authorityRevision(), "");
+            return false;
+        }
+        if (!VttServerRequestRateLimiter.allow(
+                player, VttServerRequestRateLimiter.Category.TOKEN_DEFINITION)) {
+            respond(player, requestId, false,
+                    VttTokenDefinitionResultPayload.REJECTED,
+                    "Too many token operations; try again shortly",
+                    state.authorityRevision(), "");
+            return false;
+        }
         return true;
+    }
+
+    private static boolean validRequestId(String requestId) {
+        return requestId != null && !requestId.isBlank() && requestId.length() <= 64;
+    }
+
+    private static void respond(
+            ServerPlayer player, String requestId, boolean success,
+            String code, String message, long authorityRevision, String definitionId) {
+        PacketDistributor.sendToPlayer(player, new VttTokenDefinitionResultPayload(
+                requestId == null ? "" : requestId, success, code, message,
+                authorityRevision, definitionId == null ? "" : definitionId));
+    }
+
+    private static String failureMessage(Exception exception) {
+        String message = exception == null ? null : exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Could not save the token definition on the server";
+        }
+        return message.length() <= 256 ? message : message.substring(0, 256);
     }
 
     private static boolean delete(String definitionId) throws IOException {

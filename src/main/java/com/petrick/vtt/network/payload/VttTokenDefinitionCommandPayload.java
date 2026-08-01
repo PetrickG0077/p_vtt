@@ -8,7 +8,8 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /** Master-only lifecycle command for a server-owned token definition. */
-public record VttTokenDefinitionCommandPayload(String operation, String definitionId)
+public record VttTokenDefinitionCommandPayload(
+        String requestId, long authorityRevision, String operation, String definitionId)
         implements CustomPacketPayload {
     public static final String DUPLICATE = "DUPLICATE";
     public static final String DELETE = "DELETE";
@@ -19,6 +20,8 @@ public record VttTokenDefinitionCommandPayload(String operation, String definiti
 
     public static final StreamCodec<ByteBuf, VttTokenDefinitionCommandPayload> STREAM_CODEC =
             StreamCodec.composite(
+                    ByteBufCodecs.stringUtf8(64), VttTokenDefinitionCommandPayload::requestId,
+                    ByteBufCodecs.VAR_LONG, VttTokenDefinitionCommandPayload::authorityRevision,
                     ByteBufCodecs.stringUtf8(16), VttTokenDefinitionCommandPayload::operation,
                     ByteBufCodecs.stringUtf8(256), VttTokenDefinitionCommandPayload::definitionId,
                     VttTokenDefinitionCommandPayload::new

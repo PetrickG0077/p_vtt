@@ -75,12 +75,14 @@ import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
+import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -277,13 +279,14 @@ public final class VTTScreen extends Screen {
     private String pendingMapDefinitionRestoreSelectionId;
     private long pendingMapDefinitionAcknowledgedRevision = -1L;
     private long pendingMapDefinitionRequestUntil;
-    private String pendingServerCreatedTokenId;
-    private String pendingServerCreatedTokenFolder;
-    private long pendingServerCreatedTokenSnapshotVersion;
-    private long pendingServerCreatedTokenUntil;
-    private Set<String> pendingServerTokenDuplicateIds;
-    private String pendingServerTokenDuplicateName;
-    private long pendingServerTokenDuplicateUntil;
+    private String pendingTokenDefinitionRequestId;
+    private String pendingTokenDefinitionOperation;
+    private String pendingTokenDefinitionSuccessMessage;
+    private String pendingTokenDefinitionSelectionId;
+    private String pendingTokenDefinitionRestoreSelectionId;
+    private String pendingTokenDefinitionTargetFolder;
+    private long pendingTokenDefinitionAcknowledgedRevision = -1L;
+    private long pendingTokenDefinitionRequestUntil;
 
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
@@ -361,11 +364,12 @@ public final class VTTScreen extends Screen {
         ensureRenderState();
         resolvePendingAssetFolderResult();
         resolvePendingMapDefinitionResult();
+        resolvePendingTokenDefinitionResult();
         applyRemoteAssetManagerChanges();
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
-        resolvePendingServerTokenDuplicateSelection();
+        resolvePendingAssetManagerSceneOperation();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
                 && !selectionManager.getSelectedObjectIds().isEmpty()) {
@@ -532,8 +536,7 @@ public final class VTTScreen extends Screen {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
                     0x99000000);
-            assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation != null
-                    ? pendingAssetFolderOperation : pendingMapDefinitionOperation);
+            assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
             assetManagerOverlay.render(
                     context, this.font, session.getActiveTabletop(),
                     session.getActiveScene(),
@@ -790,7 +793,8 @@ public final class VTTScreen extends Screen {
     ) {
         if (interaction.section() == null) return;
         if ((pendingAssetFolderRequestId != null
-                || pendingMapDefinitionRequestId != null)
+                || pendingMapDefinitionRequestId != null
+                || pendingTokenDefinitionRequestId != null)
                 && interaction.action() != AssetManagerOverlay.Action.NONE
                 && interaction.action() != AssetManagerOverlay.Action.SELECT
                 && interaction.action() != AssetManagerOverlay.Action.OPEN_FOLDER
@@ -942,7 +946,8 @@ public final class VTTScreen extends Screen {
         if (section == null) return;
         if (session.isNetworkAuthorityActive()
                 && (pendingAssetFolderRequestId != null
-                || pendingMapDefinitionRequestId != null)) {
+                || pendingMapDefinitionRequestId != null
+                || pendingTokenDefinitionRequestId != null)) {
             VttClientEditorNotice.show("Wait for the current Asset Manager operation");
             return;
         }
@@ -1060,7 +1065,7 @@ public final class VTTScreen extends Screen {
         pendingAssetFolderRestoreSelection = List.of();
         pendingAssetFolderRequestUntil = 0L;
         pendingAssetFolderAcknowledgedRevision = -1L;
-        assetManagerOverlay.setPendingOperation(pendingMapDefinitionOperation);
+        assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
     }
 
     private String beginPendingMapDefinitionRequest(
@@ -1068,7 +1073,8 @@ public final class VTTScreen extends Screen {
             String selectionId, String restoreSelectionId
     ) {
         if (pendingMapDefinitionRequestId != null
-                || pendingAssetFolderRequestId != null) {
+                || pendingAssetFolderRequestId != null
+                || pendingTokenDefinitionRequestId != null) {
             VttClientEditorNotice.show("Wait for the current map operation");
             return null;
         }
@@ -1161,7 +1167,126 @@ public final class VTTScreen extends Screen {
         pendingMapDefinitionRestoreSelectionId = null;
         pendingMapDefinitionAcknowledgedRevision = -1L;
         pendingMapDefinitionRequestUntil = 0L;
-        assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation);
+        assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
+    }
+
+    private String beginPendingTokenDefinitionRequest(
+            String operation, String successMessage, String selectionId,
+            String restoreSelectionId, String targetFolder
+    ) {
+        if (pendingTokenDefinitionRequestId != null
+                || pendingAssetFolderRequestId != null
+                || pendingMapDefinitionRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current token operation");
+            return null;
+        }
+        String requestId = UUID.randomUUID().toString();
+        VttClientTokenDefinitionResultState.reset();
+        pendingTokenDefinitionRequestId = requestId;
+        pendingTokenDefinitionOperation = operation;
+        pendingTokenDefinitionSuccessMessage = successMessage;
+        pendingTokenDefinitionSelectionId = selectionId;
+        pendingTokenDefinitionRestoreSelectionId = restoreSelectionId;
+        pendingTokenDefinitionTargetFolder = targetFolder;
+        pendingTokenDefinitionAcknowledgedRevision = -1L;
+        pendingTokenDefinitionRequestUntil = System.currentTimeMillis() + 120_000L;
+        assetManagerOverlay.setPendingOperation(operation);
+        return requestId;
+    }
+
+    private void resolvePendingTokenDefinitionResult() {
+        if (pendingTokenDefinitionAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingTokenDefinitionAcknowledgedRevision) {
+            completePendingTokenDefinitionRequest();
+            return;
+        }
+        VttTokenDefinitionResultPayload result =
+                VttClientTokenDefinitionResultState.consume();
+        if (result != null && pendingTokenDefinitionRequestId != null
+                && pendingTokenDefinitionRequestId.equals(result.requestId())) {
+            if (result.success()) {
+                pendingTokenDefinitionSuccessMessage = result.message().isBlank()
+                        ? pendingTokenDefinitionSuccessMessage : result.message();
+                if (!result.definitionId().isBlank()) {
+                    pendingTokenDefinitionSelectionId = result.definitionId();
+                }
+                pendingTokenDefinitionAcknowledgedRevision = result.authorityRevision();
+                pendingTokenDefinitionOperation = "synchronizing tokens";
+                if (session.getNetworkAuthorityRevision()
+                        >= pendingTokenDefinitionAcknowledgedRevision) {
+                    completePendingTokenDefinitionRequest();
+                }
+            } else {
+                restorePendingTokenDefinitionSelection();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the token operation" : result.message());
+                clearPendingTokenDefinitionRequest();
+                session.requestAssetManagerResync();
+            }
+            return;
+        }
+        if (pendingTokenDefinitionRequestId != null
+                && System.currentTimeMillis() > pendingTokenDefinitionRequestUntil) {
+            restorePendingTokenDefinitionSelection();
+            clearPendingTokenDefinitionRequest();
+            VttClientEditorNotice.show("Token operation timed out");
+            session.requestAssetManagerResync();
+        }
+    }
+
+    private void completePendingTokenDefinitionRequest() {
+        String selectionId = pendingTokenDefinitionSelectionId;
+        String targetFolder = pendingTokenDefinitionTargetFolder;
+        String message = pendingTokenDefinitionSuccessMessage;
+        clearPendingTokenDefinitionRequest();
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
+        assetManagerOverlay.reconcileSelection(
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+        if (selectionId != null
+                && tokenDefinitionRegistry.findById(selectionId).isPresent()) {
+            tokenCatalogSelection.select(selectionId);
+            assetManagerOverlay.select(AssetManagerOverlay.Section.TOKENS, selectionId);
+            if (targetFolder != null && !targetFolder.isBlank()) {
+                moveCreatedAssetToFolder(
+                        AssetManagerOverlay.Section.TOKENS, selectionId, targetFolder);
+            }
+        } else {
+            tokenCatalogSelection.clear();
+        }
+        VttClientEditorNotice.show(message);
+    }
+
+    private void restorePendingTokenDefinitionSelection() {
+        String id = pendingTokenDefinitionRestoreSelectionId;
+        if (id == null || tokenDefinitionRegistry.findById(id).isEmpty()) return;
+        tokenCatalogSelection.select(id);
+        assetManagerOverlay.select(AssetManagerOverlay.Section.TOKENS, id);
+    }
+
+    private void clearPendingTokenDefinitionRequest() {
+        pendingTokenDefinitionRequestId = null;
+        pendingTokenDefinitionOperation = null;
+        pendingTokenDefinitionSuccessMessage = null;
+        pendingTokenDefinitionSelectionId = null;
+        pendingTokenDefinitionRestoreSelectionId = null;
+        pendingTokenDefinitionTargetFolder = null;
+        pendingTokenDefinitionAcknowledgedRevision = -1L;
+        pendingTokenDefinitionRequestUntil = 0L;
+        assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
+    }
+
+    private String currentAssetManagerPendingOperation() {
+        if (pendingAssetFolderOperation != null) return pendingAssetFolderOperation;
+        if (pendingMapDefinitionOperation != null) return pendingMapDefinitionOperation;
+        return pendingTokenDefinitionOperation;
+    }
+
+    private boolean hasPendingAssetManagerOperation() {
+        return pendingAssetFolderRequestId != null
+                || pendingMapDefinitionRequestId != null
+                || pendingTokenDefinitionRequestId != null;
     }
 
     private void applyRemoteAssetManagerChanges() {
@@ -1227,16 +1352,7 @@ public final class VTTScreen extends Screen {
             });
             case TOKENS -> tokenDefinitionRegistry.findById(id).ifPresent(definition -> {
                 if (session.isNetworkAuthorityActive()) {
-                    Set<String> existingIds = new HashSet<>();
-                    tokenDefinitionRegistry.getAll()
-                            .forEach(value -> existingIds.add(value.id()));
-                    if (VttClientTokenDefinitionSync.sendDuplicate(definition.id())) {
-                        pendingServerTokenDuplicateIds = existingIds;
-                        pendingServerTokenDuplicateName =
-                                definition.displayName() + " Copy";
-                        pendingServerTokenDuplicateUntil =
-                                System.currentTimeMillis() + 15_000L;
-                    }
+                    requestServerTokenDuplicate(definition);
                 } else {
                     duplicateTokenDefinition(definition);
                     assetManagerOverlay.select(
@@ -1247,61 +1363,12 @@ public final class VTTScreen extends Screen {
         }
     }
 
-    private void resolvePendingServerTokenDuplicateSelection() {
+    private void resolvePendingAssetManagerSceneOperation() {
         if (pendingAssetManagerSceneDuplicate
                 && System.currentTimeMillis() > pendingAssetManagerSceneDuplicateUntil) {
             clearPendingAssetManagerScenePlacement();
             VttClientEditorNotice.show("Scene creation or duplication timed out");
         }
-        resolvePendingServerCreatedTokenFolder();
-        if (pendingServerTokenDuplicateIds == null) return;
-        TokenDefinition duplicate = tokenDefinitionRegistry.getAll().stream()
-                .filter(CreatedTokenStorage::isUserCreatedToken)
-                .filter(value -> !pendingServerTokenDuplicateIds.contains(value.id()))
-                .filter(value -> pendingServerTokenDuplicateName == null
-                        || value.displayName().startsWith(pendingServerTokenDuplicateName))
-                .max(Comparator.comparing(TokenDefinition::id))
-                .orElse(null);
-        if (duplicate != null) {
-            tokenCatalogSelection.select(duplicate.id());
-            assetManagerOverlay.select(
-                    AssetManagerOverlay.Section.TOKENS, duplicate.id());
-            clearPendingServerTokenDuplicate();
-            return;
-        }
-        if (System.currentTimeMillis() > pendingServerTokenDuplicateUntil) {
-            clearPendingServerTokenDuplicate();
-            VttClientEditorNotice.show("Token duplication timed out");
-        }
-    }
-
-    private void clearPendingServerTokenDuplicate() {
-        pendingServerTokenDuplicateIds = null;
-        pendingServerTokenDuplicateName = null;
-        pendingServerTokenDuplicateUntil = 0L;
-    }
-
-    private void resolvePendingServerCreatedTokenFolder() {
-        if (pendingServerCreatedTokenId == null) return;
-        if (System.currentTimeMillis() > pendingServerCreatedTokenUntil) {
-            pendingServerCreatedTokenId = null;
-            pendingServerCreatedTokenFolder = null;
-            pendingServerCreatedTokenSnapshotVersion = 0L;
-            pendingServerCreatedTokenUntil = 0L;
-            VttClientEditorNotice.show("Token folder placement timed out");
-            return;
-        }
-        if (session.getNetworkSnapshotVersion()
-                <= pendingServerCreatedTokenSnapshotVersion) return;
-        if (tokenDefinitionRegistry.findById(pendingServerCreatedTokenId).isEmpty()) return;
-        String id = pendingServerCreatedTokenId;
-        String folder = pendingServerCreatedTokenFolder;
-        pendingServerCreatedTokenId = null;
-        pendingServerCreatedTokenFolder = null;
-        pendingServerCreatedTokenSnapshotVersion = 0L;
-        pendingServerCreatedTokenUntil = 0L;
-        moveCreatedAssetToFolder(
-                AssetManagerOverlay.Section.TOKENS, id, folder);
     }
 
     private void clearPendingAssetManagerScenePlacement() {
@@ -1697,13 +1764,40 @@ public final class VTTScreen extends Screen {
     private void deleteTokenDefinitionFromManager(TokenDefinition definition) {
         if (!CreatedTokenStorage.isUserCreatedToken(definition)) return;
         if (session.isNetworkAuthorityActive()) {
-            if (VttClientTokenDefinitionSync.sendDelete(definition.id())) {
-                tokenCatalogSelection.clear();
-                VttClientEditorNotice.show("Token deletion sent to server");
-            }
+            requestServerTokenDelete(definition);
         } else {
             deleteTokenDefinition(definition);
             VttClientEditorNotice.show("Token deleted");
+        }
+    }
+
+    private void requestServerTokenDuplicate(TokenDefinition definition) {
+        if (definition == null) return;
+        String requestId = beginPendingTokenDefinitionRequest(
+                "duplicating token", "Token duplicated", null,
+                definition.id(), null);
+        if (requestId == null) return;
+        if (VttClientTokenDefinitionSync.sendDuplicate(
+                requestId, session.getNetworkAuthorityRevision(), definition.id())) {
+            VttClientEditorNotice.show("Token duplication sent to server");
+        } else {
+            clearPendingTokenDefinitionRequest();
+            VttClientEditorNotice.show("Could not duplicate token on server");
+        }
+    }
+
+    private void requestServerTokenDelete(TokenDefinition definition) {
+        if (definition == null) return;
+        String requestId = beginPendingTokenDefinitionRequest(
+                "deleting token", "Token deleted", null,
+                definition.id(), null);
+        if (requestId == null) return;
+        if (VttClientTokenDefinitionSync.sendDelete(
+                requestId, session.getNetworkAuthorityRevision(), definition.id())) {
+            VttClientEditorNotice.show("Token deletion sent to server");
+        } else {
+            clearPendingTokenDefinitionRequest();
+            VttClientEditorNotice.show("Could not delete token on server");
         }
     }
 
@@ -2411,6 +2505,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (session.isNetworkAuthorityActive() && hasPendingAssetManagerOperation()) {
+            tokenCreationDraft.setErrorMessage("Wait for the current Asset Manager operation");
+            return;
+        }
+
         String targetFolder =
                 assetManagerTargetFolder(AssetManagerOverlay.Section.TOKENS);
         TokenDefinition createdDefinition = CreatedTokenDefinitions.createAndRegister(
@@ -2420,18 +2519,18 @@ public final class VTTScreen extends Screen {
         );
 
         if (session.isNetworkAuthorityActive()) {
+            String requestId = beginPendingTokenDefinitionRequest(
+                    "creating token", "Token created", createdDefinition.id(), null,
+                    targetFolder);
+            if (requestId == null) return;
             if (!VttClientTokenDefinitionSync.sendUpsert(
-                    CreatedTokenStorage.serializeCreatedToken(tokenCreationDraft, createdDefinition))) {
+                    requestId, session.getNetworkAuthorityRevision(),
+                    CreatedTokenStorage.serializeCreatedToken(
+                            tokenCreationDraft, createdDefinition))) {
+                clearPendingTokenDefinitionRequest();
                 tokenCreationDraft.setErrorMessage("Could not send token to server");
+                session.requestAssetManagerResync();
                 return;
-            }
-            if (!targetFolder.isBlank()) {
-                pendingServerCreatedTokenId = createdDefinition.id();
-                pendingServerCreatedTokenFolder = targetFolder;
-                pendingServerCreatedTokenSnapshotVersion =
-                        session.getNetworkSnapshotVersion();
-                pendingServerCreatedTokenUntil =
-                        System.currentTimeMillis() + 15_000L;
             }
         } else {
             CreatedTokenStorage.saveCreatedToken(tokenCreationDraft, createdDefinition);
@@ -2449,6 +2548,10 @@ public final class VTTScreen extends Screen {
         if (tokenCreationDraft == null) {
             return;
         }
+        if (session.isNetworkAuthorityActive() && hasPendingAssetManagerOperation()) {
+            tokenCreationDraft.setErrorMessage("Wait for the current Asset Manager operation");
+            return;
+        }
 
         TokenDefinition updatedDefinition = session.isNetworkAuthorityActive()
                 ? CreatedTokenStorage.updateCreatedTokenInMemory(
@@ -2464,9 +2567,16 @@ public final class VTTScreen extends Screen {
         scene.syncObjectsFromTokenDefinition(updatedDefinition);
 
         if (session.isNetworkAuthorityActive()) {
+            String requestId = beginPendingTokenDefinitionRequest(
+                    "updating token", "Token updated", updatedDefinition.id(),
+                    updatedDefinition.id(), null);
+            if (requestId == null) return;
             if (!VttClientTokenDefinitionSync.sendUpsert(
+                    requestId, session.getNetworkAuthorityRevision(),
                     CreatedTokenStorage.serializeEditedToken(tokenCreationDraft))) {
+                clearPendingTokenDefinitionRequest();
                 tokenCreationDraft.setErrorMessage("Could not send token to server");
+                session.requestAssetManagerResync();
                 return;
             }
             tokenCatalogSelection.select(updatedDefinition.id());
@@ -2522,7 +2632,7 @@ public final class VTTScreen extends Screen {
 
             case DUPLICATE -> {
                 if (session.isNetworkAuthorityActive()) {
-                    VttClientTokenDefinitionSync.sendDuplicate(tokenDefinition.id());
+                    requestServerTokenDuplicate(tokenDefinition);
                 } else {
                     duplicateTokenDefinition(tokenDefinition);
                 }
@@ -2530,9 +2640,7 @@ public final class VTTScreen extends Screen {
 
             case DELETE -> {
                 if (session.isNetworkAuthorityActive()) {
-                    if (VttClientTokenDefinitionSync.sendDelete(tokenDefinition.id())) {
-                        tokenCatalogSelection.clear();
-                    }
+                    requestServerTokenDelete(tokenDefinition);
                 } else {
                     deleteTokenDefinition(tokenDefinition);
                 }
