@@ -676,14 +676,18 @@ public final class VttServerTabletopState {
             if (activeScene.getBackgroundAssetId() == null) return true;
             activeScene.setBackgroundAssetId(null);
             markActiveSceneDirty();
-            return flushActiveSceneNow("background change");
+            if (!flushActiveSceneNow("background change")) return false;
+            advanceAuthorityRevision();
+            return true;
         }
         String validatedId = validateBackgroundAssetId(assetId.trim());
         if (validatedId == null) return false;
         if (validatedId.equals(activeScene.getBackgroundAssetId())) return true;
         activeScene.setBackgroundAssetId(validatedId);
         markActiveSceneDirty();
-        return flushActiveSceneNow("background change");
+        if (!flushActiveSceneNow("background change")) return false;
+        advanceAuthorityRevision();
+        return true;
     }
 
     private String validateBackgroundAssetId(String assetId) {

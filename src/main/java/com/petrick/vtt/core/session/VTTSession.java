@@ -815,11 +815,15 @@ public final class VTTSession {
     }
 
     public boolean setActiveSceneBackground(String assetId) {
+        return setActiveSceneBackground(
+                assetId, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean setActiveSceneBackground(String assetId, String requestId) {
         if (activeScene == null || !isLocalMaster()) return false;
         if (networkAuthorityActive) {
-            activeScene.setBackgroundAssetId(assetId);
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    java.util.UUID.randomUUID().toString(), networkAuthorityRevision,
+                    requestId, networkAuthorityRevision,
                     VttSceneCommandPayload.SET_BACKGROUND,
                     "", assetId == null ? "" : assetId, "", ""));
             return true;

@@ -325,7 +325,7 @@ public final class VTTScreen extends Screen {
         );
         this.inputController = new InputController(camera, scene, selectionManager,
                 session::getActiveScene, session::saveCanvasSceneToActiveScene,
-                assetId -> session.setActiveSceneBackground(assetId),
+                this::requestActiveSceneBackground,
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
@@ -1534,6 +1534,31 @@ public final class VTTScreen extends Screen {
         }
     }
 
+    private boolean requestActiveSceneBackground(String assetId) {
+        if (session.getActiveScene() == null || !session.isLocalMaster()) return false;
+        if (!session.isNetworkAuthorityActive()) {
+            return session.setActiveSceneBackground(assetId);
+        }
+        String sceneId = session.getActiveScene().getId();
+        boolean removing = assetId == null || assetId.isBlank();
+        String requestId = beginPendingSceneRequest(
+                VttSceneCommandPayload.SET_BACKGROUND,
+                removing ? "removing scene background" : "changing scene background",
+                removing ? "Scene background removed" : "Scene background updated",
+                sceneId, sceneId,
+                session.getActiveTabletop().getSceneFolder(sceneId), false);
+        if (requestId == null) return false;
+        if (!session.setActiveSceneBackground(assetId, requestId)) {
+            clearPendingSceneRequest();
+            VttClientEditorNotice.show("Could not update scene background");
+            return false;
+        }
+        VttClientEditorNotice.show(removing
+                ? "Background removal sent to server"
+                : "Background change sent to server");
+        return true;
+    }
+
     private void beginAssetManagerDeletion(
             AssetManagerOverlay.Section section,
             String id
@@ -1987,8 +2012,10 @@ public final class VTTScreen extends Screen {
                 session.getActiveScene().getMaps().clear();
                 if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
                 VttClientEditorNotice.show("Scene maps cleared");
-            } else if (session.setActiveSceneBackground(null)) {
-                VttClientEditorNotice.show("Legacy background removed");
+            } else if (requestActiveSceneBackground(null)) {
+                if (!session.isNetworkAuthorityActive()) {
+                    VttClientEditorNotice.show("Legacy background removed");
+                }
             }
             inputController.endEditorAction();
             return true;
@@ -4106,10 +4133,12 @@ public final class VTTScreen extends Screen {
         if (backgroundPickerTarget == BackgroundPickerTarget.ACTIVE_SCENE
                 && isSelectableBackgroundImage(item)) {
             inputController.beginEditorAction();
-            boolean changed = session.setActiveSceneBackground(item.id());
+            boolean changed = requestActiveSceneBackground(item.id());
             inputController.endEditorAction();
             if (changed) {
-                VttClientEditorNotice.show("Scene background changed");
+                if (!session.isNetworkAuthorityActive()) {
+                    VttClientEditorNotice.show("Scene background changed");
+                }
                 VTT.LOGGER.info(
                         "[VTT Background] Active scene background changed to {}", item.id());
             }
