@@ -70,6 +70,7 @@ public final class VttServerSceneCommandHandler {
                     request.mapTextureMode());
             case VttSceneCommandPayload.SWITCH -> state.switchToScene(request.targetId());
             case VttSceneCommandPayload.SET_BACKGROUND -> state.setActiveSceneBackground(request.value());
+            case VttSceneCommandPayload.CLEAR_MAPS -> state.clearActiveSceneMaps();
             case VttSceneCommandPayload.RENAME -> state.renameScene(request.targetId(), request.value());
             case VttSceneCommandPayload.DELETE -> state.deleteScene(request.targetId());
             case VttSceneCommandPayload.DUPLICATE ->
@@ -94,7 +95,8 @@ public final class VttServerSceneCommandHandler {
             case VttSceneCommandPayload.RENAME -> request.targetId();
             case VttSceneCommandPayload.DELETE, VttSceneCommandPayload.CREATE,
                  VttSceneCommandPayload.DUPLICATE, VttSceneCommandPayload.SWITCH,
-                 VttSceneCommandPayload.SET_BACKGROUND -> state.activeScene().getId();
+                 VttSceneCommandPayload.SET_BACKGROUND,
+                 VttSceneCommandPayload.CLEAR_MAPS -> state.activeScene().getId();
             default -> "";
         };
         respond(requester, request.requestId(), true,
@@ -144,6 +146,7 @@ public final class VttServerSceneCommandHandler {
             case VttSceneCommandPayload.CREATE -> "Could not create the scene";
             case VttSceneCommandPayload.SWITCH -> "Could not activate the scene";
             case VttSceneCommandPayload.SET_BACKGROUND -> "Could not change the scene background";
+            case VttSceneCommandPayload.CLEAR_MAPS -> "Could not clear the scene maps";
             case VttSceneCommandPayload.RENAME -> "Could not rename the scene";
             case VttSceneCommandPayload.DELETE -> "The last scene cannot be deleted";
             case VttSceneCommandPayload.DUPLICATE -> "Could not duplicate the scene";
@@ -163,6 +166,7 @@ public final class VttServerSceneCommandHandler {
             case VttSceneCommandPayload.CREATE -> "Scene created";
             case VttSceneCommandPayload.SWITCH -> "Scene activated";
             case VttSceneCommandPayload.SET_BACKGROUND -> "Scene background updated";
+            case VttSceneCommandPayload.CLEAR_MAPS -> "Scene maps cleared";
             case VttSceneCommandPayload.RENAME -> "Scene renamed";
             case VttSceneCommandPayload.DELETE -> "Scene deleted";
             case VttSceneCommandPayload.DUPLICATE -> "Scene duplicated";

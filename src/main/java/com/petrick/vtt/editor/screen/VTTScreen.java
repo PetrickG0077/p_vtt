@@ -1559,6 +1559,28 @@ public final class VTTScreen extends Screen {
         return true;
     }
 
+    private boolean requestClearActiveSceneMaps() {
+        if (session.getActiveScene() == null || !session.isLocalMaster()) return false;
+        if (!session.isNetworkAuthorityActive()) {
+            if (!session.clearActiveSceneMaps(UUID.randomUUID().toString())) return false;
+            VttClientEditorNotice.show("Scene maps cleared");
+            return true;
+        }
+        String sceneId = session.getActiveScene().getId();
+        String requestId = beginPendingSceneRequest(
+                VttSceneCommandPayload.CLEAR_MAPS, "clearing scene maps",
+                "Scene maps cleared", sceneId, sceneId,
+                session.getActiveTabletop().getSceneFolder(sceneId), false);
+        if (requestId == null) return false;
+        if (!session.clearActiveSceneMaps(requestId)) {
+            clearPendingSceneRequest();
+            VttClientEditorNotice.show("Could not clear scene maps");
+            return false;
+        }
+        VttClientEditorNotice.show("Clear maps request sent to server");
+        return true;
+    }
+
     private void beginAssetManagerDeletion(
             AssetManagerOverlay.Section section,
             String id
@@ -2009,9 +2031,7 @@ public final class VTTScreen extends Screen {
             return true;
         } else if (interaction == EditorSettingsOverlay.Interaction.REMOVE_BACKGROUND) {
             if (!session.getActiveScene().getMaps().isEmpty()) {
-                session.getActiveScene().getMaps().clear();
-                if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
-                VttClientEditorNotice.show("Scene maps cleared");
+                requestClearActiveSceneMaps();
             } else if (requestActiveSceneBackground(null)) {
                 if (!session.isNetworkAuthorityActive()) {
                     VttClientEditorNotice.show("Legacy background removed");
@@ -4173,6 +4193,9 @@ public final class VTTScreen extends Screen {
         if (selectedMapId != null) {
             sceneBackgroundEditor.selectMap(session.getActiveScene(), selectedMapId);
         }
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEnvironmentCommandSync.setMapPreviewActive(true);
+        }
         inputController.beginEditorAction();
         VttClientEditorNotice.show("Scene map edit mode enabled");
     }
@@ -4180,14 +4203,21 @@ public final class VTTScreen extends Screen {
     private void confirmSceneBackgroundEdit() {
         if (!sceneBackgroundEditor.isActive()) return;
         sceneBackgroundEditor.confirm();
+        VttClientEnvironmentCommandSync.setMapPreviewActive(false);
         inputController.endEditorAction();
         syncSceneMetadata();
-        VttClientEditorNotice.show("Scene map changes applied");
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEnvironmentCommandSync.flushSceneMaps(session);
+            VttClientEditorNotice.show("Scene map changes sent to server");
+        } else {
+            VttClientEditorNotice.show("Scene map changes applied");
+        }
     }
 
     private void cancelSceneBackgroundEdit() {
         if (!sceneBackgroundEditor.isActive()) return;
         sceneBackgroundEditor.cancel(session.getActiveScene());
+        VttClientEnvironmentCommandSync.setMapPreviewActive(false);
         inputController.endEditorAction();
         VttClientEditorNotice.show("Scene map edit cancelled");
     }
@@ -4958,7 +4988,11 @@ public final class VTTScreen extends Screen {
             sceneBackgroundEditor.selectMap(session.getActiveScene(), map.getId());
         } else {
             inputController.endEditorAction();
-            if (!session.isNetworkAuthorityActive()) session.saveActiveTabletopAndScene();
+            if (session.isNetworkAuthorityActive()) {
+                VttClientEnvironmentCommandSync.flushSceneMaps(session);
+            } else {
+                session.saveActiveTabletopAndScene();
+            }
         }
         VttClientEditorNotice.show("Map placed: " + definition.displayName());
     }

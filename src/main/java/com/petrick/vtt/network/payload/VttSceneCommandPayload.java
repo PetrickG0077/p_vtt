@@ -18,6 +18,7 @@ public record VttSceneCommandPayload(
     public static final String RENAME = "RENAME";
     public static final String DELETE = "DELETE";
     public static final String DUPLICATE = "DUPLICATE";
+    public static final String CLEAR_MAPS = "CLEAR_MAPS";
 
     public static final Type<VttSceneCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "scene_command"));

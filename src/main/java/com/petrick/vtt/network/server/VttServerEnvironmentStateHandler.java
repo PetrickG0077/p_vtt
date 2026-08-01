@@ -41,12 +41,22 @@ public final class VttServerEnvironmentStateHandler {
 
     public static void handleCommand(VttEnvironmentCommandPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
+        VttServerRequestRateLimiter.Category category = request != null
+                && VttEnvironmentCommandPayload.MAP.equals(request.entityType())
+                ? VttServerRequestRateLimiter.Category.SCENE_MAP
+                : VttServerRequestRateLimiter.Category.ENVIRONMENT;
         if (!VttServerRequestRateLimiter.allow(
-                player, VttServerRequestRateLimiter.Category.ENVIRONMENT)) return;
+                player, category)) {
+            showMapRejection(player, request, "Too many map changes; try again shortly");
+            sendCorrection(player, request);
+            return;
+        }
         if (!VttServerPlayerEvents.isMaster(player)) {
             VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    player, category,
                     "permission denied");
+            showMapRejection(player, request, "Only masters can edit scene maps");
+            sendCorrection(player, request);
             return;
         }
         if (request == null) {
@@ -60,7 +70,7 @@ public final class VttServerEnvironmentStateHandler {
             var violation = state.environmentLimitViolation(request);
             if (violation != null) {
                 VttServerRequestRateLimiter.reject(
-                        player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                        player, category,
                         violation.code());
                 VttServerFeedback.showLimit(player, violation.message());
                 var correction = state.environmentCorrection(request);
@@ -74,8 +84,10 @@ public final class VttServerEnvironmentStateHandler {
         var update = state.applyEnvironmentCommand(request, player.getUUID().toString());
         if (update == null) {
             VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.ENVIRONMENT,
+                    player, category,
                     "invalid environment command");
+            showMapRejection(player, request, "The server rejected the map change");
+            sendCorrection(player, request);
             return;
         }
         boolean changesVisionGeometry = VttEnvironmentCommandPayload.WALL.equals(update.entityType())
@@ -100,6 +112,23 @@ public final class VttServerEnvironmentStateHandler {
                     connected, state, update.entityId())) {
                 PacketDistributor.sendToPlayer(connected, update);
             }
+        }
+    }
+
+    private static void sendCorrection(
+            ServerPlayer player, VttEnvironmentCommandPayload request
+    ) {
+        if (player == null || request == null) return;
+        var correction = VttServerTabletopState.get().environmentCorrection(request);
+        if (correction != null) PacketDistributor.sendToPlayer(player, correction);
+    }
+
+    private static void showMapRejection(
+            ServerPlayer player, VttEnvironmentCommandPayload request, String message
+    ) {
+        if (request != null
+                && VttEnvironmentCommandPayload.MAP.equals(request.entityType())) {
+            VttServerFeedback.show(player, message);
         }
     }
 }

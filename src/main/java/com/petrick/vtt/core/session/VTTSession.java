@@ -833,6 +833,19 @@ public final class VTTSession {
         return true;
     }
 
+    public boolean clearActiveSceneMaps(String requestId) {
+        if (activeScene == null || !isLocalMaster()) return false;
+        if (networkAuthorityActive) {
+            PacketDistributor.sendToServer(new VttSceneCommandPayload(
+                    requestId, networkAuthorityRevision,
+                    VttSceneCommandPayload.CLEAR_MAPS, "", "", "", ""));
+            return true;
+        }
+        activeScene.getMaps().clear();
+        saveActiveTabletopAndScene();
+        return true;
+    }
+
     public boolean setActiveSceneTokenOwner(String objectId, String ownerId) {
         if (activeScene == null || !isLocalMaster()
                 || objectId == null || objectId.isBlank()) return false;

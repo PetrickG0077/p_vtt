@@ -690,6 +690,16 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    public synchronized boolean clearActiveSceneMaps() {
+        if (activeScene == null) return false;
+        if (activeScene.getMaps().isEmpty()) return true;
+        activeScene.getMaps().clear();
+        markActiveSceneDirty();
+        if (!flushActiveSceneNow("clear scene maps")) return false;
+        advanceAuthorityRevision();
+        return true;
+    }
+
     private String validateBackgroundAssetId(String assetId) {
         if (assetId.startsWith("registered:")) {
             String builtInId = assetId.substring("registered:".length());

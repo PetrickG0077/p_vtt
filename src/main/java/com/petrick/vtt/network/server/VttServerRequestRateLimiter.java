@@ -74,6 +74,7 @@ public final class VttServerRequestRateLimiter {
         TOKEN_TRANSFORM(60.0, 120.0, true),
         TOKEN_TRANSFORM_CORRECTION(2.0, 2.0, false),
         ENVIRONMENT(12.0, 18.0, true),
+        SCENE_MAP(64.0, 256.0, true),
         TOKEN_LIFECYCLE(2.0, 5.0, true),
         TOKEN_OWNERSHIP(2.0, 5.0, true),
         PLAYER_MODE(1.0, 3.0, true),

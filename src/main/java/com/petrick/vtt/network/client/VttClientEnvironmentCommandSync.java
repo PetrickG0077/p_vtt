@@ -32,6 +32,7 @@ public final class VttClientEnvironmentCommandSync {
     private static final Map<String, String> lastRevealedFog = new LinkedHashMap<>();
     private static final Map<String, String> lastVision = new LinkedHashMap<>();
     private static final Map<String, Long> nextSequences = new LinkedHashMap<>();
+    private static final Map<String, Long> latestSentSequences = new LinkedHashMap<>();
     private static final Map<String, Long> latestRevisions = new LinkedHashMap<>();
     private static long snapshotVersion = -1L;
     private static long authorityRevision = -1L;
@@ -40,6 +41,9 @@ public final class VttClientEnvironmentCommandSync {
     private static String observedGridConfigJson;
     private static int stableGridConfigTicks;
     private static String activeSceneId;
+    private static boolean mapPreviewActive;
+    private static boolean mapConfirmationPending;
+    private static boolean mapCorrectionReceived;
 
     private VttClientEnvironmentCommandSync() {}
 
@@ -63,6 +67,7 @@ public final class VttClientEnvironmentCommandSync {
                 authorityRevision = session.getNetworkAuthorityRevision();
                 nextSequences.clear();
                 latestRevisions.clear();
+                latestSentSequences.clear();
             }
             replace(lastWalls, walls);
             replace(lastMaps, maps);
@@ -77,7 +82,9 @@ public final class VttClientEnvironmentCommandSync {
             return;
         }
 
-        syncMap(VttEnvironmentCommandPayload.MAP, maps, lastMaps);
+        if (!mapPreviewActive) {
+            syncMap(VttEnvironmentCommandPayload.MAP, maps, lastMaps);
+        }
         syncMap(VttEnvironmentCommandPayload.WALL, walls, lastWalls);
         syncMap(VttEnvironmentCommandPayload.DOOR, doors, lastDoors);
         syncMap(VttEnvironmentCommandPayload.FOG_HIDDEN, hiddenFog, lastHiddenFog);
@@ -104,12 +111,34 @@ public final class VttClientEnvironmentCommandSync {
 
     public static void accept(VTTSession session, VttEnvironmentCommandUpdatePayload update) {
         if (session == null || update == null || !session.hasNetworkSnapshot()) return;
-        if (update.authorityRevision() != session.getNetworkAuthorityRevision()
-                || !update.sceneId().equals(session.getActiveScene().getId())) return;
+        if (update.authorityRevision() != session.getNetworkAuthorityRevision()) {
+            if (update.authorityRevision() > session.getNetworkAuthorityRevision()) {
+                session.requestAssetManagerResync();
+            }
+            return;
+        }
+        if (!update.sceneId().equals(session.getActiveScene().getId())) return;
         String revisionKey = entityKey(update.entityType(), update.entityId());
-        if (update.entityRevision() <= latestRevisions.getOrDefault(revisionKey, -1L)) return;
+        long latestSent = latestSentSequences.getOrDefault(revisionKey, 0L);
+        boolean localOrigin = update.originPlayerId().equals(session.getLocalPlayerId());
+        boolean serverCorrection = "server".equals(update.originPlayerId());
+        boolean mapAcknowledgement = VttEnvironmentCommandPayload.MAP.equals(update.entityType())
+                && (localOrigin || serverCorrection)
+                && latestSent > 0L
+                && update.clientSequence() >= latestSent;
+        if (update.entityRevision() <= latestRevisions.getOrDefault(revisionKey, -1L)) {
+            if (mapAcknowledgement) {
+                latestSentSequences.remove(revisionKey);
+                if (serverCorrection) mapCorrectionReceived = true;
+                finishMapConfirmationIfReady();
+            }
+            return;
+        }
+        if (VttEnvironmentCommandPayload.MAP.equals(update.entityType())
+                && (localOrigin || serverCorrection)
+                && update.clientSequence() < latestSent) return;
         latestRevisions.put(revisionKey, update.entityRevision());
-        if (update.originPlayerId().equals(session.getLocalPlayerId())) return;
+        if (localOrigin && !VttEnvironmentCommandPayload.MAP.equals(update.entityType())) return;
         try {
             boolean delete = VttEnvironmentCommandPayload.DELETE.equals(update.operation());
             switch (update.entityType()) {
@@ -118,6 +147,13 @@ public final class VttClientEnvironmentCommandSync {
                     if (!delete) session.getActiveScene().addMap(
                             GSON.fromJson(update.entityJson(), VttSceneMap.class));
                     updateLast(lastMaps, update, delete);
+                    if (mapAcknowledgement) {
+                        latestSentSequences.remove(revisionKey);
+                    }
+                    if (serverCorrection) {
+                        mapCorrectionReceived = true;
+                    }
+                    finishMapConfirmationIfReady();
                 }
                 case VttEnvironmentCommandPayload.WALL -> {
                     if (delete) {
@@ -199,12 +235,16 @@ public final class VttClientEnvironmentCommandSync {
         lastVision.clear();
         nextSequences.clear();
         latestRevisions.clear();
+        latestSentSequences.clear();
         lastFogConfigJson = null;
         lastGridConfigJson = null;
         observedGridConfigJson = null;
         stableGridConfigTicks = 0;
         activeSceneId = null;
         authorityRevision = -1L;
+        mapPreviewActive = false;
+        mapConfirmationPending = false;
+        mapCorrectionReceived = false;
     }
 
     private static <T> Map<String, String> jsonById(List<T> values, Function<T, String> idGetter) {
@@ -254,6 +294,10 @@ public final class VttClientEnvironmentCommandSync {
         if (activeSceneId == null || activeSceneId.isBlank()) return;
         String sequenceKey = entityKey(entityType, entityId);
         long clientSequence = nextSequences.merge(sequenceKey, 1L, Long::sum);
+        if (VttEnvironmentCommandPayload.MAP.equals(entityType)) {
+            latestSentSequences.put(sequenceKey, clientSequence);
+            mapConfirmationPending = true;
+        }
         PacketDistributor.sendToServer(new VttEnvironmentCommandPayload(
                 authorityRevision, clientSequence, operation, activeSceneId,
                 entityType, entityId, json == null ? "" : json));
@@ -268,6 +312,20 @@ public final class VttClientEnvironmentCommandSync {
                 VttEnvironmentCommandPayload.BACKGROUND_CONFIG,
                 "background",
                 GSON.toJson(session.getActiveScene().getBackgroundTransform()));
+    }
+
+    public static void setMapPreviewActive(boolean active) {
+        mapPreviewActive = active;
+    }
+
+    public static void flushSceneMaps(VTTSession session) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        Map<String, String> maps = jsonById(
+                session.getActiveScene().getMaps(), VttSceneMap::getId);
+        syncMap(VttEnvironmentCommandPayload.MAP, maps, lastMaps);
     }
 
     public static void sendInitialCameraView(VTTSession session) {
@@ -286,6 +344,18 @@ public final class VttClientEnvironmentCommandSync {
 
     private static String entityKey(String entityType, String entityId) {
         return entityType + "\u0000" + entityId;
+    }
+
+    private static void finishMapConfirmationIfReady() {
+        if (!mapConfirmationPending || latestSentSequences.keySet().stream()
+                .anyMatch(key -> key.startsWith(VttEnvironmentCommandPayload.MAP + "\u0000"))) {
+            return;
+        }
+        if (!mapCorrectionReceived) {
+            VttClientEditorNotice.show("Scene map changes confirmed");
+        }
+        mapConfirmationPending = false;
+        mapCorrectionReceived = false;
     }
 
     private static void updateLast(Map<String, String> target,
