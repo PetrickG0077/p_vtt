@@ -17,9 +17,11 @@ import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /** Detects and applies granular server-authoritative environment mutations. */
@@ -34,6 +36,9 @@ public final class VttClientEnvironmentCommandSync {
     private static final Map<String, Long> nextSequences = new LinkedHashMap<>();
     private static final Map<String, Long> latestSentSequences = new LinkedHashMap<>();
     private static final Map<String, Long> latestRevisions = new LinkedHashMap<>();
+    private static final Set<String> pendingEntityTypes = new LinkedHashSet<>();
+    private static final long CONFIRMATION_IDLE_MS = 300L;
+    private static final long CONFIRMATION_TIMEOUT_MS = 10_000L;
     private static long snapshotVersion = -1L;
     private static long authorityRevision = -1L;
     private static String lastFogConfigJson;
@@ -42,8 +47,9 @@ public final class VttClientEnvironmentCommandSync {
     private static int stableGridConfigTicks;
     private static String activeSceneId;
     private static boolean mapPreviewActive;
-    private static boolean mapConfirmationPending;
-    private static boolean mapCorrectionReceived;
+    private static boolean environmentConfirmationPending;
+    private static boolean environmentCorrectionReceived;
+    private static long lastCommandSentAt;
 
     private VttClientEnvironmentCommandSync() {}
 
@@ -68,6 +74,9 @@ public final class VttClientEnvironmentCommandSync {
                 nextSequences.clear();
                 latestRevisions.clear();
                 latestSentSequences.clear();
+                pendingEntityTypes.clear();
+                environmentConfirmationPending = false;
+                environmentCorrectionReceived = false;
             }
             replace(lastWalls, walls);
             replace(lastMaps, maps);
@@ -109,13 +118,14 @@ public final class VttClientEnvironmentCommandSync {
                     "grid", gridConfigJson);
             lastGridConfigJson = gridConfigJson;
         }
+        finishEnvironmentConfirmationIfReady(session);
     }
 
     public static void accept(VTTSession session, VttEnvironmentCommandUpdatePayload update) {
         if (session == null || update == null || !session.hasNetworkSnapshot()) return;
         if (update.authorityRevision() != session.getNetworkAuthorityRevision()) {
             if (update.authorityRevision() > session.getNetworkAuthorityRevision()) {
-                session.requestAssetManagerResync();
+                session.requestEnvironmentResync();
             }
             return;
         }
@@ -124,23 +134,19 @@ public final class VttClientEnvironmentCommandSync {
         long latestSent = latestSentSequences.getOrDefault(revisionKey, 0L);
         boolean localOrigin = update.originPlayerId().equals(session.getLocalPlayerId());
         boolean serverCorrection = "server".equals(update.originPlayerId());
-        boolean mapAcknowledgement = VttEnvironmentCommandPayload.MAP.equals(update.entityType())
-                && (localOrigin || serverCorrection)
+        boolean acknowledgement = (localOrigin || serverCorrection)
                 && latestSent > 0L
                 && update.clientSequence() >= latestSent;
         if (update.entityRevision() <= latestRevisions.getOrDefault(revisionKey, -1L)) {
-            if (mapAcknowledgement) {
+            if (acknowledgement) {
                 latestSentSequences.remove(revisionKey);
-                if (serverCorrection) mapCorrectionReceived = true;
-                finishMapConfirmationIfReady();
+                if (serverCorrection) environmentCorrectionReceived = true;
             }
             return;
         }
-        if (VttEnvironmentCommandPayload.MAP.equals(update.entityType())
-                && (localOrigin || serverCorrection)
+        if ((localOrigin || serverCorrection)
                 && update.clientSequence() < latestSent) return;
         latestRevisions.put(revisionKey, update.entityRevision());
-        if (localOrigin && !VttEnvironmentCommandPayload.MAP.equals(update.entityType())) return;
         try {
             boolean delete = VttEnvironmentCommandPayload.DELETE.equals(update.operation());
             switch (update.entityType()) {
@@ -149,13 +155,6 @@ public final class VttClientEnvironmentCommandSync {
                     if (!delete) session.getActiveScene().addMap(
                             GSON.fromJson(update.entityJson(), VttSceneMap.class));
                     updateLast(lastMaps, update, delete);
-                    if (mapAcknowledgement) {
-                        latestSentSequences.remove(revisionKey);
-                    }
-                    if (serverCorrection) {
-                        mapCorrectionReceived = true;
-                    }
-                    finishMapConfirmationIfReady();
                 }
                 case VttEnvironmentCommandPayload.WALL -> {
                     if (delete) {
@@ -222,8 +221,13 @@ public final class VttClientEnvironmentCommandSync {
                 }
                 default -> VTT.LOGGER.warn("Ignored unknown VTT environment entity: {}", update.entityType());
             }
+            if (acknowledgement) latestSentSequences.remove(revisionKey);
+            if (serverCorrection) environmentCorrectionReceived = true;
         } catch (RuntimeException exception) {
             VTT.LOGGER.error("Failed to apply VTT environment command", exception);
+            if (acknowledgement) latestSentSequences.remove(revisionKey);
+            environmentCorrectionReceived = true;
+            session.requestEnvironmentResync();
         }
     }
 
@@ -238,6 +242,7 @@ public final class VttClientEnvironmentCommandSync {
         nextSequences.clear();
         latestRevisions.clear();
         latestSentSequences.clear();
+        pendingEntityTypes.clear();
         lastFogConfigJson = null;
         lastGridConfigJson = null;
         observedGridConfigJson = null;
@@ -245,8 +250,9 @@ public final class VttClientEnvironmentCommandSync {
         activeSceneId = null;
         authorityRevision = -1L;
         mapPreviewActive = false;
-        mapConfirmationPending = false;
-        mapCorrectionReceived = false;
+        environmentConfirmationPending = false;
+        environmentCorrectionReceived = false;
+        lastCommandSentAt = 0L;
     }
 
     private static <T> Map<String, String> jsonById(List<T> values, Function<T, String> idGetter) {
@@ -296,10 +302,10 @@ public final class VttClientEnvironmentCommandSync {
         if (activeSceneId == null || activeSceneId.isBlank()) return;
         String sequenceKey = entityKey(entityType, entityId);
         long clientSequence = nextSequences.merge(sequenceKey, 1L, Long::sum);
-        if (VttEnvironmentCommandPayload.MAP.equals(entityType)) {
-            latestSentSequences.put(sequenceKey, clientSequence);
-            mapConfirmationPending = true;
-        }
+        latestSentSequences.put(sequenceKey, clientSequence);
+        pendingEntityTypes.add(entityType);
+        environmentConfirmationPending = true;
+        lastCommandSentAt = System.currentTimeMillis();
         PacketDistributor.sendToServer(new VttEnvironmentCommandPayload(
                 authorityRevision, clientSequence, operation, activeSceneId,
                 entityType, entityId, json == null ? "" : json));
@@ -348,16 +354,45 @@ public final class VttClientEnvironmentCommandSync {
         return entityType + "\u0000" + entityId;
     }
 
-    private static void finishMapConfirmationIfReady() {
-        if (!mapConfirmationPending || latestSentSequences.keySet().stream()
-                .anyMatch(key -> key.startsWith(VttEnvironmentCommandPayload.MAP + "\u0000"))) {
+    private static void finishEnvironmentConfirmationIfReady(VTTSession session) {
+        if (!environmentConfirmationPending) return;
+        long idleTime = System.currentTimeMillis() - lastCommandSentAt;
+        if (latestSentSequences.isEmpty() && idleTime >= CONFIRMATION_IDLE_MS) {
+            if (!environmentCorrectionReceived) {
+                VttClientEditorNotice.show(confirmationMessage(pendingEntityTypes));
+            }
+            environmentConfirmationPending = false;
+            environmentCorrectionReceived = false;
+            pendingEntityTypes.clear();
             return;
         }
-        if (!mapCorrectionReceived) {
-            VttClientEditorNotice.show("Scene map changes confirmed");
+        if (!latestSentSequences.isEmpty() && idleTime >= CONFIRMATION_TIMEOUT_MS) {
+            latestSentSequences.clear();
+            pendingEntityTypes.clear();
+            environmentConfirmationPending = false;
+            environmentCorrectionReceived = false;
+            VttClientEditorNotice.show("Environment confirmation timed out; resynchronizing");
+            session.requestEnvironmentResync();
         }
-        mapConfirmationPending = false;
-        mapCorrectionReceived = false;
+    }
+
+    private static String confirmationMessage(Set<String> entityTypes) {
+        if (entityTypes.size() != 1) return "Environment changes confirmed";
+        return switch (entityTypes.iterator().next()) {
+            case VttEnvironmentCommandPayload.MAP -> "Scene map changes confirmed";
+            case VttEnvironmentCommandPayload.WALL -> "Wall changes confirmed";
+            case VttEnvironmentCommandPayload.DOOR -> "Door changes confirmed";
+            case VttEnvironmentCommandPayload.FOG_HIDDEN,
+                 VttEnvironmentCommandPayload.FOG_REVEALED,
+                 VttEnvironmentCommandPayload.FOG_CONFIG -> "Fog changes confirmed";
+            case VttEnvironmentCommandPayload.GRID_CONFIG -> "Grid changes confirmed";
+            case VttEnvironmentCommandPayload.VISION -> "Token vision changes confirmed";
+            case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
+                    "Scene background changes confirmed";
+            case VttEnvironmentCommandPayload.CAMERA_CONFIG ->
+                    "Initial camera changes confirmed";
+            default -> "Environment changes confirmed";
+        };
     }
 
     private static void updateLast(Map<String, String> target,

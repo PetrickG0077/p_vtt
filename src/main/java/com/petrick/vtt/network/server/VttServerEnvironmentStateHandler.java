@@ -41,13 +41,17 @@ public final class VttServerEnvironmentStateHandler {
 
     public static void handleCommand(VttEnvironmentCommandPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
-        VttServerRequestRateLimiter.Category category = request != null
-                && VttEnvironmentCommandPayload.MAP.equals(request.entityType())
+        boolean mapRequest = request != null
+                && VttEnvironmentCommandPayload.MAP.equals(request.entityType());
+        VttServerRequestRateLimiter.Category category = mapRequest
                 ? VttServerRequestRateLimiter.Category.SCENE_MAP
                 : VttServerRequestRateLimiter.Category.ENVIRONMENT;
         if (!VttServerRequestRateLimiter.allow(
                 player, category)) {
-            showMapRejection(player, request, "Too many map changes; try again shortly");
+            showEnvironmentRejection(player, request,
+                    mapRequest
+                            ? "Too many map changes; try again shortly"
+                            : "Too many environment changes; try again shortly");
             sendCorrection(player, request);
             return;
         }
@@ -55,7 +59,8 @@ public final class VttServerEnvironmentStateHandler {
             VttServerRequestRateLimiter.reject(
                     player, category,
                     "permission denied");
-            showMapRejection(player, request, "Only masters can edit scene maps");
+            showEnvironmentRejection(player, request,
+                    "Only masters can edit the tabletop environment");
             sendCorrection(player, request);
             return;
         }
@@ -73,8 +78,7 @@ public final class VttServerEnvironmentStateHandler {
                         player, category,
                         violation.code());
                 VttServerFeedback.showLimit(player, violation.message());
-                var correction = state.environmentCorrection(request);
-                if (correction != null) PacketDistributor.sendToPlayer(player, correction);
+                sendCorrection(player, request);
                 return;
             }
         }
@@ -86,7 +90,8 @@ public final class VttServerEnvironmentStateHandler {
             VttServerRequestRateLimiter.reject(
                     player, category,
                     "invalid environment command");
-            showMapRejection(player, request, "The server rejected the map change");
+            showEnvironmentRejection(player, request,
+                    "The server rejected the environment change");
             sendCorrection(player, request);
             return;
         }
@@ -119,16 +124,24 @@ public final class VttServerEnvironmentStateHandler {
             ServerPlayer player, VttEnvironmentCommandPayload request
     ) {
         if (player == null || request == null) return;
-        var correction = VttServerTabletopState.get().environmentCorrection(request);
-        if (correction != null) PacketDistributor.sendToPlayer(player, correction);
+        VttServerTabletopState state = VttServerTabletopState.get();
+        var correction = state.environmentCorrection(request);
+        if (correction != null) {
+            PacketDistributor.sendToPlayer(player, correction);
+            return;
+        }
+        VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
+        VttServerAssetSyncService.sendActiveSceneAssets(
+                player, state.replicatedSceneFor(player),
+                VttServerPlayerEvents.isMaster(player), () -> {
+                    VttServerSceneSnapshotSync.sendToPlayer(player, state);
+                    VttServerVisionSourceSync.sendToPlayer(player, state);
+                });
     }
 
-    private static void showMapRejection(
+    private static void showEnvironmentRejection(
             ServerPlayer player, VttEnvironmentCommandPayload request, String message
     ) {
-        if (request != null
-                && VttEnvironmentCommandPayload.MAP.equals(request.entityType())) {
-            VttServerFeedback.show(player, message);
-        }
+        if (request != null) VttServerFeedback.show(player, message);
     }
 }

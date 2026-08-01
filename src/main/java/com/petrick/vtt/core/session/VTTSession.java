@@ -574,6 +574,10 @@ public final class VTTSession {
         requestNetworkResync("SCENE_HISTORY_CORRECTION");
     }
 
+    public void requestEnvironmentResync() {
+        requestNetworkResync("ENVIRONMENT_CONFIRMATION_RECOVERY");
+    }
+
     public String getNetworkReplicationDiagnostics() {
         if (!networkAuthorityActive) return "Network: local session";
         return "Network: A=" + networkAuthorityRevision + " V=" + networkVisionRevision
