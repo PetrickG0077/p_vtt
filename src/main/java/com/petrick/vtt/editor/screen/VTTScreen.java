@@ -73,6 +73,7 @@ import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
+import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
@@ -4297,13 +4298,42 @@ public final class VTTScreen extends Screen {
                     assetManagerTargetFolder(AssetManagerOverlay.Section.MAPS);
             MapDefinition existing = editingMapDefinitionId == null ? null
                     : mapDefinitionRegistry.findById(editingMapDefinitionId).orElse(null);
-            MapDefinition definition = existing == null
-                    ? CreatedMapStorage.createAndSave(
-                    newMapNameBuffer, newMapAssetId, newMapPreviewWidth, newMapPreviewHeight,
-                    newMapTextureMode)
-                    : CreatedMapStorage.updateAndSave(
-                    existing, newMapNameBuffer, newMapAssetId,
-                    newMapPreviewWidth, newMapPreviewHeight, newMapTextureMode);
+            MapDefinition definition;
+            if (existing == null) {
+                definition = session.isNetworkAuthorityActive()
+                        ? CreatedMapStorage.createDefinition(
+                        newMapNameBuffer, newMapAssetId, newMapPreviewWidth,
+                        newMapPreviewHeight, newMapTextureMode)
+                        : CreatedMapStorage.createAndSave(
+                        newMapNameBuffer, newMapAssetId, newMapPreviewWidth,
+                        newMapPreviewHeight, newMapTextureMode);
+            } else {
+                definition = session.isNetworkAuthorityActive()
+                        ? CreatedMapStorage.updateDefinition(
+                        existing, newMapNameBuffer, newMapAssetId,
+                        newMapPreviewWidth, newMapPreviewHeight, newMapTextureMode)
+                        : CreatedMapStorage.updateAndSave(
+                        existing, newMapNameBuffer, newMapAssetId,
+                        newMapPreviewWidth, newMapPreviewHeight, newMapTextureMode);
+            }
+            if (session.isNetworkAuthorityActive()) {
+                String folder = existing == null
+                        ? targetFolder : mapDefinitionRegistry.folderOf(existing.id());
+                if (!VttClientMapDefinitionSync.sendUpsert(definition, folder)) {
+                    VttClientEditorNotice.show("Could not send map to server");
+                    return;
+                }
+                mapCatalogSelection.select(definition.id());
+                boolean returningToManager =
+                        willReturnToAssetManager(AssetManagerOverlay.Section.MAPS);
+                closeNewMapDialog();
+                if (!returningToManager && !panelVisibility.isMapCatalogVisible()) {
+                    panelVisibility.toggleMapCatalog();
+                }
+                VttClientEditorNotice.show(existing == null
+                        ? "Map creation sent to server" : "Map update sent to server");
+                return;
+            }
             mapDefinitionRegistry.register(
                     definition, CreatedMapStorage.folderOf(definition));
             if (existing == null) {
@@ -4524,6 +4554,14 @@ public final class VTTScreen extends Screen {
     }
 
     private void duplicateMapDefinition(MapDefinition definition) {
+        if (session.isNetworkAuthorityActive()) {
+            if (VttClientMapDefinitionSync.sendDuplicate(definition.id())) {
+                VttClientEditorNotice.show("Map duplication sent to server");
+            } else {
+                VttClientEditorNotice.show("Could not duplicate map on server");
+            }
+            return;
+        }
         try {
             MapDefinition duplicate = CreatedMapStorage.duplicate(definition);
             mapDefinitionRegistry.register(
@@ -4539,6 +4577,15 @@ public final class VTTScreen extends Screen {
     private void deleteMapDefinition(MapDefinition definition) {
         if (!CreatedMapStorage.isUserCreatedMap(definition)) {
             VttClientEditorNotice.show("Select a user-created map first");
+            return;
+        }
+        if (session.isNetworkAuthorityActive()) {
+            if (VttClientMapDefinitionSync.sendDelete(definition.id())) {
+                mapCatalogSelection.clear();
+                VttClientEditorNotice.show("Map deletion sent to server");
+            } else {
+                VttClientEditorNotice.show("Could not delete map on server");
+            }
             return;
         }
         if (!CreatedMapStorage.delete(definition)) {

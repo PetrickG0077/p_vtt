@@ -35,6 +35,7 @@ import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
+import com.petrick.vtt.feature.map.MapTextureMode;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.lang.reflect.Type;
@@ -190,6 +191,56 @@ public final class VttServerTabletopState {
         storage.saveTabletop(tabletop);
         advanceAuthorityRevision();
         return true;
+    }
+
+    public synchronized boolean applyMapDefinitionUpdate(
+            String definitionId,
+            String displayName,
+            String assetId,
+            int previousWidth,
+            int previousHeight,
+            int imageWidth,
+            int imageHeight,
+            MapTextureMode textureMode
+    ) {
+        boolean activeChanged = false;
+        for (String sceneId : List.copyOf(tabletop.getSceneIds())) {
+            VttScene scene = activeScene != null && sceneId.equals(activeScene.getId())
+                    ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+            if (scene == null) continue;
+            boolean sceneChanged = false;
+            for (var map : scene.getMaps()) {
+                if (map == null || !definitionId.equals(map.getSourceMapDefinitionId())) continue;
+                if (previousWidth > 0 && imageWidth > 0) {
+                    map.getTransform().setScaleX(map.getTransform().getScaleX()
+                            * previousWidth / (double) imageWidth);
+                }
+                if (previousHeight > 0 && imageHeight > 0) {
+                    map.getTransform().setScaleY(map.getTransform().getScaleY()
+                            * previousHeight / (double) imageHeight);
+                }
+                map.setDisplayName(displayName);
+                map.setAssetId(assetId);
+                map.setTextureMode(textureMode);
+                sceneChanged = true;
+            }
+            if (!sceneChanged) continue;
+            if (scene == activeScene) {
+                activeChanged = true;
+            } else if (!storage.saveScene(tabletop.getId(), scene)) {
+                return false;
+            }
+        }
+        if (activeChanged) {
+            markActiveSceneDirty();
+            if (!flushActiveSceneNow("map definition update")) return false;
+        }
+        advanceAuthorityRevision();
+        return true;
+    }
+
+    public synchronized void markAssetCatalogChanged() {
+        advanceAuthorityRevision();
     }
 
     private boolean refreshAssetFolders() {

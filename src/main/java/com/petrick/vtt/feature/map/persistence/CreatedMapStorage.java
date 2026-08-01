@@ -48,15 +48,42 @@ public final class CreatedMapStorage {
             int imageHeight,
             MapTextureMode textureMode
     ) {
-        String name = normalizeName(displayName);
-        String id = USER_MAP_ID_PREFIX + slug(name) + "_"
-                + UUID.randomUUID().toString().substring(0, 8);
-        MapDefinition definition = new MapDefinition(
-                id, name, assetId, imageWidth, imageHeight, textureMode);
+        MapDefinition definition = createDefinition(
+                displayName, assetId, imageWidth, imageHeight, textureMode);
         if (!save(definition)) {
             throw new IllegalStateException("Could not persist map definition");
         }
         return definition;
+    }
+
+    public static MapDefinition createDefinition(
+            String displayName,
+            String assetId,
+            int imageWidth,
+            int imageHeight,
+            MapTextureMode textureMode
+    ) {
+        String name = normalizeName(displayName);
+        String id = USER_MAP_ID_PREFIX + slug(name) + "_"
+                + UUID.randomUUID().toString().substring(0, 8);
+        return new MapDefinition(
+                id, name, assetId, imageWidth, imageHeight, textureMode);
+    }
+
+    public static MapDefinition updateDefinition(
+            MapDefinition existing,
+            String displayName,
+            String assetId,
+            int imageWidth,
+            int imageHeight,
+            MapTextureMode textureMode
+    ) {
+        if (!isUserCreatedMap(existing)) {
+            throw new IllegalArgumentException("Only user-created maps can be edited");
+        }
+        return new MapDefinition(
+                existing.id(), normalizeName(displayName), assetId,
+                imageWidth, imageHeight, textureMode);
     }
 
     public static MapDefinition updateAndSave(
@@ -73,9 +100,8 @@ public final class CreatedMapStorage {
         Path previousFile = findMapFile(existing);
         Path targetFolder = previousFile == null
                 ? getMapsFolder() : previousFile.getParent();
-        MapDefinition updated = new MapDefinition(
-                existing.id(), normalizeName(displayName), assetId,
-                imageWidth, imageHeight, textureMode);
+        MapDefinition updated = updateDefinition(
+                existing, displayName, assetId, imageWidth, imageHeight, textureMode);
         if (!save(updated, targetFolder)) {
             throw new IllegalStateException("Could not persist edited map definition");
         }
@@ -167,8 +193,13 @@ public final class CreatedMapStorage {
     }
 
     public static void loadCreatedMaps(MapDefinitionRegistry registry) {
-        if (registry == null) return;
-        Path folder = getMapsFolder();
+        loadCreatedMapsFromFolder(getMapsFolder(), registry);
+    }
+
+    public static void loadCreatedMapsFromFolder(
+            Path folder, MapDefinitionRegistry registry
+    ) {
+        if (registry == null || folder == null) return;
         if (!Files.isDirectory(folder)) return;
         try (Stream<Path> files = Files.walk(folder)) {
             files.filter(Files::isRegularFile)

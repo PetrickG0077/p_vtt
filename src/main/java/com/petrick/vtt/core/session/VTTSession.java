@@ -946,6 +946,9 @@ public final class VTTSession {
         CreatedTokenStorage.loadCreatedTokensFromFolder(
                 cacheRoot.resolve("tokens"), tokenDefinitionRegistry, assetRegistry
         );
+        mapDefinitionRegistry.clear();
+        CreatedMapStorage.loadCreatedMapsFromFolder(
+                cacheRoot.resolve("maps"), mapDefinitionRegistry);
         VTT.LOGGER.info("Loaded {} synchronized VTT assets from server", synced.totalCount());
     }
 
@@ -978,6 +981,8 @@ public final class VTTSession {
         tokenDefinitionRegistry.clear();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
         CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
+        mapDefinitionRegistry.clear();
+        CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
 
         assetLibraryScanResult = assetLibraryService.scanLibrary();
         assetThumbnailRegistry.clear();

@@ -180,6 +180,7 @@ public final class VttServerAssetSyncService {
         ensureHashCacheLoaded(root);
         Path assetsRoot = root.resolve("assets").normalize();
         Path tokensRoot = root.resolve("created/tokens").normalize();
+        Path mapsRoot = root.resolve("created/maps").normalize();
         Set<String> definitionIds = scope == null ? Set.of() : scope.definitionIds();
 
         Map<String, SyncFile> result = new LinkedHashMap<>();
@@ -198,6 +199,17 @@ public final class VttServerAssetSyncService {
                                 tokensRoot, assetsRoot, result, totalBytes));
             } catch (IOException exception) {
                 VTT.LOGGER.error("Failed to scan server VTT token definitions", exception);
+            }
+        }
+        if (includeAllTokens && Files.isDirectory(mapsRoot)) {
+            try (Stream<Path> stream = Files.walk(mapsRoot)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(path -> path.toString().toLowerCase().endsWith(".json"))
+                        .peek(path -> checkCancelled())
+                        .forEach(path -> collectMap(
+                                path, mapsRoot, assetsRoot, result, totalBytes));
+            } catch (IOException exception) {
+                VTT.LOGGER.error("Failed to scan server VTT map definitions", exception);
             }
         }
         if (includeAllTokens) addAllLibraryFiles(assetsRoot, result, totalBytes);
@@ -239,6 +251,23 @@ public final class VttServerAssetSyncService {
             if (exception instanceof CancellationException
                     || Thread.currentThread().isInterrupted()) throw new CancellationException();
             VTT.LOGGER.warn("Skipped invalid server VTT token definition: {}", jsonFile, exception);
+        }
+    }
+
+    private static void collectMap(
+            Path jsonFile, Path mapsRoot, Path assetsRoot,
+            Map<String, SyncFile> result, long[] totalBytes
+    ) {
+        try (Reader reader = Files.newBufferedReader(jsonFile)) {
+            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
+            if (string(json, "mapDefinitionId") == null) return;
+            addFile("maps", mapsRoot, jsonFile, result, totalBytes);
+            addAsset(string(json, "assetId"), assetsRoot, result, totalBytes);
+        } catch (Exception exception) {
+            if (exception instanceof CancellationException
+                    || Thread.currentThread().isInterrupted()) throw new CancellationException();
+            VTT.LOGGER.warn("Skipped invalid server VTT map definition: {}",
+                    jsonFile, exception);
         }
     }
 

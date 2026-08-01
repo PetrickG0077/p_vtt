@@ -42,6 +42,9 @@ import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.server.VttServerAssetFolderHandler;
+import com.petrick.vtt.network.payload.VttMapDefinitionUpsertPayload;
+import com.petrick.vtt.network.payload.VttMapDefinitionCommandPayload;
+import com.petrick.vtt.network.server.VttServerMapDefinitionHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -50,7 +53,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "39";
+    private static final String PROTOCOL_VERSION = "40";
 
     private VttNetwork() {
     }
@@ -137,6 +140,12 @@ public final class VttNetwork {
         registrar.playToClient(VttAssetManagerChangePayload.TYPE,
                 VttAssetManagerChangePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleAssetManagerChange);
+        registrar.playToServer(VttMapDefinitionUpsertPayload.TYPE,
+                VttMapDefinitionUpsertPayload.STREAM_CODEC,
+                VttServerMapDefinitionHandler::handleUpsert);
+        registrar.playToServer(VttMapDefinitionCommandPayload.TYPE,
+                VttMapDefinitionCommandPayload.STREAM_CODEC,
+                VttServerMapDefinitionHandler::handleCommand);
         registrar.playToClient(VttPresentationUpdatePayload.TYPE,
                 VttPresentationUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handlePresentationUpdate);
