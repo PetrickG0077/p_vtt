@@ -9,7 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Master request to change server-authoritative scene lifecycle or metadata. */
 public record VttSceneCommandPayload(
-        long authorityRevision, String operation, String targetId,
+        String requestId, long authorityRevision, String operation, String targetId,
         String value, String backgroundAssetId, String mapTextureMode)
         implements CustomPacketPayload {
     public static final String CREATE = "CREATE";
@@ -22,14 +22,35 @@ public record VttSceneCommandPayload(
     public static final Type<VttSceneCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "scene_command"));
 
-    public static final StreamCodec<ByteBuf, VttSceneCommandPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.VAR_LONG, VttSceneCommandPayload::authorityRevision,
-            ByteBufCodecs.stringUtf8(16), VttSceneCommandPayload::operation,
-            ByteBufCodecs.stringUtf8(128), VttSceneCommandPayload::targetId,
-            ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::value,
-            ByteBufCodecs.stringUtf8(512), VttSceneCommandPayload::backgroundAssetId,
-            ByteBufCodecs.stringUtf8(16), VttSceneCommandPayload::mapTextureMode,
-            VttSceneCommandPayload::new);
+    private static final StreamCodec<ByteBuf, RequestHeader> HEADER_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.stringUtf8(64), RequestHeader::requestId,
+                    ByteBufCodecs.VAR_LONG, RequestHeader::authorityRevision,
+                    RequestHeader::new);
+    private static final StreamCodec<ByteBuf, CommandBody> BODY_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.stringUtf8(16), CommandBody::operation,
+                    ByteBufCodecs.stringUtf8(128), CommandBody::targetId,
+                    ByteBufCodecs.stringUtf8(512), CommandBody::value,
+                    ByteBufCodecs.stringUtf8(512), CommandBody::backgroundAssetId,
+                    ByteBufCodecs.stringUtf8(16), CommandBody::mapTextureMode,
+                    CommandBody::new);
+    public static final StreamCodec<ByteBuf, VttSceneCommandPayload> STREAM_CODEC =
+            StreamCodec.composite(
+                    HEADER_CODEC, payload -> new RequestHeader(
+                            payload.requestId(), payload.authorityRevision()),
+                    BODY_CODEC, payload -> new CommandBody(
+                            payload.operation(), payload.targetId(), payload.value(),
+                            payload.backgroundAssetId(), payload.mapTextureMode()),
+                    (header, body) -> new VttSceneCommandPayload(
+                            header.requestId(), header.authorityRevision(), body.operation(),
+                            body.targetId(), body.value(), body.backgroundAssetId(),
+                            body.mapTextureMode()));
+
+    private record RequestHeader(String requestId, long authorityRevision) {}
+    private record CommandBody(
+            String operation, String targetId, String value,
+            String backgroundAssetId, String mapTextureMode) {}
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

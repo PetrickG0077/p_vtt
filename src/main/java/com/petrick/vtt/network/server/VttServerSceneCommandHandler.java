@@ -3,6 +3,7 @@ package com.petrick.vtt.network.server;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -14,24 +15,39 @@ public final class VttServerSceneCommandHandler {
     private VttServerSceneCommandHandler() {}
 
     public static void handle(VttSceneCommandPayload request, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer requester)) return;
-        if (!VttServerRequestRateLimiter.allow(
-                requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND)) return;
+        if (!(context.player() instanceof ServerPlayer requester) || request == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
         if (!VttServerPlayerEvents.isMaster(requester)) {
-            VttServerRequestRateLimiter.reject(
-                    requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND,
-                    "permission denied");
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.PERMISSION_DENIED,
+                    "Only masters can update scenes", state.authorityRevision(), "");
             return;
         }
-        VttServerTabletopState state = VttServerTabletopState.get();
-        if (request == null
-                || request.authorityRevision() != state.authorityRevision()
+        if (!VttServerRequestRateLimiter.allow(
+                requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND)) {
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.REJECTED,
+                    "Too many scene operations; try again shortly",
+                    state.authorityRevision(), "");
+            return;
+        }
+        if (request.requestId() == null || request.requestId().isBlank()
+                || request.requestId().length() > 64
                 || request.operation() == null || request.targetId() == null
                 || request.value() == null || request.backgroundAssetId() == null
                 || request.mapTextureMode() == null
                 || request.backgroundAssetId().length() > 512
                 || request.mapTextureMode().length() > 16) {
-            reject(requester, "invalid request");
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.INVALID_REQUEST,
+                    "Invalid scene request", state.authorityRevision(), "");
+            return;
+        }
+        if (request.authorityRevision() != state.authorityRevision()) {
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.STALE_REVISION,
+                    "Scenes changed on the server; resynchronizing",
+                    state.authorityRevision(), "");
             return;
         }
 
@@ -39,7 +55,9 @@ public final class VttServerSceneCommandHandler {
                 || VttSceneCommandPayload.DUPLICATE.equals(request.operation())) {
             var violation = VttSceneLimits.sceneCreation(state.activeTabletop());
             if (violation != null) {
-                reject(requester, violation.code());
+                respond(requester, request.requestId(), false,
+                        VttSceneCommandResultPayload.LIMIT_REACHED,
+                        violation.message(), state.authorityRevision(), "");
                 VttServerFeedback.showLimit(requester, violation.message());
                 return;
             }
@@ -59,15 +77,29 @@ public final class VttServerSceneCommandHandler {
             default -> false;
         };
         if (!changed) {
-            reject(requester, "command was not accepted");
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.REJECTED,
+                    rejectionMessage(request.operation()), state.authorityRevision(), "");
             return;
         }
 
         MinecraftServer server = requester.getServer();
         if (server == null) {
-            reject(requester, "server unavailable");
+            respond(requester, request.requestId(), false,
+                    VttSceneCommandResultPayload.REJECTED,
+                    "Server unavailable", state.authorityRevision(), "");
             return;
         }
+        String resultSceneId = switch (request.operation()) {
+            case VttSceneCommandPayload.RENAME -> request.targetId();
+            case VttSceneCommandPayload.DELETE, VttSceneCommandPayload.CREATE,
+                 VttSceneCommandPayload.DUPLICATE, VttSceneCommandPayload.SWITCH,
+                 VttSceneCommandPayload.SET_BACKGROUND -> state.activeScene().getId();
+            default -> "";
+        };
+        respond(requester, request.requestId(), true,
+                VttSceneCommandResultPayload.OK, sceneChangeMessage(request.operation()),
+                state.authorityRevision(), resultSceneId);
         boolean sceneChanged = !previousSceneId.equals(state.activeScene().getId());
         boolean assetsChanged = sceneChanged
                 || VttSceneCommandPayload.SET_BACKGROUND.equals(request.operation());
@@ -98,9 +130,25 @@ public final class VttServerSceneCommandHandler {
                 request.operation(), requester.getGameProfile().getName(), state.activeScene().getId());
     }
 
-    private static void reject(ServerPlayer requester, String reason) {
-        VttServerRequestRateLimiter.reject(
-                requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND, reason);
+    private static void respond(
+            ServerPlayer player, String requestId, boolean success, String code,
+            String message, long authorityRevision, String sceneId
+    ) {
+        PacketDistributor.sendToPlayer(player, new VttSceneCommandResultPayload(
+                requestId == null ? "" : requestId, success, code, message,
+                authorityRevision, sceneId == null ? "" : sceneId));
+    }
+
+    private static String rejectionMessage(String operation) {
+        return switch (operation) {
+            case VttSceneCommandPayload.CREATE -> "Could not create the scene";
+            case VttSceneCommandPayload.SWITCH -> "Could not activate the scene";
+            case VttSceneCommandPayload.SET_BACKGROUND -> "Could not change the scene background";
+            case VttSceneCommandPayload.RENAME -> "Could not rename the scene";
+            case VttSceneCommandPayload.DELETE -> "The last scene cannot be deleted";
+            case VttSceneCommandPayload.DUPLICATE -> "Could not duplicate the scene";
+            default -> "Unknown scene command";
+        };
     }
 
     private static boolean isCatalogMutation(String operation) {
@@ -113,6 +161,8 @@ public final class VttServerSceneCommandHandler {
     private static String sceneChangeMessage(String operation) {
         return switch (operation) {
             case VttSceneCommandPayload.CREATE -> "Scene created";
+            case VttSceneCommandPayload.SWITCH -> "Scene activated";
+            case VttSceneCommandPayload.SET_BACKGROUND -> "Scene background updated";
             case VttSceneCommandPayload.RENAME -> "Scene renamed";
             case VttSceneCommandPayload.DELETE -> "Scene deleted";
             case VttSceneCommandPayload.DUPLICATE -> "Scene duplicated";

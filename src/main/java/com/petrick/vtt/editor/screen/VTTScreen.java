@@ -76,6 +76,7 @@ import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
@@ -83,6 +84,8 @@ import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
+import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -261,10 +264,16 @@ public final class VTTScreen extends Screen {
     private PendingAssetDeletion pendingAssetDeletion;
     private PendingAssetBatchDeletion pendingAssetBatchDeletion;
     private PendingAssetFolderDeletion pendingAssetFolderDeletion;
-    private boolean pendingAssetManagerSceneDuplicate;
-    private long pendingAssetManagerSceneDuplicateUntil;
-    private String pendingAssetManagerSceneFolder;
-    private Set<String> pendingAssetManagerSceneKnownIds;
+    private String pendingSceneRequestId;
+    private String pendingSceneOperation;
+    private String pendingSceneCommand;
+    private String pendingSceneSuccessMessage;
+    private String pendingSceneSelectionId;
+    private String pendingSceneRestoreSelectionId;
+    private String pendingSceneTargetFolder;
+    private boolean pendingSceneReopenAssetManager;
+    private long pendingSceneAcknowledgedRevision = -1L;
+    private long pendingSceneRequestUntil;
     private String pendingAssetFolderRequestId;
     private String pendingAssetFolderOperation;
     private String pendingAssetFolderSuccessMessage;
@@ -365,11 +374,11 @@ public final class VTTScreen extends Screen {
         resolvePendingAssetFolderResult();
         resolvePendingMapDefinitionResult();
         resolvePendingTokenDefinitionResult();
+        resolvePendingSceneResult();
         applyRemoteAssetManagerChanges();
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
-        resolvePendingAssetManagerSceneOperation();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
                 && !selectionManager.getSelectedObjectIds().isEmpty()) {
@@ -794,7 +803,8 @@ public final class VTTScreen extends Screen {
         if (interaction.section() == null) return;
         if ((pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
-                || pendingTokenDefinitionRequestId != null)
+                || pendingTokenDefinitionRequestId != null
+                || pendingSceneRequestId != null)
                 && interaction.action() != AssetManagerOverlay.Action.NONE
                 && interaction.action() != AssetManagerOverlay.Action.SELECT
                 && interaction.action() != AssetManagerOverlay.Action.OPEN_FOLDER
@@ -947,7 +957,8 @@ public final class VTTScreen extends Screen {
         if (session.isNetworkAuthorityActive()
                 && (pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
-                || pendingTokenDefinitionRequestId != null)) {
+                || pendingTokenDefinitionRequestId != null
+                || pendingSceneRequestId != null)) {
             VttClientEditorNotice.show("Wait for the current Asset Manager operation");
             return;
         }
@@ -1074,7 +1085,8 @@ public final class VTTScreen extends Screen {
     ) {
         if (pendingMapDefinitionRequestId != null
                 || pendingAssetFolderRequestId != null
-                || pendingTokenDefinitionRequestId != null) {
+                || pendingTokenDefinitionRequestId != null
+                || pendingSceneRequestId != null) {
             VttClientEditorNotice.show("Wait for the current map operation");
             return null;
         }
@@ -1176,7 +1188,8 @@ public final class VTTScreen extends Screen {
     ) {
         if (pendingTokenDefinitionRequestId != null
                 || pendingAssetFolderRequestId != null
-                || pendingMapDefinitionRequestId != null) {
+                || pendingMapDefinitionRequestId != null
+                || pendingSceneRequestId != null) {
             VttClientEditorNotice.show("Wait for the current token operation");
             return null;
         }
@@ -1280,13 +1293,131 @@ public final class VTTScreen extends Screen {
     private String currentAssetManagerPendingOperation() {
         if (pendingAssetFolderOperation != null) return pendingAssetFolderOperation;
         if (pendingMapDefinitionOperation != null) return pendingMapDefinitionOperation;
-        return pendingTokenDefinitionOperation;
+        if (pendingTokenDefinitionOperation != null) return pendingTokenDefinitionOperation;
+        return pendingSceneOperation;
     }
 
     private boolean hasPendingAssetManagerOperation() {
         return pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
-                || pendingTokenDefinitionRequestId != null;
+                || pendingTokenDefinitionRequestId != null
+                || pendingSceneRequestId != null;
+    }
+
+    private String beginPendingSceneRequest(
+            String command, String operation, String successMessage,
+            String selectionId, String restoreSelectionId,
+            String targetFolder, boolean reopenAssetManager
+    ) {
+        if (hasPendingAssetManagerOperation()) {
+            VttClientEditorNotice.show("Wait for the current scene operation");
+            return null;
+        }
+        String requestId = UUID.randomUUID().toString();
+        VttClientSceneCommandResultState.reset();
+        pendingSceneRequestId = requestId;
+        pendingSceneCommand = command;
+        pendingSceneOperation = operation;
+        pendingSceneSuccessMessage = successMessage;
+        pendingSceneSelectionId = selectionId;
+        pendingSceneRestoreSelectionId = restoreSelectionId;
+        pendingSceneTargetFolder = targetFolder;
+        pendingSceneReopenAssetManager = reopenAssetManager;
+        pendingSceneAcknowledgedRevision = -1L;
+        pendingSceneRequestUntil = System.currentTimeMillis() + 120_000L;
+        assetManagerOverlay.setPendingOperation(operation);
+        return requestId;
+    }
+
+    private void resolvePendingSceneResult() {
+        if (pendingSceneAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingSceneAcknowledgedRevision) {
+            completePendingSceneRequest();
+            return;
+        }
+        VttSceneCommandResultPayload result =
+                VttClientSceneCommandResultState.consume(pendingSceneRequestId);
+        if (result != null && pendingSceneRequestId != null
+                && pendingSceneRequestId.equals(result.requestId())) {
+            if (result.success()) {
+                pendingSceneSuccessMessage = result.message().isBlank()
+                        ? pendingSceneSuccessMessage : result.message();
+                if (!result.sceneId().isBlank()) pendingSceneSelectionId = result.sceneId();
+                pendingSceneAcknowledgedRevision = result.authorityRevision();
+                pendingSceneOperation = "synchronizing scenes";
+                if (session.getNetworkAuthorityRevision()
+                        >= pendingSceneAcknowledgedRevision) {
+                    completePendingSceneRequest();
+                }
+            } else {
+                restorePendingSceneSelection();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the scene operation" : result.message());
+                clearPendingSceneRequest();
+                session.requestAssetManagerResync();
+            }
+            return;
+        }
+        if (pendingSceneRequestId != null
+                && System.currentTimeMillis() > pendingSceneRequestUntil) {
+            restorePendingSceneSelection();
+            clearPendingSceneRequest();
+            VttClientEditorNotice.show("Scene operation timed out");
+            session.requestAssetManagerResync();
+        }
+    }
+
+    private void completePendingSceneRequest() {
+        String command = pendingSceneCommand;
+        String selectionId = pendingSceneSelectionId;
+        String targetFolder = pendingSceneTargetFolder;
+        boolean reopenManager = pendingSceneReopenAssetManager;
+        String message = pendingSceneSuccessMessage;
+        clearPendingSceneRequest();
+        handleActiveSceneChange();
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
+        assetManagerOverlay.reconcileSelection(
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+        if (VttSceneCommandPayload.CREATE.equals(command)
+                && selectionId != null && targetFolder != null
+                && !targetFolder.isBlank()) {
+            moveCreatedAssetToFolder(
+                    AssetManagerOverlay.Section.SCENES, selectionId, targetFolder);
+        }
+        if (reopenManager) {
+            hudCreationOpen = true;
+            assetManagerOverlay.openFolder(
+                    AssetManagerOverlay.Section.SCENES,
+                    targetFolder == null ? "" : targetFolder);
+        }
+        if (selectionId != null
+                && session.getActiveTabletop().getSceneIds().contains(selectionId)) {
+            assetManagerOverlay.select(AssetManagerOverlay.Section.SCENES, selectionId);
+        }
+        VttClientEditorNotice.show(message);
+    }
+
+    private void restorePendingSceneSelection() {
+        String id = pendingSceneRestoreSelectionId;
+        if (id != null && session.getActiveTabletop().getSceneIds().contains(id)) {
+            assetManagerOverlay.select(AssetManagerOverlay.Section.SCENES, id);
+        }
+    }
+
+    private void clearPendingSceneRequest() {
+        pendingSceneRequestId = null;
+        pendingSceneOperation = null;
+        pendingSceneCommand = null;
+        pendingSceneSuccessMessage = null;
+        pendingSceneSelectionId = null;
+        pendingSceneRestoreSelectionId = null;
+        pendingSceneTargetFolder = null;
+        pendingSceneReopenAssetManager = false;
+        pendingSceneAcknowledgedRevision = -1L;
+        pendingSceneRequestUntil = 0L;
+        assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
     }
 
     private void applyRemoteAssetManagerChanges() {
@@ -1332,17 +1463,7 @@ public final class VTTScreen extends Screen {
     ) {
         switch (section) {
             case SCENES -> {
-                pendingAssetManagerSceneDuplicate = true;
-                pendingAssetManagerSceneDuplicateUntil =
-                        System.currentTimeMillis() + 15_000L;
-                pendingAssetManagerSceneFolder =
-                        session.getActiveTabletop().getSceneFolder(id);
-                pendingAssetManagerSceneKnownIds = new HashSet<>(
-                        session.getActiveTabletop().getSceneIds());
-                if (!session.requestDuplicateScene(id)) {
-                    clearPendingAssetManagerScenePlacement();
-                    VttClientEditorNotice.show("Could not duplicate scene");
-                }
+                requestSceneDuplicate(id, true);
             }
             case MAPS -> mapDefinitionRegistry.findById(id).ifPresent(definition -> {
                 duplicateMapDefinition(definition);
@@ -1363,19 +1484,54 @@ public final class VTTScreen extends Screen {
         }
     }
 
-    private void resolvePendingAssetManagerSceneOperation() {
-        if (pendingAssetManagerSceneDuplicate
-                && System.currentTimeMillis() > pendingAssetManagerSceneDuplicateUntil) {
-            clearPendingAssetManagerScenePlacement();
-            VttClientEditorNotice.show("Scene creation or duplication timed out");
+    private void requestSceneDuplicate(String sceneId, boolean reopenAssetManager) {
+        if (sceneId == null) return;
+        String folder = session.getActiveTabletop().getSceneFolder(sceneId);
+        if (session.isNetworkAuthorityActive()) {
+            String requestId = beginPendingSceneRequest(
+                    VttSceneCommandPayload.DUPLICATE, "duplicating scene",
+                    "Scene duplicated", null, sceneId, folder,
+                    reopenAssetManager);
+            if (requestId == null) return;
+            if (!session.requestDuplicateScene(sceneId, requestId)) {
+                clearPendingSceneRequest();
+                VttClientEditorNotice.show("Could not duplicate scene");
+            } else {
+                VttClientEditorNotice.show("Scene duplication sent to server");
+            }
+            return;
+        }
+        if (!session.requestDuplicateScene(sceneId)) {
+            VttClientEditorNotice.show("Could not duplicate scene");
+            return;
+        }
+        String duplicateId = session.getActiveTabletop().getActiveSceneId();
+        if (reopenAssetManager) {
+            hudCreationOpen = true;
+            assetManagerOverlay.openFolder(AssetManagerOverlay.Section.SCENES, folder);
+            assetManagerOverlay.select(AssetManagerOverlay.Section.SCENES, duplicateId);
         }
     }
 
-    private void clearPendingAssetManagerScenePlacement() {
-        pendingAssetManagerSceneDuplicate = false;
-        pendingAssetManagerSceneDuplicateUntil = 0L;
-        pendingAssetManagerSceneFolder = null;
-        pendingAssetManagerSceneKnownIds = null;
+    private void requestSceneDelete(String sceneId, boolean reopenAssetManager) {
+        if (sceneId == null) return;
+        String folder = session.getActiveTabletop().getSceneFolder(sceneId);
+        if (session.isNetworkAuthorityActive()) {
+            String requestId = beginPendingSceneRequest(
+                    VttSceneCommandPayload.DELETE, "deleting scene", "Scene deleted",
+                    null, sceneId, folder, reopenAssetManager);
+            if (requestId == null) return;
+            if (!session.deleteScene(sceneId, requestId)) {
+                clearPendingSceneRequest();
+                VttClientEditorNotice.show("Could not delete scene");
+            } else {
+                VttClientEditorNotice.show("Scene deletion sent to server");
+            }
+            return;
+        }
+        if (!session.deleteScene(sceneId)) {
+            VttClientEditorNotice.show("Could not delete scene");
+        }
     }
 
     private void beginAssetManagerDeletion(
@@ -1752,7 +1908,7 @@ public final class VTTScreen extends Screen {
         if (refreshed.request().blocked()) return;
 
         switch (refreshed.section()) {
-            case SCENES -> session.deleteScene(refreshed.id());
+            case SCENES -> requestSceneDelete(refreshed.id(), true);
             case MAPS -> deleteMapDefinition(
                     mapDefinitionRegistry.findById(refreshed.id()).orElse(null));
             case TOKENS -> tokenDefinitionRegistry.findById(refreshed.id())
@@ -2421,7 +2577,21 @@ public final class VTTScreen extends Screen {
                 Optional<String> clickedSceneId = sceneListOverlay.findSceneIdAt(
                         session.getActiveTabletop(), this.width, this.height, mouseX, mouseY);
                 if (clickedSceneId.isPresent()) {
-                    if (session.switchToScene(clickedSceneId.get())) {
+                    String sceneId = clickedSceneId.get();
+                    boolean requested;
+                    if (session.isNetworkAuthorityActive()) {
+                        String requestId = beginPendingSceneRequest(
+                                VttSceneCommandPayload.SWITCH, "switching scene",
+                                "Scene activated", sceneId,
+                                session.getActiveTabletop().getActiveSceneId(),
+                                session.getActiveTabletop().getSceneFolder(sceneId), false);
+                        requested = requestId != null
+                                && session.switchToScene(sceneId, requestId);
+                        if (requestId != null && !requested) clearPendingSceneRequest();
+                    } else {
+                        requested = session.switchToScene(sceneId);
+                    }
+                    if (requested) {
                         selectionManager.clearSelection();
                         inputController.selectHandTool();
                     }
@@ -3230,9 +3400,11 @@ public final class VTTScreen extends Screen {
 
         if (pendingDeleteSceneId != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                session.deleteScene(pendingDeleteSceneId);
+                requestSceneDelete(
+                        pendingDeleteSceneId,
+                        returnToAssetManagerSection == AssetManagerOverlay.Section.SCENES);
                 pendingDeleteSceneId = null;
-                returnToAssetManagerIfRequested();
+                if (!session.isNetworkAuthorityActive()) returnToAssetManagerIfRequested();
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 pendingDeleteSceneId = null;
                 returnToAssetManagerIfRequested();
@@ -4462,22 +4634,30 @@ public final class VTTScreen extends Screen {
         if (newSceneNameBuffer == null || newSceneNameBuffer.isBlank()) return;
         String targetFolder =
                 assetManagerTargetFolder(AssetManagerOverlay.Section.SCENES);
-        Set<String> existingSceneIds = new HashSet<>(
-                session.getActiveTabletop().getSceneIds());
-        if (session.requestCreateScene(
-                newSceneNameBuffer, newSceneMapDefinition)) {
-            pendingAssetManagerSceneDuplicate = true;
-            pendingAssetManagerSceneDuplicateUntil =
-                    System.currentTimeMillis() + 15_000L;
-            pendingAssetManagerSceneFolder = targetFolder;
-            pendingAssetManagerSceneKnownIds = existingSceneIds;
-            if (!session.isNetworkAuthorityActive()) {
-                String createdSceneId =
-                        session.getActiveTabletop().getActiveSceneId();
-                moveCreatedAssetToFolder(
-                        AssetManagerOverlay.Section.SCENES,
-                        createdSceneId, targetFolder);
+        if (session.isNetworkAuthorityActive()) {
+            boolean reopenManager =
+                    willReturnToAssetManager(AssetManagerOverlay.Section.SCENES);
+            String requestId = beginPendingSceneRequest(
+                    VttSceneCommandPayload.CREATE, "creating scene", "Scene created",
+                    null, session.getActiveTabletop().getActiveSceneId(),
+                    targetFolder, reopenManager);
+            if (requestId == null) return;
+            if (!session.requestCreateScene(
+                    newSceneNameBuffer, newSceneMapDefinition, requestId)) {
+                clearPendingSceneRequest();
+                VttClientEditorNotice.show("Could not create scene");
+                return;
             }
+            selectionManager.clearSelection();
+            inputController.selectHandTool();
+            closeNewSceneDialog();
+            VttClientEditorNotice.show("Scene creation sent to server");
+            return;
+        }
+        if (session.requestCreateScene(newSceneNameBuffer, newSceneMapDefinition)) {
+            String createdSceneId = session.getActiveTabletop().getActiveSceneId();
+            moveCreatedAssetToFolder(
+                    AssetManagerOverlay.Section.SCENES, createdSceneId, targetFolder);
             selectionManager.clearSelection();
             inputController.selectHandTool();
             closeNewSceneDialog();
@@ -4902,9 +5082,7 @@ public final class VTTScreen extends Screen {
         sceneContextMenu.close();
         if (sceneId == null) return;
         if (action == SceneContextMenuOverlay.Action.DUPLICATE) {
-            if (!session.requestDuplicateScene(sceneId)) {
-                VttClientEditorNotice.show("Could not duplicate scene");
-            }
+            requestSceneDuplicate(sceneId, false);
         } else if (action == SceneContextMenuOverlay.Action.RENAME) {
             renamingSceneId = sceneId;
             sceneRenameBuffer = session.getActiveTabletop().getSceneDisplayName(sceneId);
@@ -4916,6 +5094,25 @@ public final class VTTScreen extends Screen {
 
     private void confirmSceneRename() {
         if (renamingSceneId == null || sceneRenameBuffer == null || sceneRenameBuffer.isBlank()) return;
+        if (session.isNetworkAuthorityActive()) {
+            String sceneId = renamingSceneId;
+            boolean reopenManager =
+                    returnToAssetManagerSection == AssetManagerOverlay.Section.SCENES;
+            String requestId = beginPendingSceneRequest(
+                    VttSceneCommandPayload.RENAME, "renaming scene", "Scene renamed",
+                    sceneId, sceneId,
+                    session.getActiveTabletop().getSceneFolder(sceneId), reopenManager);
+            if (requestId == null) return;
+            if (!session.renameScene(sceneId, sceneRenameBuffer, requestId)) {
+                clearPendingSceneRequest();
+                VttClientEditorNotice.show("Could not rename scene");
+                return;
+            }
+            renamingSceneId = null;
+            sceneRenameBuffer = null;
+            VttClientEditorNotice.show("Scene rename sent to server");
+            return;
+        }
         if (session.renameScene(renamingSceneId, sceneRenameBuffer)) {
             renamingSceneId = null;
             sceneRenameBuffer = null;
@@ -5048,10 +5245,6 @@ public final class VTTScreen extends Screen {
         String activeSceneId = session.getActiveScene() == null
                 ? null : session.getActiveScene().getId();
         if (java.util.Objects.equals(observedActiveSceneId, activeSceneId)) return;
-        boolean reopenDuplicatedSceneInAssetManager =
-                pendingAssetManagerSceneDuplicate && activeSceneId != null
-                        && (pendingAssetManagerSceneKnownIds == null
-                        || !pendingAssetManagerSceneKnownIds.contains(activeSceneId));
         if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
         observedActiveSceneId = activeSceneId;
         selectionManager.clearSelection();
@@ -5070,22 +5263,6 @@ public final class VTTScreen extends Screen {
         closeBackgroundImagePicker();
         tokenImagePickerActive = false;
         closeHudPopups();
-        if (reopenDuplicatedSceneInAssetManager) {
-            String targetFolder = pendingAssetManagerSceneFolder;
-            String currentFolder = session.getActiveTabletop()
-                    .getSceneFolder(activeSceneId);
-            if (!java.util.Objects.equals(currentFolder, targetFolder)) {
-                moveCreatedAssetToFolder(
-                        AssetManagerOverlay.Section.SCENES,
-                        activeSceneId, targetFolder);
-            }
-            hudCreationOpen = true;
-            assetManagerOverlay.openFolder(
-                    AssetManagerOverlay.Section.SCENES, targetFolder);
-            assetManagerOverlay.select(
-                    AssetManagerOverlay.Section.SCENES, activeSceneId);
-            clearPendingAssetManagerScenePlacement();
-        }
         applyActiveSceneInitialCamera();
         initialCameraApplied = true;
         VTT.LOGGER.info("Editor changed to active scene: {}", activeSceneId);

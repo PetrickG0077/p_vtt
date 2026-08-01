@@ -583,7 +583,8 @@ public final class VttServerTabletopState {
             if (!flushActiveSceneNow("scene rename")) return false;
         } else if (!saveSceneImmediately(target, "scene rename")) return false;
         tabletop.setSceneDisplayName(sceneId, trimmedName);
-        storage.saveTabletop(tabletop);
+        if (!storage.saveTabletop(tabletop)) return false;
+        advanceAuthorityRevision();
         return true;
     }
 
@@ -653,11 +654,11 @@ public final class VttServerTabletopState {
             objectSpatialIndex.rebuild(activeScene);
             visionGeometryIndex.rebuild(activeScene);
             movementCollision.rebuildObstacleIndex(activeScene);
-            advanceAuthorityRevision();
             tabletop.setActiveSceneId(replacement.getId());
             tabletop.setSceneDisplayName(replacement.getId(), replacement.getDisplayName());
         }
-        storage.saveTabletop(tabletop);
+        if (!storage.saveTabletop(tabletop)) return false;
+        advanceAuthorityRevision();
         return true;
     }
 

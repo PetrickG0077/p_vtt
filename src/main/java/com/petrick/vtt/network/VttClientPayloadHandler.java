@@ -41,6 +41,8 @@ import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
+import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
+import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -204,5 +206,11 @@ public final class VttClientPayloadHandler {
             VttTokenDefinitionResultPayload payload, IPayloadContext context
     ) {
         VttClientTokenDefinitionResultState.accept(payload);
+    }
+
+    public static void handleSceneCommandResult(
+            VttSceneCommandResultPayload payload, IPayloadContext context
+    ) {
+        VttClientSceneCommandResultState.accept(payload);
     }
 }

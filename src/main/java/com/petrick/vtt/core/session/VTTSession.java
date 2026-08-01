@@ -36,6 +36,7 @@ import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 
 import java.nio.file.Path;
 import com.petrick.vtt.core.math.Vec2d;
@@ -637,12 +638,16 @@ public final class VTTSession {
     }
 
     public boolean switchToScene(String sceneId) {
+        return switchToScene(sceneId, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean switchToScene(String sceneId, String requestId) {
         if (networkAuthorityActive) {
             if (!isLocalMaster() || activeTabletop == null || sceneId == null || sceneId.isBlank()
                     || !activeTabletop.getSceneIds().contains(sceneId)) return false;
             if (activeScene != null && sceneId.equals(activeScene.getId())) return true;
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.SWITCH,
+                    requestId, networkAuthorityRevision, VttSceneCommandPayload.SWITCH,
                     sceneId, "", "", ""));
             return true;
         }
@@ -701,6 +706,12 @@ public final class VTTSession {
     }
 
     public boolean requestCreateScene(String displayName, String backgroundAssetId) {
+        return requestCreateScene(
+                displayName, backgroundAssetId, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean requestCreateScene(
+            String displayName, String backgroundAssetId, String requestId) {
         if (!networkAuthorityActive) {
             return createScene(displayName, backgroundAssetId) != null;
         }
@@ -708,12 +719,18 @@ public final class VTTSession {
                 || displayName.length() > 48
                 || backgroundAssetId != null && backgroundAssetId.length() > 512) return false;
         PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                networkAuthorityRevision, VttSceneCommandPayload.CREATE, "",
+                requestId, networkAuthorityRevision, VttSceneCommandPayload.CREATE, "",
                 displayName.trim(), backgroundAssetId == null ? "" : backgroundAssetId, ""));
         return true;
     }
 
     public boolean requestCreateScene(String displayName, MapDefinition initialMap) {
+        return requestCreateScene(
+                displayName, initialMap, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean requestCreateScene(
+            String displayName, MapDefinition initialMap, String requestId) {
         if (!networkAuthorityActive) {
             VttScene created = createScene(displayName, null);
             if (created == null) return false;
@@ -728,7 +745,7 @@ public final class VTTSession {
                 || initialMap != null && (initialMap.id().length() > 128
                 || initialMap.assetId().length() > 512)) return false;
         PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                networkAuthorityRevision, VttSceneCommandPayload.CREATE,
+                requestId, networkAuthorityRevision, VttSceneCommandPayload.CREATE,
                 initialMap == null ? "" : initialMap.id(),
                 displayName.trim(), initialMap == null ? "" : initialMap.assetId(),
                 initialMap == null ? "" : initialMap.textureMode().name()));
@@ -743,6 +760,10 @@ public final class VTTSession {
     }
 
     public boolean requestDuplicateScene(String sceneId) {
+        return requestDuplicateScene(sceneId, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean requestDuplicateScene(String sceneId, String requestId) {
         if (!isLocalMaster() || activeTabletop == null || sceneId == null
                 || sceneId.isBlank() || !activeTabletop.getSceneIds().contains(sceneId)) {
             return false;
@@ -750,7 +771,7 @@ public final class VTTSession {
         if (VttSceneLimits.sceneCreation(activeTabletop) != null) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.DUPLICATE,
+                    requestId, networkAuthorityRevision, VttSceneCommandPayload.DUPLICATE,
                     sceneId, "", "", ""));
             return true;
         }
@@ -798,7 +819,8 @@ public final class VTTSession {
         if (networkAuthorityActive) {
             activeScene.setBackgroundAssetId(assetId);
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.SET_BACKGROUND,
+                    java.util.UUID.randomUUID().toString(), networkAuthorityRevision,
+                    VttSceneCommandPayload.SET_BACKGROUND,
                     "", assetId == null ? "" : assetId, "", ""));
             return true;
         }
@@ -822,12 +844,16 @@ public final class VTTSession {
     }
 
     public boolean renameScene(String sceneId, String displayName) {
+        return renameScene(sceneId, displayName, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean renameScene(String sceneId, String displayName, String requestId) {
         if (!isLocalMaster() || sceneId == null || sceneId.isBlank() || displayName == null
                 || displayName.isBlank() || displayName.length() > 48
                 || !activeTabletop.getSceneIds().contains(sceneId)) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.RENAME,
+                    requestId, networkAuthorityRevision, VttSceneCommandPayload.RENAME,
                     sceneId, displayName.trim(), "", ""));
             return true;
         }
@@ -842,12 +868,16 @@ public final class VTTSession {
     }
 
     public boolean deleteScene(String sceneId) {
+        return deleteScene(sceneId, java.util.UUID.randomUUID().toString());
+    }
+
+    public boolean deleteScene(String sceneId, String requestId) {
         if (!isLocalMaster() || sceneId == null || sceneId.isBlank()
                 || activeTabletop.getSceneIds().size() <= 1
                 || !activeTabletop.getSceneIds().contains(sceneId)) return false;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttSceneCommandPayload(
-                    networkAuthorityRevision, VttSceneCommandPayload.DELETE,
+                    requestId, networkAuthorityRevision, VttSceneCommandPayload.DELETE,
                     sceneId, "", "", ""));
             return true;
         }
@@ -960,6 +990,7 @@ public final class VTTSession {
         VttClientAssetManagerChangeState.reset();
         VttClientMapDefinitionResultState.reset();
         VttClientTokenDefinitionResultState.reset();
+        VttClientSceneCommandResultState.reset();
         networkAuthorityActive = false;
         networkSnapshotVersion = 0L;
         networkAuthorityRevision = 0L;
