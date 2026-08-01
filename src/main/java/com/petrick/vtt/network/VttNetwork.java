@@ -39,6 +39,7 @@ import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import com.petrick.vtt.network.server.VttServerPresentationHandler;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.server.VttServerAssetFolderHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -48,7 +49,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "37";
+    private static final String PROTOCOL_VERSION = "38";
 
     private VttNetwork() {
     }
@@ -129,6 +130,9 @@ public final class VttNetwork {
         registrar.playToServer(VttAssetFolderCommandPayload.TYPE,
                 VttAssetFolderCommandPayload.STREAM_CODEC,
                 VttServerAssetFolderHandler::handle);
+        registrar.playToClient(VttAssetFolderResultPayload.TYPE,
+                VttAssetFolderResultPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleAssetFolderResult);
         registrar.playToClient(VttPresentationUpdatePayload.TYPE,
                 VttPresentationUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handlePresentationUpdate);

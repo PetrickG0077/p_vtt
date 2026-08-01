@@ -166,6 +166,7 @@ public final class VTTSession {
     }
 
     public boolean requestAssetFolderCommand(
+            String requestId,
             String operation,
             VttAssetFolderService.Section section,
             String source,
@@ -176,6 +177,7 @@ public final class VTTSession {
         String safeValue = value == null ? "" : value;
         if (networkAuthorityActive) {
             PacketDistributor.sendToServer(new VttAssetFolderCommandPayload(
+                    requestId == null ? "" : requestId,
                     networkAuthorityRevision, operation, section.name(),
                     safeSource, safeValue));
             return true;
@@ -557,6 +559,10 @@ public final class VTTSession {
         PacketDistributor.sendToServer(new VttReplicationResyncRequestPayload(
                 networkAuthorityRevision, activeScene.getId(), networkVisionRevision,
                 networkReplicationRevision, reason));
+    }
+
+    public void requestAssetManagerResync() {
+        requestNetworkResync("ASSET_MANAGER_STALE_REVISION");
     }
 
     public String getNetworkReplicationDiagnostics() {

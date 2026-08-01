@@ -71,9 +71,11 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
 import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
+import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -256,6 +258,13 @@ public final class VTTScreen extends Screen {
     private long pendingAssetManagerSceneDuplicateUntil;
     private String pendingAssetManagerSceneFolder;
     private Set<String> pendingAssetManagerSceneKnownIds;
+    private String pendingAssetFolderRequestId;
+    private String pendingAssetFolderOperation;
+    private String pendingAssetFolderSuccessMessage;
+    private AssetManagerOverlay.Section pendingAssetFolderSection;
+    private List<AssetManagerOverlay.MoveEntry> pendingAssetFolderRestoreSelection = List.of();
+    private long pendingAssetFolderRequestUntil;
+    private long pendingAssetFolderAcknowledgedRevision = -1L;
     private String pendingServerCreatedTokenId;
     private String pendingServerCreatedTokenFolder;
     private long pendingServerCreatedTokenSnapshotVersion;
@@ -338,6 +347,7 @@ public final class VTTScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
+        resolvePendingAssetFolderResult();
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
@@ -508,6 +518,7 @@ public final class VTTScreen extends Screen {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
                     0x99000000);
+            assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation);
             assetManagerOverlay.render(
                     context, this.font, session.getActiveTabletop(),
                     session.getActiveScene(),
@@ -763,6 +774,14 @@ public final class VTTScreen extends Screen {
             AssetManagerOverlay.Interaction interaction
     ) {
         if (interaction.section() == null) return;
+        if (pendingAssetFolderRequestId != null
+                && interaction.action() != AssetManagerOverlay.Action.NONE
+                && interaction.action() != AssetManagerOverlay.Action.SELECT
+                && interaction.action() != AssetManagerOverlay.Action.OPEN_FOLDER
+                && interaction.action() != AssetManagerOverlay.Action.BACK_FOLDER) {
+            VttClientEditorNotice.show("Wait for the current Asset Manager operation");
+            return;
+        }
         if (interaction.action() == AssetManagerOverlay.Action.REFRESH) {
             refreshAssetManagerFolders();
             return;
@@ -816,7 +835,8 @@ public final class VTTScreen extends Screen {
                     .collect(java.util.stream.Collectors.joining("\n"));
             requestAssetFolderCommand(
                     VttAssetFolderCommandPayload.MOVE_SELECTION,
-                    interaction.section(), encodedSources, interaction.value());
+                    interaction.section(), encodedSources, interaction.value(),
+                    interaction.moveEntries());
             return;
         }
         if (interaction.action() == AssetManagerOverlay.Action.SELECT) {
@@ -893,11 +913,29 @@ public final class VTTScreen extends Screen {
             String source,
             String value
     ) {
+        requestAssetFolderCommand(operation, section, source, value, List.of());
+    }
+
+    private void requestAssetFolderCommand(
+            String operation,
+            AssetManagerOverlay.Section section,
+            String source,
+            String value,
+            List<AssetManagerOverlay.MoveEntry> restoreSelection
+    ) {
         if (section == null) return;
+        if (session.isNetworkAuthorityActive() && pendingAssetFolderRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current Asset Manager operation");
+            return;
+        }
         VttAssetFolderService.Section storageSection =
                 VttAssetFolderService.Section.valueOf(section.name());
+        String requestId = UUID.randomUUID().toString();
+        if (session.isNetworkAuthorityActive()) {
+            VttClientAssetFolderResultState.reset();
+        }
         boolean requested = session.requestAssetFolderCommand(
-                operation, storageSection, source, value);
+                requestId, operation, storageSection, source, value);
         if (!requested) {
             VttClientEditorNotice.show(
                     VttAssetFolderCommandPayload.DELETE_FOLDER.equals(operation)
@@ -919,7 +957,92 @@ public final class VTTScreen extends Screen {
                     "Folder contents moved and folder deleted";
             default -> "Asset folders updated";
         };
-        VttClientEditorNotice.show(message);
+        if (session.isNetworkAuthorityActive()) {
+            pendingAssetFolderRequestId = requestId;
+            pendingAssetFolderOperation = operationLabel(operation);
+            pendingAssetFolderSuccessMessage = message;
+            pendingAssetFolderSection = section;
+            pendingAssetFolderRestoreSelection = restoreSelection == null
+                    ? List.of() : List.copyOf(restoreSelection);
+            pendingAssetFolderRequestUntil = System.currentTimeMillis() + 60_000L;
+        } else {
+            VttClientEditorNotice.show(message);
+        }
+    }
+
+    private String operationLabel(String operation) {
+        return switch (operation) {
+            case VttAssetFolderCommandPayload.CREATE_FOLDER -> "creating folder";
+            case VttAssetFolderCommandPayload.REFRESH -> "refreshing folders";
+            case VttAssetFolderCommandPayload.RENAME_FOLDER -> "renaming folder";
+            case VttAssetFolderCommandPayload.DUPLICATE_FOLDER -> "duplicating folder";
+            case VttAssetFolderCommandPayload.MOVE_FOLDER,
+                    VttAssetFolderCommandPayload.MOVE_ITEM,
+                    VttAssetFolderCommandPayload.MOVE_SELECTION -> "moving assets";
+            case VttAssetFolderCommandPayload.DELETE_SELECTION,
+                    VttAssetFolderCommandPayload.DELETE_FOLDER,
+                    VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
+                    "deleting assets";
+            default -> "updating assets";
+        };
+    }
+
+    private void resolvePendingAssetFolderResult() {
+        if (pendingAssetFolderAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingAssetFolderAcknowledgedRevision) {
+            VttClientEditorNotice.show(pendingAssetFolderSuccessMessage);
+            clearPendingAssetFolderRequest();
+            return;
+        }
+        VttAssetFolderResultPayload result = VttClientAssetFolderResultState.consume();
+        if (result != null && pendingAssetFolderRequestId != null
+                && pendingAssetFolderRequestId.equals(result.requestId())) {
+            if (result.success()) {
+                pendingAssetFolderSuccessMessage = result.message().isBlank()
+                        ? pendingAssetFolderSuccessMessage : result.message();
+                pendingAssetFolderAcknowledgedRevision = result.authorityRevision();
+                pendingAssetFolderOperation = "synchronizing assets";
+                if (session.getNetworkAuthorityRevision()
+                        >= pendingAssetFolderAcknowledgedRevision) {
+                    VttClientEditorNotice.show(pendingAssetFolderSuccessMessage);
+                    clearPendingAssetFolderRequest();
+                }
+            } else {
+                restorePendingAssetFolderSelection();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the Asset Manager operation"
+                        : result.message());
+                if (VttAssetFolderResultPayload.STALE_REVISION.equals(result.code())) {
+                    session.requestAssetManagerResync();
+                }
+            }
+            if (!result.success()) clearPendingAssetFolderRequest();
+            return;
+        }
+        if (pendingAssetFolderRequestId != null
+                && System.currentTimeMillis() > pendingAssetFolderRequestUntil) {
+            restorePendingAssetFolderSelection();
+            clearPendingAssetFolderRequest();
+            VttClientEditorNotice.show("Asset Manager operation timed out");
+            session.requestAssetManagerResync();
+        }
+    }
+
+    private void restorePendingAssetFolderSelection() {
+        assetManagerOverlay.restoreSelection(
+                pendingAssetFolderSection, pendingAssetFolderRestoreSelection);
+    }
+
+    private void clearPendingAssetFolderRequest() {
+        pendingAssetFolderRequestId = null;
+        pendingAssetFolderOperation = null;
+        pendingAssetFolderSuccessMessage = null;
+        pendingAssetFolderSection = null;
+        pendingAssetFolderRestoreSelection = List.of();
+        pendingAssetFolderRequestUntil = 0L;
+        pendingAssetFolderAcknowledgedRevision = -1L;
+        assetManagerOverlay.setPendingOperation(null);
     }
 
     private void refreshAssetManagerFolders() {
@@ -1142,16 +1265,7 @@ public final class VTTScreen extends Screen {
                 .collect(java.util.stream.Collectors.joining("\n"));
         requestAssetFolderCommand(
                 VttAssetFolderCommandPayload.DELETE_SELECTION,
-                refreshed.section(), encoded, "");
-        if (session.isNetworkAuthorityActive()) {
-            refreshed.entries().stream().filter(entry -> !entry.folder()).forEach(entry -> {
-                if (refreshed.section() == AssetManagerOverlay.Section.MAPS) {
-                    mapDefinitionRegistry.removeById(entry.id());
-                } else if (refreshed.section() == AssetManagerOverlay.Section.TOKENS) {
-                    tokenDefinitionRegistry.removeById(entry.id());
-                }
-            });
-        }
+                refreshed.section(), encoded, "", refreshed.entries());
         assetManagerOverlay.clearMultiSelection();
         pendingAssetBatchDeletion = null;
     }

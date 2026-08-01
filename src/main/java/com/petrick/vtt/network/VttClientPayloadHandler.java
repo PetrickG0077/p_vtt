@@ -33,6 +33,8 @@ import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
 import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
+import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
+import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -172,5 +174,11 @@ public final class VttClientPayloadHandler {
     ) {
         var session = VTT.getApplication().getActiveSession();
         VttClientPresentationState.accept(payload, !session.isLocalMaster());
+    }
+
+    public static void handleAssetFolderResult(
+            VttAssetFolderResultPayload payload, IPayloadContext context
+    ) {
+        VttClientAssetFolderResultState.accept(payload);
     }
 }

@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Master request for authoritative physical Asset Manager folder operations. */
 public record VttAssetFolderCommandPayload(
+        String requestId,
         long authorityRevision,
         String operation,
         String section,
@@ -32,6 +33,7 @@ public record VttAssetFolderCommandPayload(
 
     public static final StreamCodec<ByteBuf, VttAssetFolderCommandPayload> STREAM_CODEC =
             StreamCodec.composite(
+                    ByteBufCodecs.stringUtf8(64), VttAssetFolderCommandPayload::requestId,
                     ByteBufCodecs.VAR_LONG, VttAssetFolderCommandPayload::authorityRevision,
                     ByteBufCodecs.stringUtf8(24), VttAssetFolderCommandPayload::operation,
                     ByteBufCodecs.stringUtf8(16), VttAssetFolderCommandPayload::section,

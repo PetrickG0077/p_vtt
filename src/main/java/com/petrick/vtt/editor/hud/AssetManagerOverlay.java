@@ -86,6 +86,7 @@ public final class AssetManagerOverlay {
     private String dragTargetFolder;
     private long lastDragAutoScrollAt;
     private List<Breadcrumb> renderedBreadcrumbs = List.of();
+    private String pendingOperation;
 
     public AssetManagerOverlay(TabletopStorage tabletopStorage) {
         this.sceneThumbnailRenderer = new SceneThumbnailRenderer(tabletopStorage);
@@ -216,7 +217,6 @@ public final class AssetManagerOverlay {
                             + (TABS_HEIGHT - font.lineHeight) / 2,
                     0xFFCCCCCC, false);
         }
-
         List<Item> items = visibleItems(tabletop, maps, tokens);
         Grid grid = grid(panel, items.size());
         updateDraggingState(items);
@@ -254,6 +254,18 @@ public final class AssetManagerOverlay {
         }
         if (draggingItem != null) {
             renderDragPreview(context, font, draggingItem, draggingItems.size());
+        }
+        if (pendingOperation != null && !pendingOperation.isBlank()) {
+            String label = trim("Working: " + pendingOperation, 42);
+            int statusWidth = font.width(label) + 12;
+            int statusY = panel.bottom() - font.lineHeight - 9;
+            context.graphics().fill(
+                    panel.x() + 8, statusY - 3,
+                    panel.x() + 8 + statusWidth, panel.bottom() - 3,
+                    0xEE18181C);
+            context.graphics().drawString(
+                    font, label, panel.x() + 14, statusY,
+                    EditorHudTheme.opaqueSelection(), false);
         }
         border(context, panel, EditorHudTheme.outline());
     }
@@ -537,6 +549,23 @@ public final class AssetManagerOverlay {
     public String selectedId() { return selectedId; }
     public int selectedCount() { return selectedIds.size(); }
     public String currentFolderPath() { return currentFolder(); }
+
+    public void setPendingOperation(String operation) {
+        pendingOperation = operation;
+    }
+
+    public void restoreSelection(Section targetSection, List<MoveEntry> entries) {
+        if (targetSection == null || entries == null || entries.isEmpty()) return;
+        section = targetSection;
+        selectedIds.clear();
+        for (MoveEntry entry : entries) {
+            if (entry == null) continue;
+            String id = entry.folder() ? "folder:" + normalizeFolder(entry.path()) : entry.id();
+            if (id != null && !id.isBlank()) selectedIds.add(id);
+        }
+        selectedId = selectedIds.stream().reduce((first, second) -> second).orElse(null);
+        selectionAnchorId = selectedId;
+    }
 
     public void cancelPointerInteraction() {
         draggingScrollbar = false;
