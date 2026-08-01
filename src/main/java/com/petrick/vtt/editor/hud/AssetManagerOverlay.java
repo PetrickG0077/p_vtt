@@ -362,6 +362,15 @@ public final class AssetManagerOverlay {
                         item.section(), item.id(), item.path(), true);
             }
             if (deleteBounds(card).contains(mouseX, mouseY) && item.deletable()) {
+                if (selectedIds.contains(item.id()) && selectedIds.size() > 1) {
+                    return new Interaction(
+                            Action.DELETE_SELECTION, item.section(), item.id(),
+                            null, true, items.stream()
+                            .filter(candidate -> selectedIds.contains(candidate.id()))
+                            .map(candidate -> new MoveEntry(
+                                    candidate.folder(), candidate.id(), candidate.path()))
+                            .toList());
+                }
                 selectOnly(item.id());
                 return new Interaction(
                         item.folder() ? Action.DELETE_FOLDER : Action.DELETE,
@@ -1289,7 +1298,8 @@ public final class AssetManagerOverlay {
     }
 
     public enum Action {
-        NONE, SELECT, ADD, EDIT, DUPLICATE, DUPLICATE_FOLDER, DELETE, REFRESH,
+        NONE, SELECT, ADD, EDIT, DUPLICATE, DUPLICATE_FOLDER, DELETE,
+        DELETE_SELECTION, REFRESH,
         CREATE_FOLDER, OPEN_FOLDER, BACK_FOLDER, RENAME_FOLDER,
         DELETE_FOLDER, MOVE_ITEM, MOVE_FOLDER, MOVE_SELECTION
     }

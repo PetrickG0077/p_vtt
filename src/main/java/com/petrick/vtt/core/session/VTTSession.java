@@ -194,6 +194,8 @@ public final class VTTSession {
                     assetFolderService.moveItem(section, safeSource, safeValue);
             case VttAssetFolderCommandPayload.MOVE_SELECTION ->
                     assetFolderService.moveSelection(section, safeSource, safeValue);
+            case VttAssetFolderCommandPayload.DELETE_SELECTION ->
+                    deleteAssetSelection(section, safeSource);
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, safeSource);
             case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
@@ -211,6 +213,71 @@ public final class VTTSession {
     private boolean refreshAssetFolders() {
         assetFolderService.refresh();
         return true;
+    }
+
+    private boolean deleteAssetSelection(
+            VttAssetFolderService.Section section,
+            String encodedSources
+    ) {
+        List<VttAssetFolderService.SelectionEntry> entries =
+                VttAssetFolderService.decodeSelection(encodedSources);
+        if (entries.size() < 2) return false;
+        List<String> itemIds = entries.stream()
+                .filter(entry -> !entry.folder())
+                .map(VttAssetFolderService.SelectionEntry::source).toList();
+        VttScene replacement = null;
+        if (section == VttAssetFolderService.Section.SCENES) {
+            if (!activeTabletop.getSceneIds().containsAll(itemIds)
+                    || activeTabletop.getSceneIds().size() - itemIds.size() < 1) return false;
+            if (itemIds.contains(activeScene.getId())) {
+                String replacementId = activeTabletop.getSceneIds().stream()
+                        .filter(id -> !itemIds.contains(id)).findFirst().orElse(null);
+                replacement = tabletopStorage.loadScene(activeTabletop.getId(), replacementId);
+                if (replacement == null) return false;
+            }
+        } else {
+            for (String id : itemIds) {
+                if (definitionUsedInAnyScene(section, id)) return false;
+                if (section == VttAssetFolderService.Section.MAPS
+                        && !CreatedMapStorage.isUserCreatedMap(
+                        mapDefinitionRegistry.findById(id).orElse(null))) return false;
+                if (section == VttAssetFolderService.Section.TOKENS
+                        && !CreatedTokenStorage.isUserCreatedToken(
+                        tokenDefinitionRegistry.findById(id).orElse(null))) return false;
+            }
+        }
+        if (!assetFolderService.deleteSelection(section, encodedSources)) return false;
+        if (section == VttAssetFolderService.Section.SCENES) {
+            itemIds.forEach(activeTabletop::removeSceneId);
+            if (replacement != null) {
+                activeScene = replacement;
+                activeTabletop.setActiveSceneId(replacement.getId());
+                loadActiveSceneToCanvasScene();
+            }
+        } else if (section == VttAssetFolderService.Section.MAPS) {
+            itemIds.forEach(mapDefinitionRegistry::removeById);
+        } else {
+            itemIds.forEach(tokenDefinitionRegistry::removeById);
+        }
+        return true;
+    }
+
+    private boolean definitionUsedInAnyScene(
+            VttAssetFolderService.Section section,
+            String definitionId
+    ) {
+        for (String sceneId : activeTabletop.getSceneIds()) {
+            VttScene candidate = sceneId.equals(activeScene.getId())
+                    ? activeScene : tabletopStorage.loadScene(activeTabletop.getId(), sceneId);
+            if (candidate == null) continue;
+            if (section == VttAssetFolderService.Section.MAPS
+                    && candidate.getMaps().stream().anyMatch(map -> map != null
+                    && definitionId.equals(map.getSourceMapDefinitionId()))) return true;
+            if (section == VttAssetFolderService.Section.TOKENS
+                    && candidate.getObjects().stream().anyMatch(object -> object != null
+                    && definitionId.equals(object.getSourceTokenDefinitionId()))) return true;
+        }
+        return false;
     }
 
     private boolean duplicateAssetFolder(

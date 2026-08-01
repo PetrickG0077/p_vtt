@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 /** Safe physical folder operations for scene, map and token definition catalogs. */
@@ -304,6 +305,128 @@ public final class VttAssetFolderService {
             VTT.LOGGER.error("Failed to move VTT asset selection", exception);
             return false;
         }
+    }
+
+    /**
+     * Deletes selected JSON items and flattens selected folders as one rollback-capable
+     * filesystem operation. Folder contents are moved to the folder's parent.
+     */
+    public synchronized boolean deleteSelection(Section section, String encodedSources) {
+        List<SelectionEntry> entries = decodeSelection(encodedSources);
+        if (section == null || entries.size() < 2) return false;
+        Path root = root(section);
+        List<Path> itemSources = new ArrayList<>();
+        List<Path> folderSources = new ArrayList<>();
+        Set<Path> unique = new HashSet<>();
+        for (SelectionEntry entry : entries) {
+            Path source = entry.folder()
+                    ? resolveFolder(section, entry.source(), false)
+                    : findItemFile(section, entry.source());
+            if (source == null || !unique.add(source)) return false;
+            if (entry.folder()) folderSources.add(source);
+            else itemSources.add(source);
+        }
+
+        Set<Path> selectedItems = Set.copyOf(itemSources);
+        Set<Path> destinations = new HashSet<>();
+        try {
+            for (Path folder : folderSources) {
+                try (Stream<Path> children = Files.list(folder)) {
+                    for (Path child : children.toList()) {
+                        Path destination = folder.getParent()
+                                .resolve(child.getFileName()).normalize();
+                        if (!isInsideRoot(section, destination)
+                                || !destinations.add(destination)
+                                || Files.exists(destination)
+                                && !selectedItems.contains(destination)) return false;
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            return false;
+        }
+
+        Path staging = root.resolve(".delete_staging_" + UUID.randomUUID()).normalize();
+        List<StagedItem> stagedItems = new ArrayList<>();
+        List<FlattenedFolder> flattenedFolders = new ArrayList<>();
+        try {
+            Files.createDirectory(staging);
+            for (int index = 0; index < itemSources.size(); index++) {
+                Path source = itemSources.get(index);
+                Path staged = staging.resolve(index + "_" + source.getFileName()).normalize();
+                move(source, staged);
+                stagedItems.add(new StagedItem(source, staged));
+            }
+            for (Path folder : folderSources) {
+                List<MovedChild> movedChildren = new ArrayList<>();
+                try {
+                    try (Stream<Path> children = Files.list(folder)) {
+                        for (Path child : children.toList()) {
+                            Path destination = folder.getParent()
+                                    .resolve(child.getFileName()).normalize();
+                            move(child, destination);
+                            movedChildren.add(new MovedChild(child, destination));
+                        }
+                    }
+                    Files.delete(folder);
+                    flattenedFolders.add(new FlattenedFolder(folder, movedChildren));
+                } catch (IOException exception) {
+                    Collections.reverse(movedChildren);
+                    for (MovedChild child : movedChildren) {
+                        if (Files.exists(child.destination())) {
+                            move(child.destination(), child.original());
+                        }
+                    }
+                    throw exception;
+                }
+            }
+            deleteCreatedTree(staging);
+            refresh();
+            return true;
+        } catch (IOException exception) {
+            Collections.reverse(flattenedFolders);
+            for (FlattenedFolder flattened : flattenedFolders) {
+                try {
+                    Files.createDirectories(flattened.folder());
+                    List<MovedChild> children = new ArrayList<>(flattened.children());
+                    Collections.reverse(children);
+                    for (MovedChild child : children) {
+                        if (Files.exists(child.destination())) {
+                            move(child.destination(), child.original());
+                        }
+                    }
+                } catch (IOException rollbackException) {
+                    exception.addSuppressed(rollbackException);
+                }
+            }
+            Collections.reverse(stagedItems);
+            for (StagedItem staged : stagedItems) {
+                try {
+                    if (Files.exists(staged.staged())) move(staged.staged(), staged.original());
+                } catch (IOException rollbackException) {
+                    exception.addSuppressed(rollbackException);
+                }
+            }
+            deleteCreatedTree(staging);
+            refresh();
+            VTT.LOGGER.error("Failed to delete VTT asset selection", exception);
+            return false;
+        }
+    }
+
+    public static List<SelectionEntry> decodeSelection(String encodedSources) {
+        if (encodedSources == null || encodedSources.isBlank()) return List.of();
+        List<SelectionEntry> result = new ArrayList<>();
+        Set<String> unique = new HashSet<>();
+        for (String encoded : encodedSources.split("\\R")) {
+            if (encoded.length() < 3 || encoded.charAt(1) != ':') return List.of();
+            boolean folder = encoded.charAt(0) == 'F';
+            if (!folder && encoded.charAt(0) != 'I') return List.of();
+            String source = encoded.substring(2);
+            if (source.isBlank() || !unique.add(encoded)) return List.of();
+            result.add(new SelectionEntry(folder, source));
+        }
+        return result.size() > 256 ? List.of() : List.copyOf(result);
     }
 
     public synchronized boolean deleteEmptyFolder(Section section, String folder) {
@@ -634,4 +757,12 @@ public final class VttAssetFolderService {
     }
 
     public record DuplicatedScene(String id, String displayName, String folder) {}
+    public record SelectionEntry(boolean folder, String source) {}
+    private record StagedItem(Path original, Path staged) {}
+    private record MovedChild(Path original, Path destination) {}
+    private record FlattenedFolder(Path folder, List<MovedChild> children) {
+        private FlattenedFolder {
+            children = children == null ? List.of() : List.copyOf(children);
+        }
+    }
 }

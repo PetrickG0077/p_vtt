@@ -22,6 +22,7 @@ public record VttAssetFolderCommandPayload(
     public static final String MOVE_FOLDER = "MOVE_FOLDER";
     public static final String MOVE_ITEM = "MOVE_ITEM";
     public static final String MOVE_SELECTION = "MOVE_SELECTION";
+    public static final String DELETE_SELECTION = "DELETE_SELECTION";
     public static final String DELETE_FOLDER = "DELETE_FOLDER";
     public static final String MOVE_CONTENTS_AND_DELETE_FOLDER =
             "FLATTEN_FOLDER";

@@ -20,6 +20,7 @@ import com.petrick.vtt.editor.hud.EditorHudOverlay;
 import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.editor.hud.EditorSettingsOverlay;
 import com.petrick.vtt.editor.hud.AssetDeleteConfirmationOverlay;
+import com.petrick.vtt.editor.hud.AssetBatchDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetFolderDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetManagerOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
@@ -127,6 +128,8 @@ public final class VTTScreen extends Screen {
     private final AssetManagerOverlay assetManagerOverlay;
     private final AssetDeleteConfirmationOverlay assetDeleteConfirmationOverlay =
             new AssetDeleteConfirmationOverlay();
+    private final AssetBatchDeleteConfirmationOverlay assetBatchDeleteConfirmationOverlay =
+            new AssetBatchDeleteConfirmationOverlay();
     private final AssetFolderDeleteConfirmationOverlay
             assetFolderDeleteConfirmationOverlay =
             new AssetFolderDeleteConfirmationOverlay();
@@ -247,6 +250,7 @@ public final class VTTScreen extends Screen {
     private String assetFolderNameBuffer;
     private boolean renamingAssetFolder;
     private PendingAssetDeletion pendingAssetDeletion;
+    private PendingAssetBatchDeletion pendingAssetBatchDeletion;
     private PendingAssetFolderDeletion pendingAssetFolderDeletion;
     private boolean pendingAssetManagerSceneDuplicate;
     private long pendingAssetManagerSceneDuplicateUntil;
@@ -544,6 +548,10 @@ public final class VTTScreen extends Screen {
             assetDeleteConfirmationOverlay.render(
                     context, this.font, pendingAssetDeletion.request());
         }
+        if (pendingAssetBatchDeletion != null) {
+            assetBatchDeleteConfirmationOverlay.render(
+                    context, this.font, pendingAssetBatchDeletion.request());
+        }
         if (pendingAssetFolderDeletion != null) {
             assetFolderDeleteConfirmationOverlay.render(
                     context, this.font, pendingAssetFolderDeletion.request());
@@ -653,6 +661,7 @@ public final class VTTScreen extends Screen {
             hudCreationOpen = false;
             pendingAssetDeletion = null;
             pendingAssetFolderDeletion = null;
+            pendingAssetBatchDeletion = null;
             panelVisibility.hideMasterPanels();
             String activeTool = inputController.getActiveToolId();
             if (!"hand".equals(activeTool) && !"select".equals(activeTool)) {
@@ -664,6 +673,7 @@ public final class VTTScreen extends Screen {
             hudCreationOpen = false;
             pendingAssetDeletion = null;
             pendingAssetFolderDeletion = null;
+            pendingAssetBatchDeletion = null;
         }
         if (!hudCreationOpen && assetFolderNameBuffer != null) {
             closeAssetFolderDialog();
@@ -786,6 +796,11 @@ public final class VTTScreen extends Screen {
             beginAssetFolderDeletion(interaction.section(), interaction.value());
             return;
         }
+        if (interaction.action() == AssetManagerOverlay.Action.DELETE_SELECTION) {
+            beginAssetManagerBatchDeletion(
+                    interaction.section(), interaction.moveEntries());
+            return;
+        }
         if (interaction.action() == AssetManagerOverlay.Action.MOVE_ITEM
                 || interaction.action() == AssetManagerOverlay.Action.MOVE_FOLDER) {
             requestAssetFolderCommand(
@@ -898,6 +913,7 @@ public final class VTTScreen extends Screen {
             case VttAssetFolderCommandPayload.MOVE_FOLDER -> "Folder moved";
             case VttAssetFolderCommandPayload.MOVE_ITEM -> "Asset moved";
             case VttAssetFolderCommandPayload.MOVE_SELECTION -> "Assets moved";
+            case VttAssetFolderCommandPayload.DELETE_SELECTION -> "Selection deleted";
             case VttAssetFolderCommandPayload.DELETE_FOLDER -> "Folder deleted";
             case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
                     "Folder contents moved and folder deleted";
@@ -1039,6 +1055,121 @@ public final class VTTScreen extends Screen {
         if (deletion == null) return;
         pendingAssetDeletion = deletion;
         assetManagerOverlay.cancelPointerInteraction();
+    }
+
+    private void beginAssetManagerBatchDeletion(
+            AssetManagerOverlay.Section section,
+            List<AssetManagerOverlay.MoveEntry> entries
+    ) {
+        PendingAssetBatchDeletion deletion = createPendingAssetBatchDeletion(section, entries);
+        if (deletion == null) return;
+        pendingAssetBatchDeletion = deletion;
+        assetManagerOverlay.cancelPointerInteraction();
+    }
+
+    private PendingAssetBatchDeletion createPendingAssetBatchDeletion(
+            AssetManagerOverlay.Section section,
+            List<AssetManagerOverlay.MoveEntry> entries
+    ) {
+        if (section == null || entries == null || entries.size() < 2) return null;
+        List<AssetManagerOverlay.MoveEntry> distinct = entries.stream()
+                .filter(entry -> entry != null && entry.id() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        entry -> (entry.folder() ? "F:" + entry.path() : "I:" + entry.id()),
+                        entry -> entry,
+                        (first, ignored) -> first,
+                        java.util.LinkedHashMap::new))
+                .values().stream().toList();
+        if (distinct.size() < 2) return null;
+
+        List<String> blocked = new ArrayList<>();
+        List<AssetManagerOverlay.MoveEntry> assets = distinct.stream()
+                .filter(entry -> !entry.folder()).toList();
+        if (section == AssetManagerOverlay.Section.SCENES
+                && session.getActiveTabletop().getSceneIds().size() - assets.size() < 1) {
+            blocked.add("A tabletop must retain at least one scene.");
+        }
+        for (AssetManagerOverlay.MoveEntry entry : assets) {
+            if (section == AssetManagerOverlay.Section.MAPS) {
+                MapDefinition definition = mapDefinitionRegistry.findById(entry.id()).orElse(null);
+                if (!CreatedMapStorage.isUserCreatedMap(definition)) {
+                    blocked.add("Map cannot be deleted: " + entry.id());
+                } else if (!findDefinitionUsages(section, entry.id()).isEmpty()) {
+                    blocked.add("Map is used in a scene: " + definition.displayName());
+                }
+            } else if (section == AssetManagerOverlay.Section.TOKENS) {
+                TokenDefinition definition = tokenDefinitionRegistry.findById(entry.id()).orElse(null);
+                if (!CreatedTokenStorage.isUserCreatedToken(definition)) {
+                    blocked.add("Token cannot be deleted: " + entry.id());
+                } else if (!findDefinitionUsages(section, entry.id()).isEmpty()) {
+                    blocked.add("Token is used in a scene: " + definition.displayName());
+                }
+            } else if (!session.getActiveTabletop().getSceneIds().contains(entry.id())) {
+                blocked.add("Scene no longer exists: " + entry.id());
+            }
+        }
+        VttAssetFolderService.Section storageSection =
+                VttAssetFolderService.Section.valueOf(section.name());
+        for (AssetManagerOverlay.MoveEntry entry : distinct) {
+            if (!entry.folder()) continue;
+            VttAssetFolderService.FolderInspection inspection =
+                    session.inspectAssetFolder(storageSection, entry.path());
+            if (!inspection.exists()) {
+                blocked.add("Folder no longer exists: " + entry.path());
+            } else if (inspection.hasConflicts()) {
+                blocked.add("Folder has parent name conflicts: " + entry.path());
+            }
+        }
+        AssetBatchDeleteConfirmationOverlay.Request request =
+                new AssetBatchDeleteConfirmationOverlay.Request(
+                        section.name().toLowerCase(), assets.size(),
+                        distinct.size() - assets.size(), blocked);
+        return new PendingAssetBatchDeletion(section, distinct, request);
+    }
+
+    private void confirmPendingAssetBatchDeletion() {
+        if (pendingAssetBatchDeletion == null) return;
+        PendingAssetBatchDeletion refreshed = createPendingAssetBatchDeletion(
+                pendingAssetBatchDeletion.section(), pendingAssetBatchDeletion.entries());
+        if (refreshed == null) {
+            pendingAssetBatchDeletion = null;
+            return;
+        }
+        pendingAssetBatchDeletion = refreshed;
+        if (refreshed.request().blocked()) return;
+        String encoded = refreshed.entries().stream()
+                .map(entry -> entry.folder() ? "F:" + entry.path() : "I:" + entry.id())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        requestAssetFolderCommand(
+                VttAssetFolderCommandPayload.DELETE_SELECTION,
+                refreshed.section(), encoded, "");
+        if (session.isNetworkAuthorityActive()) {
+            refreshed.entries().stream().filter(entry -> !entry.folder()).forEach(entry -> {
+                if (refreshed.section() == AssetManagerOverlay.Section.MAPS) {
+                    mapDefinitionRegistry.removeById(entry.id());
+                } else if (refreshed.section() == AssetManagerOverlay.Section.TOKENS) {
+                    tokenDefinitionRegistry.removeById(entry.id());
+                }
+            });
+        }
+        assetManagerOverlay.clearMultiSelection();
+        pendingAssetBatchDeletion = null;
+    }
+
+    private boolean handleAssetBatchDeleteConfirmationMouseClicked(
+            double mouseX, double mouseY, int button
+    ) {
+        if (pendingAssetBatchDeletion == null) return false;
+        AssetBatchDeleteConfirmationOverlay.Action action =
+                assetBatchDeleteConfirmationOverlay.mouseClicked(
+                        mouseX, mouseY, button, width, height,
+                        pendingAssetBatchDeletion.request());
+        if (action == AssetBatchDeleteConfirmationOverlay.Action.DELETE) {
+            confirmPendingAssetBatchDeletion();
+        } else if (action == AssetBatchDeleteConfirmationOverlay.Action.CANCEL) {
+            pendingAssetBatchDeletion = null;
+        }
+        return true;
     }
 
     private PendingAssetDeletion createPendingAssetDeletion(
@@ -1565,6 +1696,7 @@ public final class VTTScreen extends Screen {
         hudCreationOpen = false;
         pendingAssetDeletion = null;
         pendingAssetFolderDeletion = null;
+        pendingAssetBatchDeletion = null;
         editorSettingsOverlay.cancelDrag();
     }
 
@@ -1692,6 +1824,9 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleAssetBatchDeleteConfirmationMouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
         if (handleAssetFolderDeleteConfirmationMouseClicked(
                 mouseX, mouseY, button)) {
             return true;
@@ -2310,7 +2445,8 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null) return true;
+        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
+                || pendingAssetBatchDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseReleased(
@@ -2394,7 +2530,8 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null) return true;
+        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
+                || pendingAssetBatchDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseDragged(
@@ -2483,7 +2620,8 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
-        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null) return true;
+        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
+                || pendingAssetBatchDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (panelVisibility.isMapCatalogVisible()
                     && mapCatalogOverlay.contains(
@@ -2615,6 +2753,16 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (pendingAssetBatchDeletion != null) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                if (!pendingAssetBatchDeletion.request().blocked()) {
+                    confirmPendingAssetBatchDeletion();
+                }
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                pendingAssetBatchDeletion = null;
+            }
+            return true;
+        }
         if (pendingAssetFolderDeletion != null) {
             if (keyCode == GLFW.GLFW_KEY_F5) {
                 refreshAssetManagerFolders();
@@ -3618,7 +3766,8 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null) return true;
+        if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
+                || pendingAssetBatchDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) return true;
         if (hudCreationOpen) {
             if (assetFolderNameBuffer != null) {
@@ -4862,6 +5011,16 @@ public final class VTTScreen extends Screen {
             String id,
             AssetDeleteConfirmationOverlay.Request request
     ) {
+    }
+
+    private record PendingAssetBatchDeletion(
+            AssetManagerOverlay.Section section,
+            List<AssetManagerOverlay.MoveEntry> entries,
+            AssetBatchDeleteConfirmationOverlay.Request request
+    ) {
+        private PendingAssetBatchDeletion {
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
     }
 
     private record PendingAssetFolderDeletion(

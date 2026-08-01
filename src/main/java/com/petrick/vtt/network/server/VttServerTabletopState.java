@@ -176,6 +176,8 @@ public final class VttServerTabletopState {
             case VttAssetFolderCommandPayload.MOVE_SELECTION ->
                     assetFolderService.moveSelection(
                             section, request.source(), request.value());
+            case VttAssetFolderCommandPayload.DELETE_SELECTION ->
+                    deleteAssetSelection(section, request.source());
             case VttAssetFolderCommandPayload.DELETE_FOLDER ->
                     assetFolderService.deleteEmptyFolder(section, request.source());
             case VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
@@ -193,6 +195,69 @@ public final class VttServerTabletopState {
     private boolean refreshAssetFolders() {
         assetFolderService.refresh();
         return true;
+    }
+
+    private boolean deleteAssetSelection(
+            VttAssetFolderService.Section section,
+            String encodedSources
+    ) {
+        List<VttAssetFolderService.SelectionEntry> entries =
+                VttAssetFolderService.decodeSelection(encodedSources);
+        if (entries.size() < 2) return false;
+        List<String> itemIds = entries.stream()
+                .filter(entry -> !entry.folder())
+                .map(VttAssetFolderService.SelectionEntry::source).toList();
+        VttScene replacement = null;
+        if (section == VttAssetFolderService.Section.SCENES) {
+            if (!tabletop.getSceneIds().containsAll(itemIds)
+                    || tabletop.getSceneIds().size() - itemIds.size() < 1) return false;
+            if (itemIds.contains(activeScene.getId())) {
+                String replacementId = tabletop.getSceneIds().stream()
+                        .filter(id -> !itemIds.contains(id)).findFirst().orElse(null);
+                replacement = storage.loadScene(tabletop.getId(), replacementId);
+                if (replacement == null) return false;
+            }
+            if (!flushActiveSceneNow("batch scene delete")) return false;
+        } else {
+            for (String id : itemIds) {
+                if (section == VttAssetFolderService.Section.MAPS
+                        && (!id.startsWith("user/maps/")
+                        || definitionUsedInAnyScene(section, id))) return false;
+                if (section == VttAssetFolderService.Section.TOKENS
+                        && (!id.startsWith("user/tokens/")
+                        || definitionUsedInAnyScene(section, id))) return false;
+            }
+        }
+        if (!assetFolderService.deleteSelection(section, encodedSources)) return false;
+        if (section == VttAssetFolderService.Section.SCENES) {
+            itemIds.forEach(tabletop::removeSceneId);
+            if (replacement != null) {
+                activeScene = replacement;
+                tabletop.setActiveSceneId(replacement.getId());
+                objectSpatialIndex.rebuild(activeScene);
+                visionGeometryIndex.rebuild(activeScene);
+                movementCollision.rebuildObstacleIndex(activeScene);
+            }
+        }
+        return true;
+    }
+
+    private boolean definitionUsedInAnyScene(
+            VttAssetFolderService.Section section,
+            String definitionId
+    ) {
+        for (String sceneId : List.copyOf(tabletop.getSceneIds())) {
+            VttScene candidate = activeScene != null && sceneId.equals(activeScene.getId())
+                    ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+            if (candidate == null) continue;
+            if (section == VttAssetFolderService.Section.MAPS
+                    && candidate.getMaps().stream().anyMatch(map -> map != null
+                    && definitionId.equals(map.getSourceMapDefinitionId()))) return true;
+            if (section == VttAssetFolderService.Section.TOKENS
+                    && candidate.getObjects().stream().anyMatch(object -> object != null
+                    && definitionId.equals(object.getSourceTokenDefinitionId()))) return true;
+        }
+        return false;
     }
 
     private boolean duplicateAssetFolder(
