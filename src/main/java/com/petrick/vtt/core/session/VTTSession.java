@@ -181,6 +181,7 @@ public final class VTTSession {
             return true;
         }
         boolean changed = switch (operation) {
+            case VttAssetFolderCommandPayload.REFRESH -> refreshAssetFolders();
             case VttAssetFolderCommandPayload.CREATE_FOLDER ->
                     assetFolderService.createFolder(section, safeSource, safeValue);
             case VttAssetFolderCommandPayload.RENAME_FOLDER ->
@@ -207,6 +208,11 @@ public final class VTTSession {
         return true;
     }
 
+    private boolean refreshAssetFolders() {
+        assetFolderService.refresh();
+        return true;
+    }
+
     private boolean duplicateAssetFolder(
             VttAssetFolderService.Section section,
             String folder
@@ -230,7 +236,61 @@ public final class VTTSession {
     public VttAssetFolderService.FolderInspection inspectAssetFolder(
             VttAssetFolderService.Section section, String folder
     ) {
+        if (networkAuthorityActive) {
+            return inspectReplicatedAssetFolder(section, folder);
+        }
         return assetFolderService.inspectFolder(section, folder);
+    }
+
+    private VttAssetFolderService.FolderInspection inspectReplicatedAssetFolder(
+            VttAssetFolderService.Section section,
+            String folder
+    ) {
+        String normalized = normalizeAssetFolder(folder);
+        if (section == null || normalized.isBlank() || activeTabletop == null) {
+            return VttAssetFolderService.FolderInspection.missing(folder);
+        }
+        String prefix = normalized + "/";
+        List<String> folders = activeTabletop.getCatalogFolders(section.name());
+        int folderCount = (int) folders.stream()
+                .map(this::normalizeAssetFolder)
+                .filter(candidate -> candidate.startsWith(prefix))
+                .count();
+        int itemCount = switch (section) {
+            case SCENES -> (int) activeTabletop.getSceneIds().stream()
+                    .map(activeTabletop::getSceneFolder)
+                    .map(this::normalizeAssetFolder)
+                    .filter(candidate -> candidate.equals(normalized)
+                            || candidate.startsWith(prefix))
+                    .count();
+            case MAPS -> (int) mapDefinitionRegistry.getAll().stream()
+                    .map(definition -> mapDefinitionRegistry.folderOf(definition.id()))
+                    .map(this::normalizeAssetFolder)
+                    .filter(candidate -> candidate.equals(normalized)
+                            || candidate.startsWith(prefix))
+                    .count();
+            case TOKENS -> (int) tokenDefinitionRegistry.getAll().stream()
+                    .map(definition -> tokenDefinitionRegistry.folderOf(definition.id()))
+                    .map(this::normalizeAssetFolder)
+                    .filter(candidate -> candidate.equals(normalized)
+                            || candidate.startsWith(prefix))
+                    .count();
+        };
+        boolean exists = folders.stream()
+                .map(this::normalizeAssetFolder)
+                .anyMatch(candidate -> candidate.equals(normalized))
+                || folderCount > 0 || itemCount > 0;
+        if (!exists) return VttAssetFolderService.FolderInspection.missing(folder);
+        int slash = normalized.lastIndexOf('/');
+        String parent = slash < 0 ? "" : normalized.substring(0, slash);
+        return new VttAssetFolderService.FolderInspection(
+                true, normalized, parent, folderCount, itemCount, List.of());
+    }
+
+    private String normalizeAssetFolder(String folder) {
+        if (folder == null || folder.isBlank()) return "";
+        return folder.replace('\\', '/').replaceAll("/+", "/")
+                .replaceAll("^/+|/+$", "");
     }
 
     public boolean isLocalSpectator() {

@@ -85,6 +85,11 @@ public final class TokenDefinitionRegistry {
         }
     }
 
+    public void clearFolders() {
+        foldersById.clear();
+        definitionsById.keySet().forEach(id -> foldersById.put(id, ""));
+    }
+
     private String normalizeFolder(String value) {
         if (value == null || value.isBlank() || ".".equals(value)) return "";
         return value.replace('\\', '/').replaceAll("^/+|/+$", "");

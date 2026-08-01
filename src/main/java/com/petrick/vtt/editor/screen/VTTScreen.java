@@ -753,6 +753,10 @@ public final class VTTScreen extends Screen {
             AssetManagerOverlay.Interaction interaction
     ) {
         if (interaction.section() == null) return;
+        if (interaction.action() == AssetManagerOverlay.Action.REFRESH) {
+            refreshAssetManagerFolders();
+            return;
+        }
         if (interaction.action() == AssetManagerOverlay.Action.BACK_FOLDER) {
             assetManagerOverlay.goBackFolder();
             return;
@@ -888,6 +892,7 @@ public final class VTTScreen extends Screen {
         }
         String message = switch (operation) {
             case VttAssetFolderCommandPayload.CREATE_FOLDER -> "Folder created";
+            case VttAssetFolderCommandPayload.REFRESH -> "Asset folders refreshed";
             case VttAssetFolderCommandPayload.RENAME_FOLDER -> "Folder renamed";
             case VttAssetFolderCommandPayload.DUPLICATE_FOLDER -> "Folder duplicated";
             case VttAssetFolderCommandPayload.MOVE_FOLDER -> "Folder moved";
@@ -899,6 +904,14 @@ public final class VTTScreen extends Screen {
             default -> "Asset folders updated";
         };
         VttClientEditorNotice.show(message);
+    }
+
+    private void refreshAssetManagerFolders() {
+        pendingAssetFolderDeletion = null;
+        requestAssetFolderCommand(
+                VttAssetFolderCommandPayload.REFRESH,
+                assetManagerOverlay.section(), "", "");
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
     }
 
     private String folderLeaf(String path) {
@@ -2603,7 +2616,10 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (pendingAssetFolderDeletion != null) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            if (keyCode == GLFW.GLFW_KEY_F5) {
+                refreshAssetManagerFolders();
+            } else if (keyCode == GLFW.GLFW_KEY_ENTER
+                    || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 if (!pendingAssetFolderDeletion.request().blocked()) {
                     confirmPendingAssetFolderDeletion();
                 }
@@ -2663,7 +2679,9 @@ public final class VTTScreen extends Screen {
                 }
                 return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (keyCode == GLFW.GLFW_KEY_F5) {
+                refreshAssetManagerFolders();
+            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 if (!assetManagerOverlay.cancelActiveDrag()
                         && !assetManagerOverlay.clearMultiSelection()) {
                     hudCreationOpen = false;

@@ -16,6 +16,7 @@ public record VttAssetFolderCommandPayload(
         String value
 ) implements CustomPacketPayload {
     public static final String CREATE_FOLDER = "CREATE_FOLDER";
+    public static final String REFRESH = "REFRESH";
     public static final String RENAME_FOLDER = "RENAME_FOLDER";
     public static final String DUPLICATE_FOLDER = "DUPLICATE_FOLDER";
     public static final String MOVE_FOLDER = "MOVE_FOLDER";

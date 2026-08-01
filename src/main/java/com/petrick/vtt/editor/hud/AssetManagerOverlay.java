@@ -56,6 +56,8 @@ public final class AssetManagerOverlay {
             VTT.MOD_ID, "textures/gui/editor_hud/duplicate.png");
     private static final ResourceLocation FOLDER_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/folder.png");
+    private static final ResourceLocation REFRESH_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/redo.png");
     private static final long DRAG_HOLD_MS = 500L;
     private static final long DRAG_AUTO_SCROLL_INTERVAL_MS = 120L;
     private static final int DRAG_AUTO_SCROLL_EDGE = 28;
@@ -104,6 +106,7 @@ public final class AssetManagerOverlay {
             AssetThumbnailRegistry thumbnails
     ) {
         Bounds panel = panel(context.screenWidth(), context.screenHeight());
+        reconcileCurrentFolder(tabletop);
         context.graphics().fill(
                 panel.x(), panel.y(), panel.right(), panel.bottom(), 0xF21B1B1F);
         border(context, panel, EditorHudTheme.outline());
@@ -152,6 +155,16 @@ public final class AssetManagerOverlay {
                     caretX, searchBox.y() + 8, searchBox.bottom() - 8,
                     0xFFFFFFFF);
         }
+
+        Bounds refresh = refreshBounds(panel);
+        context.graphics().fill(
+                refresh.x(), refresh.y(), refresh.right(), refresh.bottom(),
+                refresh.contains(context.mouseX(), context.mouseY())
+                        ? 0xFF56565C : 0xFF35353A);
+        border(context, refresh, 0xFFFFFFFF);
+        context.graphics().blit(
+                REFRESH_ICON, refresh.x() + 7, refresh.y() + 7,
+                16, 16, 0.0F, 0.0F, 32, 32, 32, 32);
 
         Bounds createFolder = createFolderBounds(panel);
         context.graphics().fill(
@@ -283,6 +296,9 @@ public final class AssetManagerOverlay {
             return Interaction.handled();
         }
         searchFocused = false;
+        if (refreshBounds(panel).contains(mouseX, mouseY)) {
+            return new Interaction(Action.REFRESH, section, null, true);
+        }
         if (createFolderBounds(panel).contains(mouseX, mouseY)) {
             return new Interaction(
                     Action.CREATE_FOLDER, section, currentFolder(), null, true);
@@ -547,6 +563,22 @@ public final class AssetManagerOverlay {
 
     public void goBackFolder() {
         openFolder(section, parent(currentFolder()));
+    }
+
+    public void reconcileCurrentFolder(VttTabletop tabletop) {
+        String current = currentFolder();
+        if (current.isBlank() || tabletop == null) return;
+        Set<String> existing = new LinkedHashSet<>(
+                tabletop.getCatalogFolders(section.name()));
+        String valid = current;
+        while (!valid.isBlank() && !existing.contains(valid)) {
+            valid = parent(valid);
+        }
+        if (valid.equals(current)) return;
+        currentFolders.put(section, valid);
+        clearSelection();
+        setScrollRow(0);
+        clearPressedItem();
     }
 
     private void selectOnly(String id) {
@@ -893,7 +925,11 @@ public final class AssetManagerOverlay {
     }
 
     private Bounds searchBounds(Bounds panel) {
-        return new Bounds(panel.right() - 390, panel.y() + 12, 212, 30);
+        return new Bounds(panel.right() - 390, panel.y() + 12, 174, 30);
+    }
+
+    private Bounds refreshBounds(Bounds panel) {
+        return new Bounds(panel.right() - 202, panel.y() + 12, 30, 30);
     }
 
     private Bounds createFolderBounds(Bounds panel) {
@@ -1253,7 +1289,7 @@ public final class AssetManagerOverlay {
     }
 
     public enum Action {
-        NONE, SELECT, ADD, EDIT, DUPLICATE, DUPLICATE_FOLDER, DELETE,
+        NONE, SELECT, ADD, EDIT, DUPLICATE, DUPLICATE_FOLDER, DELETE, REFRESH,
         CREATE_FOLDER, OPEN_FOLDER, BACK_FOLDER, RENAME_FOLDER,
         DELETE_FOLDER, MOVE_ITEM, MOVE_FOLDER, MOVE_SELECTION
     }

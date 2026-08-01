@@ -75,14 +75,18 @@ public final class VttAssetFolderService {
             for (Section section : Section.values()) {
                 tabletop.setCatalogFolders(section.name(), folders(section));
             }
+            tabletop.getSceneIds().forEach(sceneId ->
+                    tabletop.setSceneFolder(sceneId, ""));
             itemFolders.getOrDefault(Section.SCENES, Map.of())
                     .forEach(tabletop::setSceneFolder);
         }
         if (maps != null) {
+            maps.clearFolders();
             itemFolders.getOrDefault(Section.MAPS, Map.of())
                     .forEach(maps::setFolder);
         }
         if (tokens != null) {
+            tokens.clearFolders();
             itemFolders.getOrDefault(Section.TOKENS, Map.of())
                     .forEach(tokens::setFolder);
         }

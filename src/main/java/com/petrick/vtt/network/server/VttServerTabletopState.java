@@ -159,6 +159,7 @@ public final class VttServerTabletopState {
             return false;
         }
         boolean changed = switch (request.operation()) {
+            case VttAssetFolderCommandPayload.REFRESH -> refreshAssetFolders();
             case VttAssetFolderCommandPayload.CREATE_FOLDER ->
                     assetFolderService.createFolder(section, request.source(), request.value());
             case VttAssetFolderCommandPayload.RENAME_FOLDER ->
@@ -186,6 +187,11 @@ public final class VttServerTabletopState {
         assetFolderService.applyMetadata(tabletop, null, null);
         storage.saveTabletop(tabletop);
         advanceAuthorityRevision();
+        return true;
+    }
+
+    private boolean refreshAssetFolders() {
+        assetFolderService.refresh();
         return true;
     }
 
