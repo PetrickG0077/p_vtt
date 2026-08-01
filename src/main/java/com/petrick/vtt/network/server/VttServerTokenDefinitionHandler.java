@@ -7,8 +7,10 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenSaveData;
 import com.petrick.vtt.network.payload.VttTokenDefinitionUpsertPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.io.IOException;
@@ -45,7 +47,7 @@ public final class VttServerTokenDefinitionHandler {
             VttServerTabletopState state = VttServerTabletopState.get();
             state.updateTokenDefinitionOwnership(data.tokenDefinitionId, data.player);
 
-            broadcastReload(player, state);
+            broadcastReload(player, state, "UPSERT", "Token definition updated");
             VTT.LOGGER.info("Saved server VTT token definition: {}", data.tokenDefinitionId);
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Rejected invalid VTT token definition update from {}",
@@ -96,7 +98,9 @@ public final class VttServerTokenDefinitionHandler {
                 return;
             }
 
-            broadcastReload(player, state);
+            broadcastReload(player, state, payload.operation(),
+                    VttTokenDefinitionCommandPayload.DUPLICATE.equals(payload.operation())
+                            ? "Token duplicated" : "Token deleted");
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Failed VTT token definition command {} for {}",
                     payload.operation(), payload.definitionId(), exception);
@@ -173,7 +177,12 @@ public final class VttServerTokenDefinitionHandler {
         return candidate;
     }
 
-    private static void broadcastReload(ServerPlayer requester, VttServerTabletopState state) {
+    private static void broadcastReload(
+            ServerPlayer requester,
+            VttServerTabletopState state,
+            String operation,
+            String message
+    ) {
         for (ServerPlayer connected : requester.getServer().getPlayerList().getPlayers()) {
             VttServerVisionSourceSync.markCurrentAssetsSent(connected, state);
             VttServerAssetSyncService.sendActiveSceneAssets(
@@ -181,6 +190,13 @@ public final class VttServerTokenDefinitionHandler {
                     VttServerPlayerEvents.isMaster(connected), () -> {
                         VttServerSceneSnapshotSync.sendToPlayer(connected, state);
                         VttServerVisionSourceSync.sendToPlayer(connected, state);
+                        if (connected != requester
+                                && VttServerPlayerEvents.isMaster(connected)) {
+                            PacketDistributor.sendToPlayer(connected,
+                                    new VttAssetManagerChangePayload(
+                                            state.authorityRevision(), operation, "TOKENS",
+                                            requester.getGameProfile().getName(), message));
+                        }
                     });
         }
     }

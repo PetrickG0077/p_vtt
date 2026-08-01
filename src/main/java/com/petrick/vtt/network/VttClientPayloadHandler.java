@@ -35,6 +35,8 @@ import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
+import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
+import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -180,5 +182,11 @@ public final class VttClientPayloadHandler {
             VttAssetFolderResultPayload payload, IPayloadContext context
     ) {
         VttClientAssetFolderResultState.accept(payload);
+    }
+
+    public static void handleAssetManagerChange(
+            VttAssetManagerChangePayload payload, IPayloadContext context
+    ) {
+        VttClientAssetManagerChangeState.accept(payload);
     }
 }

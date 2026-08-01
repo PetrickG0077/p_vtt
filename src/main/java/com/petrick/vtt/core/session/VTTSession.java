@@ -32,6 +32,8 @@ import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import net.minecraft.client.Minecraft;
 import com.petrick.vtt.network.client.VttClientAssetCache;
+import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
+import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 
 import java.nio.file.Path;
 import com.petrick.vtt.core.math.Vec2d;
@@ -949,6 +951,8 @@ public final class VTTSession {
 
     public void restoreLocalSessionAfterDisconnect() {
         if (!networkAuthorityActive) return;
+        VttClientAssetFolderResultState.reset();
+        VttClientAssetManagerChangeState.reset();
         networkAuthorityActive = false;
         networkSnapshotVersion = 0L;
         networkAuthorityRevision = 0L;

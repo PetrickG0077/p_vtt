@@ -619,6 +619,31 @@ public final class AssetManagerOverlay {
         clearPressedItem();
     }
 
+    public void reconcileSelection(
+            VttTabletop tabletop,
+            MapDefinitionRegistry maps,
+            TokenDefinitionRegistry tokens
+    ) {
+        Set<String> validIds = new LinkedHashSet<>();
+        for (Item item : allItems(tabletop, maps, tokens)) {
+            if (item.section() == section) validIds.add(item.id());
+        }
+        if (tabletop != null) {
+            for (String folder : tabletop.getCatalogFolders(section.name())) {
+                validIds.add("folder:" + normalizeFolder(folder));
+            }
+        }
+        selectedIds.removeIf(id -> !validIds.contains(id));
+        if (selectedId != null && !selectedIds.contains(selectedId)) {
+            selectedId = selectedIds.stream()
+                    .reduce((first, second) -> second).orElse(null);
+        }
+        if (selectionAnchorId != null && !selectedIds.contains(selectionAnchorId)) {
+            selectionAnchorId = selectedId;
+        }
+        clearPressedItem();
+    }
+
     private void selectOnly(String id) {
         selectedIds.clear();
         selectedId = id;

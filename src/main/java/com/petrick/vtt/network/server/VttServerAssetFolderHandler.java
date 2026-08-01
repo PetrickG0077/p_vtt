@@ -3,6 +3,7 @@ package com.petrick.vtt.network.server;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
+import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -60,6 +61,12 @@ public final class VttServerAssetFolderHandler {
         MinecraftServer server = requester.getServer();
         if (server == null) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player != requester && VttServerPlayerEvents.isMaster(player)) {
+                PacketDistributor.sendToPlayer(player, new VttAssetManagerChangePayload(
+                        state.authorityRevision(), request.operation(), request.section(),
+                        requester.getGameProfile().getName(),
+                        successMessage(request.operation())));
+            }
             VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
             VttServerAssetSyncService.sendActiveSceneAssets(
                     player,

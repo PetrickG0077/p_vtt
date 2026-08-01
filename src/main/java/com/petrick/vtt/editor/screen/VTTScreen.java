@@ -72,10 +72,12 @@ import com.petrick.vtt.network.client.VttClientTokenDefinitionSync;
 import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
+import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
+import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -348,6 +350,7 @@ public final class VTTScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
         resolvePendingAssetFolderResult();
+        applyRemoteAssetManagerChanges();
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
@@ -1043,6 +1046,28 @@ public final class VTTScreen extends Screen {
         pendingAssetFolderRequestUntil = 0L;
         pendingAssetFolderAcknowledgedRevision = -1L;
         assetManagerOverlay.setPendingOperation(null);
+    }
+
+    private void applyRemoteAssetManagerChanges() {
+        if (!session.isNetworkAuthorityActive() || !session.isLocalMaster()) return;
+        List<VttAssetManagerChangePayload> changes =
+                VttClientAssetManagerChangeState.consumeThrough(
+                        session.getNetworkAuthorityRevision());
+        if (changes.isEmpty()) return;
+
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
+        assetManagerOverlay.reconcileSelection(
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+
+        VttAssetManagerChangePayload latest = changes.get(changes.size() - 1);
+        String actor = latest.actorName() == null || latest.actorName().isBlank()
+                ? "Another master" : latest.actorName();
+        String detail = latest.message() == null || latest.message().isBlank()
+                ? "updated the Asset Manager" : latest.message().toLowerCase(java.util.Locale.ROOT);
+        VttClientEditorNotice.show(changes.size() == 1
+                ? actor + ": " + detail
+                : actor + " updated the Asset Manager (" + changes.size() + " changes)");
     }
 
     private void refreshAssetManagerFolders() {

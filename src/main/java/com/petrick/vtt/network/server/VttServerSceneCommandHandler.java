@@ -3,8 +3,10 @@ package com.petrick.vtt.network.server;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
+import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** Applies scene lifecycle commands exclusively on the authoritative server. */
@@ -70,6 +72,13 @@ public final class VttServerSceneCommandHandler {
         boolean assetsChanged = sceneChanged
                 || VttSceneCommandPayload.SET_BACKGROUND.equals(request.operation());
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player != requester && VttServerPlayerEvents.isMaster(player)
+                    && isCatalogMutation(request.operation())) {
+                PacketDistributor.sendToPlayer(player, new VttAssetManagerChangePayload(
+                        state.authorityRevision(), request.operation(), "SCENES",
+                        requester.getGameProfile().getName(),
+                        sceneChangeMessage(request.operation())));
+            }
             if (assetsChanged) {
                 VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
                 VttServerAssetSyncService.sendActiveSceneAssets(
@@ -92,5 +101,22 @@ public final class VttServerSceneCommandHandler {
     private static void reject(ServerPlayer requester, String reason) {
         VttServerRequestRateLimiter.reject(
                 requester, VttServerRequestRateLimiter.Category.SCENE_COMMAND, reason);
+    }
+
+    private static boolean isCatalogMutation(String operation) {
+        return VttSceneCommandPayload.CREATE.equals(operation)
+                || VttSceneCommandPayload.RENAME.equals(operation)
+                || VttSceneCommandPayload.DELETE.equals(operation)
+                || VttSceneCommandPayload.DUPLICATE.equals(operation);
+    }
+
+    private static String sceneChangeMessage(String operation) {
+        return switch (operation) {
+            case VttSceneCommandPayload.CREATE -> "Scene created";
+            case VttSceneCommandPayload.RENAME -> "Scene renamed";
+            case VttSceneCommandPayload.DELETE -> "Scene deleted";
+            case VttSceneCommandPayload.DUPLICATE -> "Scene duplicated";
+            default -> "Scenes updated";
+        };
     }
 }
