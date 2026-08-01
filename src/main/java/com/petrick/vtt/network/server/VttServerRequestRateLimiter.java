@@ -80,6 +80,7 @@ public final class VttServerRequestRateLimiter {
         PLAYER_MODE(1.0, 3.0, true),
         PRESENTATION(30.0, 60.0, true),
         SCENE_COMMAND(0.5, 3.0, true),
+        SCENE_HISTORY(0.5, 2.0, true),
         TOKEN_DEFINITION(0.5, 2.0, true),
         MAP_DEFINITION(0.5, 2.0, true),
         ASSET_SYNC_REQUEST(4.0, 8.0, false),

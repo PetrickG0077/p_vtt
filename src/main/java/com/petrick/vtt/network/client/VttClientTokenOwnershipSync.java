@@ -24,6 +24,7 @@ public final class VttClientTokenOwnershipSync {
             capture(session);
             return;
         }
+        if (VttClientSceneHistorySync.isPending()) return;
         if (!session.isLocalMaster() || session.getActiveScene() == null) return;
 
         Map<String, String> current = owners(session);

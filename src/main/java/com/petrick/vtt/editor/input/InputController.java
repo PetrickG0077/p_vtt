@@ -407,6 +407,14 @@ public final class InputController {
         return sceneHistory.nextRedoDescription(activeSceneId());
     }
 
+    public EditorSceneHistory.PreparedNetworkAction prepareUndoEditorAction() {
+        return sceneHistory.prepareUndo(activeSceneId(), tabletopSceneSupplier.get());
+    }
+
+    public EditorSceneHistory.PreparedNetworkAction prepareRedoEditorAction() {
+        return sceneHistory.prepareRedo(activeSceneId(), tabletopSceneSupplier.get());
+    }
+
     public boolean undoEditorAction() {
         return applyHistoryResult(sceneHistory.undo(
                 activeSceneId(), scene, tabletopSceneSupplier.get()));

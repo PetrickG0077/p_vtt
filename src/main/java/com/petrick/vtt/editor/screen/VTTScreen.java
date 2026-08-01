@@ -77,6 +77,7 @@ import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
+import com.petrick.vtt.network.client.VttClientSceneHistorySync;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
@@ -86,6 +87,7 @@ import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
+import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -274,6 +276,13 @@ public final class VTTScreen extends Screen {
     private boolean pendingSceneReopenAssetManager;
     private long pendingSceneAcknowledgedRevision = -1L;
     private long pendingSceneRequestUntil;
+    private String pendingHistoryRequestId;
+    private String pendingHistorySuccessMessage;
+    private long pendingHistoryAcknowledgedRevision = -1L;
+    private long pendingHistoryStartedSnapshotVersion = -1L;
+    private long pendingHistoryRequestUntil;
+    private boolean pendingHistoryRejected;
+    private long observedNetworkSnapshotVersion;
     private String pendingAssetFolderRequestId;
     private String pendingAssetFolderOperation;
     private String pendingAssetFolderSuccessMessage;
@@ -354,6 +363,7 @@ public final class VTTScreen extends Screen {
         this.tokenCreationDialog = new TokenCreationDialog();
         this.observedActiveSceneId = session.getActiveScene() == null
                 ? null : session.getActiveScene().getId();
+        this.observedNetworkSnapshotVersion = session.getNetworkSnapshotVersion();
     }
 
     @Override
@@ -371,6 +381,8 @@ public final class VTTScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
+        handleNetworkHistorySnapshot();
+        resolvePendingHistoryResult();
         resolvePendingAssetFolderResult();
         resolvePendingMapDefinitionResult();
         resolvePendingTokenDefinitionResult();
@@ -744,8 +756,8 @@ public final class VTTScreen extends Screen {
                 session.isLocalMaster(), session.isLocalSpectator(),
                 sceneBackgroundEditor.isActive(),
                 inputController.getActiveToolId(),
-                inputController.canUndoEditorAction(),
-                inputController.canRedoEditorAction(),
+                pendingHistoryRequestId == null && inputController.canUndoEditorAction(),
+                pendingHistoryRequestId == null && inputController.canRedoEditorAction(),
                 inputController.nextUndoDescription(),
                 inputController.nextRedoDescription(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
@@ -1301,7 +1313,8 @@ public final class VTTScreen extends Screen {
         return pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
                 || pendingTokenDefinitionRequestId != null
-                || pendingSceneRequestId != null;
+                || pendingSceneRequestId != null
+                || pendingHistoryRequestId != null;
     }
 
     private String beginPendingSceneRequest(
@@ -2138,10 +2151,10 @@ public final class VTTScreen extends Screen {
                 closeHudPopups();
             }
             case UNDO -> {
-                if (inputController.undoEditorAction()) syncSceneMetadata();
+                requestHistoryAction(false);
             }
             case REDO -> {
-                if (inputController.redoEditorAction()) syncSceneMetadata();
+                requestHistoryAction(true);
             }
             case SCENES -> {
                 if (master) panelVisibility.toggleSceneList();
@@ -3681,18 +3694,16 @@ public final class VTTScreen extends Screen {
 
         boolean controlDown = (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
         if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
-            boolean changed;
             if ((getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                changed = inputController.redoEditorAction();
+                requestHistoryAction(true);
             } else {
-                changed = inputController.undoEditorAction();
+                requestHistoryAction(false);
             }
-            if (changed) syncSceneMetadata();
             return true;
         }
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
-            if (inputController.redoEditorAction()) syncSceneMetadata();
+            requestHistoryAction(true);
             return true;
         }
 
@@ -4220,6 +4231,116 @@ public final class VTTScreen extends Screen {
         VttClientEnvironmentCommandSync.setMapPreviewActive(false);
         inputController.endEditorAction();
         VttClientEditorNotice.show("Scene map edit cancelled");
+    }
+
+    private void requestHistoryAction(boolean redo) {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        if (sceneBackgroundEditor.isActive()) {
+            VttClientEditorNotice.show("Finish Scene Edit before using undo/redo");
+            return;
+        }
+        if (!session.isNetworkAuthorityActive()) {
+            boolean changed = redo
+                    ? inputController.redoEditorAction()
+                    : inputController.undoEditorAction();
+            if (changed) syncSceneMetadata();
+            return;
+        }
+        if (pendingHistoryRequestId != null || hasPendingAssetManagerOperation()) {
+            VttClientEditorNotice.show("Wait for the current server operation");
+            return;
+        }
+
+        var prepared = redo
+                ? inputController.prepareRedoEditorAction()
+                : inputController.prepareUndoEditorAction();
+        if (prepared == null) return;
+        String targetSceneJson = prepared.targetSceneJson();
+        if (targetSceneJson.length() > VttSceneHistoryCommandPayload.MAX_SCENE_JSON_LENGTH) {
+            VttClientEditorNotice.show("Scene is too large for network undo/redo");
+            return;
+        }
+        VttClientSceneHistorySync.begin(session.getNetworkSnapshotVersion());
+        boolean changed = redo
+                ? inputController.redoEditorAction()
+                : inputController.undoEditorAction();
+        if (!changed) {
+            VttClientSceneHistorySync.finish();
+            return;
+        }
+        String operation = redo
+                ? VttSceneHistoryCommandPayload.REDO
+                : VttSceneHistoryCommandPayload.UNDO;
+        pendingHistoryRequestId = UUID.randomUUID().toString();
+        pendingHistorySuccessMessage = redo ? "Redo applied" : "Undo applied";
+        pendingHistoryAcknowledgedRevision = -1L;
+        pendingHistoryStartedSnapshotVersion = session.getNetworkSnapshotVersion();
+        pendingHistoryRequestUntil = System.currentTimeMillis() + 120_000L;
+        pendingHistoryRejected = false;
+        PacketDistributor.sendToServer(new VttSceneHistoryCommandPayload(
+                pendingHistoryRequestId, session.getNetworkAuthorityRevision(), operation,
+                session.getActiveScene().getId(), prepared.expectedFingerprint(), targetSceneJson));
+        VttClientEditorNotice.show((redo ? "Redo" : "Undo") + " sent to server");
+    }
+
+    private void handleNetworkHistorySnapshot() {
+        long version = session.getNetworkSnapshotVersion();
+        if (version == observedNetworkSnapshotVersion) return;
+        observedNetworkSnapshotVersion = version;
+        if (session.isNetworkAuthorityActive() && pendingHistoryRequestId == null) {
+            inputController.clearEditorHistory();
+        }
+    }
+
+    private void resolvePendingHistoryResult() {
+        if (pendingHistoryRequestId == null) return;
+        VttSceneCommandResultPayload result =
+                VttClientSceneCommandResultState.consume(pendingHistoryRequestId);
+        if (result != null) {
+            if (result.success()) {
+                pendingHistoryAcknowledgedRevision = result.authorityRevision();
+                if (!result.message().isBlank()) pendingHistorySuccessMessage = result.message();
+            } else {
+                pendingHistoryRejected = true;
+                pendingHistorySuccessMessage = result.message().isBlank()
+                        ? "The server rejected undo/redo" : result.message();
+                session.requestSceneHistoryResync();
+            }
+        }
+
+        boolean receivedCorrection = session.getNetworkSnapshotVersion()
+                > pendingHistoryStartedSnapshotVersion;
+        boolean successReady = pendingHistoryAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingHistoryAcknowledgedRevision;
+        if (receivedCorrection && (pendingHistoryRejected || successReady)) {
+            finishPendingHistoryRequest();
+            return;
+        }
+        if (System.currentTimeMillis() > pendingHistoryRequestUntil) {
+            if (!pendingHistoryRejected) {
+                pendingHistoryRejected = true;
+                pendingHistorySuccessMessage = "Undo/redo timed out; resynchronizing";
+                pendingHistoryRequestUntil = Long.MAX_VALUE;
+                session.requestSceneHistoryResync();
+            }
+        }
+    }
+
+    private void finishPendingHistoryRequest() {
+        boolean rejected = pendingHistoryRejected;
+        String message = pendingHistorySuccessMessage;
+        pendingHistoryRequestId = null;
+        pendingHistorySuccessMessage = null;
+        pendingHistoryAcknowledgedRevision = -1L;
+        pendingHistoryStartedSnapshotVersion = -1L;
+        pendingHistoryRequestUntil = 0L;
+        pendingHistoryRejected = false;
+        VttClientSceneHistorySync.finish();
+        if (rejected) inputController.clearEditorHistory();
+        selectionManager.removeMissingObjects(scene);
+        VttClientEditorNotice.show(message == null || message.isBlank()
+                ? (rejected ? "Undo/redo rejected" : "Undo/redo applied") : message);
     }
 
     private void syncSceneMetadata() {
@@ -5698,6 +5819,12 @@ public final class VTTScreen extends Screen {
     @Override
     public void removed() {
         if (sceneBackgroundEditor.isActive()) cancelSceneBackgroundEdit();
+        if (pendingHistoryRequestId != null) {
+            inputController.clearEditorHistory();
+            VttClientSceneHistorySync.releaseAfterNextSnapshot();
+            session.requestSceneHistoryResync();
+            pendingHistoryRequestId = null;
+        }
         if (session.isLocalMaster()
                 && VttClientPresentationState.isFollowingMasterCamera()) {
             sendPresentationCommand(VttPresentationCommandPayload.TOGGLE_CAMERA_FOLLOW);

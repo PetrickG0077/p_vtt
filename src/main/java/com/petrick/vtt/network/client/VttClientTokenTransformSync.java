@@ -39,6 +39,8 @@ public final class VttClientTokenTransformSync {
             return;
         }
 
+        if (VttClientSceneHistorySync.isPending()) return;
+
         long now = System.currentTimeMillis();
         advanceInterpolations(session, now);
 

@@ -82,6 +82,8 @@ public final class VttClientEnvironmentCommandSync {
             return;
         }
 
+        if (VttClientSceneHistorySync.isPending()) return;
+
         if (!mapPreviewActive) {
             syncMap(VttEnvironmentCommandPayload.MAP, maps, lastMaps);
         }

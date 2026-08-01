@@ -1,5 +1,7 @@
 package com.petrick.vtt.editor.input;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttDoor;
@@ -16,6 +18,8 @@ import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.map.MapTextureMode;
+import com.petrick.vtt.feature.tabletop.persistence.CanvasSceneToVttSceneMapper;
+import com.petrick.vtt.network.VttSceneFingerprint;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -29,6 +33,7 @@ import java.util.Set;
 /** Bounded undo/redo history for token and scene-environment editor actions. */
 public final class EditorSceneHistory {
     private static final int MAX_ENTRIES = 100;
+    private static final Gson GSON = new GsonBuilder().create();
 
     private final Deque<Change> undoStack = new ArrayDeque<>();
     private final Deque<Change> redoStack = new ArrayDeque<>();
@@ -92,6 +97,29 @@ public final class EditorSceneHistory {
         return redoStack.isEmpty() ? "" : redoStack.getLast().description();
     }
 
+    public PreparedNetworkAction prepareUndo(String sceneId, VttScene templateScene) {
+        ensureScene(sceneId);
+        if (undoStack.isEmpty() || templateScene == null) return null;
+        Change change = undoStack.getLast();
+        return prepare(change.after(), change.before(), change.description(), templateScene);
+    }
+
+    public PreparedNetworkAction prepareRedo(String sceneId, VttScene templateScene) {
+        ensureScene(sceneId);
+        if (redoStack.isEmpty() || templateScene == null) return null;
+        Change change = redoStack.getLast();
+        return prepare(change.before(), change.after(), change.description(), templateScene);
+    }
+
+    private PreparedNetworkAction prepare(
+            Snapshot expected, Snapshot target, String description, VttScene templateScene
+    ) {
+        VttScene expectedScene = expected.toScene(templateScene);
+        VttScene targetScene = target.toScene(templateScene);
+        return new PreparedNetworkAction(
+                VttSceneFingerprint.of(expectedScene), GSON.toJson(targetScene), description);
+    }
+
     public void clear() {
         undoStack.clear();
         redoStack.clear();
@@ -129,6 +157,10 @@ public final class EditorSceneHistory {
             return new Result(false, Set.of(), false, null);
         }
     }
+
+    public record PreparedNetworkAction(
+            String expectedFingerprint, String targetSceneJson, String description
+    ) {}
 
     private record Change(
             Snapshot before,
@@ -472,6 +504,25 @@ public final class EditorSceneHistory {
 
         private List<String> canvasIds() {
             return canvasObjects.stream().map(CanvasObject::id).toList();
+        }
+
+        private VttScene toScene(VttScene template) {
+            VttScene result = GSON.fromJson(GSON.toJson(template), VttScene.class);
+            result.clearObjects();
+            result.clearVisionSourceObjectIds();
+            for (CanvasObject canvasObject : canvasObjects) {
+                PersistentObject persistent = persistentById.get(canvasObject.id());
+                if (persistent == null) continue;
+                result.addObject(persistent.toSceneObject());
+                if (persistent.visionSource()) {
+                    result.addVisionSourceObjectId(persistent.id());
+                }
+            }
+            environment.restore(result);
+            CanvasScene targetCanvas = new CanvasScene();
+            targetCanvas.replaceAllObjects(canvasObjects);
+            CanvasSceneToVttSceneMapper.copyCanvasObjectsToScene(targetCanvas, result);
+            return result;
         }
     }
 

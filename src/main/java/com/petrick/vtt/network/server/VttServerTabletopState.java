@@ -31,6 +31,8 @@ import com.petrick.vtt.network.payload.VttEnvironmentStateRequestPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentStateUpdatePayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
+import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
+import com.petrick.vtt.network.VttSceneFingerprint;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
@@ -45,8 +47,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 public final class VttServerTabletopState {
@@ -698,6 +702,148 @@ public final class VttServerTabletopState {
         if (!flushActiveSceneNow("clear scene maps")) return false;
         advanceAuthorityRevision();
         return true;
+    }
+
+    public synchronized SceneHistoryApplyResult applySceneHistory(
+            String sceneId, String expectedFingerprint, String targetSceneJson
+    ) {
+        if (activeScene == null || sceneId == null || !sceneId.equals(activeScene.getId())
+                || expectedFingerprint == null || expectedFingerprint.length() != 64
+                || targetSceneJson == null || targetSceneJson.isBlank()
+                || targetSceneJson.length() > VttSceneHistoryCommandPayload.MAX_SCENE_JSON_LENGTH) {
+            return SceneHistoryApplyResult.INVALID;
+        }
+        if (!expectedFingerprint.equals(VttSceneFingerprint.of(activeScene))) {
+            return SceneHistoryApplyResult.STALE;
+        }
+        final VttScene target;
+        try {
+            target = GSON.fromJson(targetSceneJson, VttScene.class);
+        } catch (RuntimeException exception) {
+            return SceneHistoryApplyResult.INVALID;
+        }
+        if (!validHistoryScene(target)) return SceneHistoryApplyResult.INVALID;
+        if (!flushActiveSceneNow("before scene history operation")) {
+            return SceneHistoryApplyResult.SAVE_FAILED;
+        }
+
+        VttScene previous = activeScene;
+        activeScene = target;
+        normalizeLayerIndices(activeScene);
+        rebuildSceneIndexes();
+        markActiveSceneDirty();
+        if (!flushActiveSceneNow("scene history operation")) {
+            activeScene = previous;
+            rebuildSceneIndexes();
+            clearDirtySceneState();
+            return SceneHistoryApplyResult.SAVE_FAILED;
+        }
+        advanceAuthorityRevision();
+        return SceneHistoryApplyResult.APPLIED;
+    }
+
+    public enum SceneHistoryApplyResult {
+        APPLIED,
+        STALE,
+        INVALID,
+        SAVE_FAILED
+    }
+
+    private boolean validHistoryScene(VttScene scene) {
+        if (scene == null || activeScene == null
+                || !activeScene.getId().equals(scene.getId())
+                || !Objects.equals(activeScene.getDisplayName(), scene.getDisplayName())
+                || scene.getSchemaVersion() != activeScene.getSchemaVersion()
+                || !VttSceneLimits.inspect(scene).isEmpty()
+                || scene.getBackgroundAssetId() != null
+                && validateBackgroundAssetId(scene.getBackgroundAssetId()) == null
+                || !validBackgroundTransform(scene.getBackgroundTransform())) return false;
+
+        var camera = scene.getInitialCameraView();
+        if (camera != null && (!Double.isFinite(camera.getX())
+                || !Double.isFinite(camera.getY()) || !Double.isFinite(camera.getZoom())
+                || Math.abs(camera.getX()) > 10_000_000.0
+                || Math.abs(camera.getY()) > 10_000_000.0
+                || camera.getZoom() < 0.1 || camera.getZoom() > 8.0)) return false;
+
+        Set<String> objectIds = new HashSet<>();
+        for (VttSceneObject object : scene.getObjects()) {
+            if (object == null || object.getId() == null || object.getId().isBlank()
+                    || object.getId().length() > 128 || !objectIds.add(object.getId())
+                    || !validSceneObject(object)
+                    || object.getDisplayName().length() > 128
+                    || object.getSourceTokenDefinitionId().length() > 128
+                    || object.getLayerIndex() < 0
+                    || object.getOwnerId() != null && object.getOwnerId().length() > 128) return false;
+            double innerRadius = object.getVisionInnerRadius();
+            double storedOuterRadius = object.getVisionOuterRadius();
+            double effectiveOuterRadius = storedOuterRadius > 0.0 ? storedOuterRadius : 512.0;
+            if (!Double.isFinite(innerRadius) || !Double.isFinite(storedOuterRadius)
+                    || innerRadius < 0.0 || storedOuterRadius < 0.0
+                    || storedOuterRadius > 0.0 && storedOuterRadius < 64.0
+                    || storedOuterRadius > 100_000.0
+                    || innerRadius > effectiveOuterRadius) return false;
+        }
+        for (String sourceId : scene.getVisionSourceObjectIds()) {
+            if (sourceId == null || !objectIds.contains(sourceId)) return false;
+        }
+
+        Set<String> mapIds = new HashSet<>();
+        for (var map : scene.getMaps()) {
+            if (map == null || map.getId() == null || map.getId().isBlank()
+                    || map.getId().length() > 128 || !mapIds.add(map.getId())
+                    || map.getDisplayName() == null || map.getDisplayName().isBlank()
+                    || map.getDisplayName().length() > 128
+                    || map.getSourceMapDefinitionId() == null
+                    || map.getSourceMapDefinitionId().isBlank()
+                    || map.getSourceMapDefinitionId().length() > 128
+                    || map.getAssetId() == null || map.getAssetId().length() > 512
+                    || validateBackgroundAssetId(map.getAssetId()) == null
+                    || map.getTextureMode() == null || map.getLayerIndex() < 0
+                    || map.getLayerIndex() > VttSceneLimits.MAX_MAPS
+                    || !validBackgroundTransform(map.getTransform())) return false;
+        }
+
+        Set<String> wallIds = new HashSet<>();
+        for (VttWall wall : scene.getWalls()) {
+            if (wall == null || wall.getId() == null || wall.getId().isBlank()
+                    || wall.getId().length() > 128 || !wallIds.add(wall.getId())
+                    || !validGeometry(wall.getTransform(), wall.getSize())) return false;
+        }
+        Set<String> doorIds = new HashSet<>();
+        for (VttDoor door : scene.getDoors()) {
+            if (door == null || door.getId() == null || door.getId().isBlank()
+                    || door.getId().length() > 128 || !doorIds.add(door.getId())
+                    || !validGeometry(door.getTransform(), door.getSize())
+                    || door.getWallId() != null && !wallIds.contains(door.getWallId())) return false;
+        }
+        Set<String> fogIds = new HashSet<>();
+        for (VttFogArea area : scene.getFogOfWar().getHiddenAreas()) {
+            if (!validHistoryFogArea(area, fogIds)) return false;
+        }
+        for (VttFogArea area : scene.getFogOfWar().getRevealedAreas()) {
+            if (!validHistoryFogArea(area, fogIds)) return false;
+        }
+        return true;
+    }
+
+    private boolean validHistoryFogArea(VttFogArea area, Set<String> ids) {
+        return area != null && area.getId() != null && !area.getId().isBlank()
+                && area.getId().length() <= 128 && ids.add(area.getId())
+                && validGeometry(area.getTransform(), area.getSize());
+    }
+
+    private void rebuildSceneIndexes() {
+        objectSpatialIndex.rebuild(activeScene);
+        visionGeometryIndex.rebuild(activeScene);
+        movementCollision.rebuildObstacleIndex(activeScene);
+    }
+
+    private void clearDirtySceneState() {
+        activeSceneDirty = false;
+        activeSceneDirtySince = 0L;
+        lastSceneMutationAt = 0L;
+        pendingSceneMutationCount = 0L;
     }
 
     private String validateBackgroundAssetId(String assetId) {

@@ -37,6 +37,7 @@ public final class VttClientTokenLifecycleSync {
             capture(session);
             return;
         }
+        if (VttClientSceneHistorySync.isPending()) return;
         if (!session.isLocalMaster()) return;
 
         Map<String, CanvasObject> current = currentTokens(session);
