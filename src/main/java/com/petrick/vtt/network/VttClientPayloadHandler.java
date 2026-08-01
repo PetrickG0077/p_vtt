@@ -37,6 +37,8 @@ import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
+import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
+import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.lang.reflect.Type;
@@ -188,5 +190,11 @@ public final class VttClientPayloadHandler {
             VttAssetManagerChangePayload payload, IPayloadContext context
     ) {
         VttClientAssetManagerChangeState.accept(payload);
+    }
+
+    public static void handleMapDefinitionResult(
+            VttMapDefinitionResultPayload payload, IPayloadContext context
+    ) {
+        VttClientMapDefinitionResultState.accept(payload);
     }
 }

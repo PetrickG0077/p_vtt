@@ -74,11 +74,13 @@ import com.petrick.vtt.network.client.VttClientEnvironmentCommandSync;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
+import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
+import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -268,6 +270,13 @@ public final class VTTScreen extends Screen {
     private List<AssetManagerOverlay.MoveEntry> pendingAssetFolderRestoreSelection = List.of();
     private long pendingAssetFolderRequestUntil;
     private long pendingAssetFolderAcknowledgedRevision = -1L;
+    private String pendingMapDefinitionRequestId;
+    private String pendingMapDefinitionOperation;
+    private String pendingMapDefinitionSuccessMessage;
+    private String pendingMapDefinitionSelectionId;
+    private String pendingMapDefinitionRestoreSelectionId;
+    private long pendingMapDefinitionAcknowledgedRevision = -1L;
+    private long pendingMapDefinitionRequestUntil;
     private String pendingServerCreatedTokenId;
     private String pendingServerCreatedTokenFolder;
     private long pendingServerCreatedTokenSnapshotVersion;
@@ -351,6 +360,7 @@ public final class VTTScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ensureRenderState();
         resolvePendingAssetFolderResult();
+        resolvePendingMapDefinitionResult();
         applyRemoteAssetManagerChanges();
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
@@ -522,7 +532,8 @@ public final class VTTScreen extends Screen {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
                     0x99000000);
-            assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation);
+            assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation != null
+                    ? pendingAssetFolderOperation : pendingMapDefinitionOperation);
             assetManagerOverlay.render(
                     context, this.font, session.getActiveTabletop(),
                     session.getActiveScene(),
@@ -778,7 +789,8 @@ public final class VTTScreen extends Screen {
             AssetManagerOverlay.Interaction interaction
     ) {
         if (interaction.section() == null) return;
-        if (pendingAssetFolderRequestId != null
+        if ((pendingAssetFolderRequestId != null
+                || pendingMapDefinitionRequestId != null)
                 && interaction.action() != AssetManagerOverlay.Action.NONE
                 && interaction.action() != AssetManagerOverlay.Action.SELECT
                 && interaction.action() != AssetManagerOverlay.Action.OPEN_FOLDER
@@ -928,7 +940,9 @@ public final class VTTScreen extends Screen {
             List<AssetManagerOverlay.MoveEntry> restoreSelection
     ) {
         if (section == null) return;
-        if (session.isNetworkAuthorityActive() && pendingAssetFolderRequestId != null) {
+        if (session.isNetworkAuthorityActive()
+                && (pendingAssetFolderRequestId != null
+                || pendingMapDefinitionRequestId != null)) {
             VttClientEditorNotice.show("Wait for the current Asset Manager operation");
             return;
         }
@@ -1046,7 +1060,108 @@ public final class VTTScreen extends Screen {
         pendingAssetFolderRestoreSelection = List.of();
         pendingAssetFolderRequestUntil = 0L;
         pendingAssetFolderAcknowledgedRevision = -1L;
-        assetManagerOverlay.setPendingOperation(null);
+        assetManagerOverlay.setPendingOperation(pendingMapDefinitionOperation);
+    }
+
+    private String beginPendingMapDefinitionRequest(
+            String operation, String successMessage,
+            String selectionId, String restoreSelectionId
+    ) {
+        if (pendingMapDefinitionRequestId != null
+                || pendingAssetFolderRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current map operation");
+            return null;
+        }
+        String requestId = UUID.randomUUID().toString();
+        VttClientMapDefinitionResultState.reset();
+        pendingMapDefinitionRequestId = requestId;
+        pendingMapDefinitionOperation = operation;
+        pendingMapDefinitionSuccessMessage = successMessage;
+        pendingMapDefinitionSelectionId = selectionId;
+        pendingMapDefinitionRestoreSelectionId = restoreSelectionId;
+        pendingMapDefinitionAcknowledgedRevision = -1L;
+        pendingMapDefinitionRequestUntil = System.currentTimeMillis() + 120_000L;
+        assetManagerOverlay.setPendingOperation(operation);
+        return requestId;
+    }
+
+    private void resolvePendingMapDefinitionResult() {
+        if (pendingMapDefinitionAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingMapDefinitionAcknowledgedRevision) {
+            completePendingMapDefinitionRequest();
+            return;
+        }
+        VttMapDefinitionResultPayload result =
+                VttClientMapDefinitionResultState.consume();
+        if (result != null && pendingMapDefinitionRequestId != null
+                && pendingMapDefinitionRequestId.equals(result.requestId())) {
+            if (result.success()) {
+                pendingMapDefinitionSuccessMessage = result.message().isBlank()
+                        ? pendingMapDefinitionSuccessMessage : result.message();
+                if (!result.definitionId().isBlank()) {
+                    pendingMapDefinitionSelectionId = result.definitionId();
+                }
+                pendingMapDefinitionAcknowledgedRevision = result.authorityRevision();
+                pendingMapDefinitionOperation = "synchronizing maps";
+                if (session.getNetworkAuthorityRevision()
+                        >= pendingMapDefinitionAcknowledgedRevision) {
+                    completePendingMapDefinitionRequest();
+                }
+            } else {
+                restorePendingMapDefinitionSelection();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the map operation" : result.message());
+                if (VttMapDefinitionResultPayload.STALE_REVISION.equals(result.code())) {
+                    session.requestAssetManagerResync();
+                }
+                clearPendingMapDefinitionRequest();
+            }
+            return;
+        }
+        if (pendingMapDefinitionRequestId != null
+                && System.currentTimeMillis() > pendingMapDefinitionRequestUntil) {
+            restorePendingMapDefinitionSelection();
+            clearPendingMapDefinitionRequest();
+            VttClientEditorNotice.show("Map operation timed out");
+            session.requestAssetManagerResync();
+        }
+    }
+
+    private void completePendingMapDefinitionRequest() {
+        String selectionId = pendingMapDefinitionSelectionId;
+        String message = pendingMapDefinitionSuccessMessage;
+        clearPendingMapDefinitionRequest();
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
+        assetManagerOverlay.reconcileSelection(
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+        if (selectionId != null
+                && mapDefinitionRegistry.findById(selectionId).isPresent()) {
+            mapCatalogSelection.select(selectionId);
+            assetManagerOverlay.select(AssetManagerOverlay.Section.MAPS, selectionId);
+        } else {
+            mapCatalogSelection.clear();
+        }
+        VttClientEditorNotice.show(message);
+    }
+
+    private void restorePendingMapDefinitionSelection() {
+        String id = pendingMapDefinitionRestoreSelectionId;
+        if (id == null || mapDefinitionRegistry.findById(id).isEmpty()) return;
+        mapCatalogSelection.select(id);
+        assetManagerOverlay.select(AssetManagerOverlay.Section.MAPS, id);
+    }
+
+    private void clearPendingMapDefinitionRequest() {
+        pendingMapDefinitionRequestId = null;
+        pendingMapDefinitionOperation = null;
+        pendingMapDefinitionSuccessMessage = null;
+        pendingMapDefinitionSelectionId = null;
+        pendingMapDefinitionRestoreSelectionId = null;
+        pendingMapDefinitionAcknowledgedRevision = -1L;
+        pendingMapDefinitionRequestUntil = 0L;
+        assetManagerOverlay.setPendingOperation(pendingAssetFolderOperation);
     }
 
     private void applyRemoteAssetManagerChanges() {
@@ -4319,11 +4434,18 @@ public final class VTTScreen extends Screen {
             if (session.isNetworkAuthorityActive()) {
                 String folder = existing == null
                         ? targetFolder : mapDefinitionRegistry.folderOf(existing.id());
-                if (!VttClientMapDefinitionSync.sendUpsert(definition, folder)) {
+                String requestId = beginPendingMapDefinitionRequest(
+                        existing == null ? "creating map" : "updating map",
+                        existing == null ? "Map created" : "Map updated",
+                        definition.id(), existing == null ? null : existing.id());
+                if (requestId == null) return;
+                if (!VttClientMapDefinitionSync.sendUpsert(
+                        requestId, session.getNetworkAuthorityRevision(),
+                        definition, folder)) {
+                    clearPendingMapDefinitionRequest();
                     VttClientEditorNotice.show("Could not send map to server");
                     return;
                 }
-                mapCatalogSelection.select(definition.id());
                 boolean returningToManager =
                         willReturnToAssetManager(AssetManagerOverlay.Section.MAPS);
                 closeNewMapDialog();
@@ -4555,9 +4677,14 @@ public final class VTTScreen extends Screen {
 
     private void duplicateMapDefinition(MapDefinition definition) {
         if (session.isNetworkAuthorityActive()) {
-            if (VttClientMapDefinitionSync.sendDuplicate(definition.id())) {
+            String requestId = beginPendingMapDefinitionRequest(
+                    "duplicating map", "Map duplicated", null, definition.id());
+            if (requestId == null) return;
+            if (VttClientMapDefinitionSync.sendDuplicate(
+                    requestId, session.getNetworkAuthorityRevision(), definition.id())) {
                 VttClientEditorNotice.show("Map duplication sent to server");
             } else {
+                clearPendingMapDefinitionRequest();
                 VttClientEditorNotice.show("Could not duplicate map on server");
             }
             return;
@@ -4580,10 +4707,14 @@ public final class VTTScreen extends Screen {
             return;
         }
         if (session.isNetworkAuthorityActive()) {
-            if (VttClientMapDefinitionSync.sendDelete(definition.id())) {
-                mapCatalogSelection.clear();
+            String requestId = beginPendingMapDefinitionRequest(
+                    "deleting map", "Map deleted", null, definition.id());
+            if (requestId == null) return;
+            if (VttClientMapDefinitionSync.sendDelete(
+                    requestId, session.getNetworkAuthorityRevision(), definition.id())) {
                 VttClientEditorNotice.show("Map deletion sent to server");
             } else {
+                clearPendingMapDefinitionRequest();
                 VttClientEditorNotice.show("Could not delete map on server");
             }
             return;

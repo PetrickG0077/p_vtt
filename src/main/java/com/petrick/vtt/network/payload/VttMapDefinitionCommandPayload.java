@@ -8,7 +8,8 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /** Master-only lifecycle command for a server-owned map definition. */
-public record VttMapDefinitionCommandPayload(String operation, String definitionId)
+public record VttMapDefinitionCommandPayload(
+        String requestId, long authorityRevision, String operation, String definitionId)
         implements CustomPacketPayload {
     public static final String DUPLICATE = "DUPLICATE";
     public static final String DELETE = "DELETE";
@@ -16,6 +17,8 @@ public record VttMapDefinitionCommandPayload(String operation, String definition
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "map_definition_command"));
     public static final StreamCodec<ByteBuf, VttMapDefinitionCommandPayload> STREAM_CODEC =
             StreamCodec.composite(
+                    ByteBufCodecs.stringUtf8(64), VttMapDefinitionCommandPayload::requestId,
+                    ByteBufCodecs.VAR_LONG, VttMapDefinitionCommandPayload::authorityRevision,
                     ByteBufCodecs.stringUtf8(16), VttMapDefinitionCommandPayload::operation,
                     ByteBufCodecs.stringUtf8(256), VttMapDefinitionCommandPayload::definitionId,
                     VttMapDefinitionCommandPayload::new);

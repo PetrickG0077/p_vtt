@@ -14,8 +14,11 @@ public final class VttClientMapDefinitionSync {
 
     private VttClientMapDefinitionSync() {}
 
-    public static boolean sendUpsert(MapDefinition definition, String folder) {
-        if (definition == null) return false;
+    public static boolean sendUpsert(
+            String requestId, long authorityRevision,
+            MapDefinition definition, String folder
+    ) {
+        if (!validRequestId(requestId) || definition == null) return false;
         CreatedMapSaveData data = new CreatedMapSaveData(
                 CreatedMapSaveData.CURRENT_SCHEMA_VERSION, definition.id(),
                 definition.displayName(), definition.assetId(), definition.imageWidth(),
@@ -26,23 +29,37 @@ public final class VttClientMapDefinitionSync {
             return false;
         }
         PacketDistributor.sendToServer(new VttMapDefinitionUpsertPayload(
-                json, folder == null ? "" : folder));
+                requestId, authorityRevision, json, folder == null ? "" : folder));
         return true;
     }
 
-    public static boolean sendDuplicate(String definitionId) {
-        return sendCommand(VttMapDefinitionCommandPayload.DUPLICATE, definitionId);
+    public static boolean sendDuplicate(
+            String requestId, long authorityRevision, String definitionId
+    ) {
+        return sendCommand(requestId, authorityRevision,
+                VttMapDefinitionCommandPayload.DUPLICATE, definitionId);
     }
 
-    public static boolean sendDelete(String definitionId) {
-        return sendCommand(VttMapDefinitionCommandPayload.DELETE, definitionId);
+    public static boolean sendDelete(
+            String requestId, long authorityRevision, String definitionId
+    ) {
+        return sendCommand(requestId, authorityRevision,
+                VttMapDefinitionCommandPayload.DELETE, definitionId);
     }
 
-    private static boolean sendCommand(String operation, String definitionId) {
-        if (definitionId == null || !definitionId.startsWith("user/maps/")
+    private static boolean sendCommand(
+            String requestId, long authorityRevision,
+            String operation, String definitionId
+    ) {
+        if (!validRequestId(requestId) || definitionId == null
+                || !definitionId.startsWith("user/maps/")
                 || definitionId.length() > 256) return false;
         PacketDistributor.sendToServer(new VttMapDefinitionCommandPayload(
-                operation, definitionId));
+                requestId, authorityRevision, operation, definitionId));
         return true;
+    }
+
+    private static boolean validRequestId(String requestId) {
+        return requestId != null && !requestId.isBlank() && requestId.length() <= 64;
     }
 }

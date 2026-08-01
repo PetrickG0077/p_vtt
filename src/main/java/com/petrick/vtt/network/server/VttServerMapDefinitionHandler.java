@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.map.persistence.CreatedMapSaveData;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionCommandPayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionUpsertPayload;
+import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -33,9 +34,24 @@ public final class VttServerMapDefinitionHandler {
     public static void handleUpsert(
             VttMapDefinitionUpsertPayload payload, IPayloadContext context
     ) {
-        if (!(context.player() instanceof ServerPlayer requester)
-                || !allowed(requester) || payload == null || payload.mapJson() == null
-                || payload.folder() == null) return;
+        if (!(context.player() instanceof ServerPlayer requester) || payload == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
+        if (!authorize(requester, payload.requestId(), state)) return;
+        if (payload.requestId() == null || payload.requestId().isBlank()
+                || payload.requestId().length() > 64
+                || payload.mapJson() == null || payload.folder() == null) {
+            respond(requester, payload.requestId(), false,
+                    VttMapDefinitionResultPayload.INVALID_REQUEST,
+                    "Invalid map definition request", state.authorityRevision(), "");
+            return;
+        }
+        if (payload.authorityRevision() != state.authorityRevision()) {
+            respond(requester, payload.requestId(), false,
+                    VttMapDefinitionResultPayload.STALE_REVISION,
+                    "Map catalog changed on the server; resynchronizing",
+                    state.authorityRevision(), "");
+            return;
+        }
         try {
             CreatedMapSaveData data = GSON.fromJson(
                     payload.mapJson(), CreatedMapSaveData.class);
@@ -49,20 +65,30 @@ public final class VttServerMapDefinitionHandler {
                 Files.deleteIfExists(previousFile);
             }
 
-            VttServerTabletopState state = VttServerTabletopState.get();
             if (!state.applyMapDefinitionUpdate(
                     data.mapDefinitionId(), data.displayName(), data.assetId(),
                     previous == null ? data.imageWidth() : previous.imageWidth(),
                     previous == null ? data.imageHeight() : previous.imageHeight(),
                     data.imageWidth(), data.imageHeight(),
-                    MapTextureMode.normalize(data.textureMode()))) return;
+                    MapTextureMode.normalize(data.textureMode()))) {
+                respond(requester, payload.requestId(), false,
+                        VttMapDefinitionResultPayload.REJECTED,
+                        "Could not update placed maps", state.authorityRevision(),
+                        data.mapDefinitionId());
+                return;
+            }
+            respond(requester, payload.requestId(), true,
+                    VttMapDefinitionResultPayload.OK,
+                    previous == null ? "Map created" : "Map updated",
+                    state.authorityRevision(), data.mapDefinitionId());
             broadcastReload(requester, state, "UPSERT",
                     previous == null ? "Map created" : "Map updated");
             VTT.LOGGER.info("Saved server VTT map definition: {}",
                     data.mapDefinitionId());
         } catch (RuntimeException | IOException exception) {
-            VttServerFeedback.showLimit(requester,
-                    "Could not save the map definition on the server");
+            respond(requester, payload.requestId(), false,
+                    VttMapDefinitionResultPayload.REJECTED,
+                    failureMessage(exception), state.authorityRevision(), "");
             VTT.LOGGER.error("Rejected invalid VTT map definition from {}",
                     requester.getGameProfile().getName(), exception);
         }
@@ -71,50 +97,110 @@ public final class VttServerMapDefinitionHandler {
     public static void handleCommand(
             VttMapDefinitionCommandPayload payload, IPayloadContext context
     ) {
-        if (!(context.player() instanceof ServerPlayer requester)
-                || !allowed(requester) || payload == null
-                || payload.operation() == null || payload.definitionId() == null
+        if (!(context.player() instanceof ServerPlayer requester) || payload == null) return;
+        VttServerTabletopState state = VttServerTabletopState.get();
+        if (!authorize(requester, payload.requestId(), state)) return;
+        if (payload.requestId() == null || payload.requestId().isBlank()
+                || payload.requestId().length() > 64
+                || payload.authorityRevision() != state.authorityRevision()) {
+            respond(requester, payload.requestId(), false,
+                    payload.authorityRevision() != state.authorityRevision()
+                            ? VttMapDefinitionResultPayload.STALE_REVISION
+                            : VttMapDefinitionResultPayload.INVALID_REQUEST,
+                    payload.authorityRevision() != state.authorityRevision()
+                            ? "Map catalog changed on the server; resynchronizing"
+                            : "Invalid map request",
+                    state.authorityRevision(), "");
+            return;
+        }
+        if (payload.operation() == null || payload.definitionId() == null
                 || payload.definitionId().length() > 256
-                || !payload.definitionId().startsWith("user/maps/")) return;
+                || !payload.definitionId().startsWith("user/maps/")) {
+            respond(requester, payload.requestId(), false,
+                    VttMapDefinitionResultPayload.INVALID_REQUEST,
+                    "Invalid map definition command", state.authorityRevision(), "");
+            return;
+        }
         try {
             String message;
+            String resultingId = payload.definitionId();
             if (VttMapDefinitionCommandPayload.DUPLICATE.equals(payload.operation())) {
-                if (!duplicate(payload.definitionId())) {
-                    VttServerFeedback.showLimit(requester, "Could not duplicate the map");
+                resultingId = duplicate(payload.definitionId());
+                if (resultingId == null) {
+                    respond(requester, payload.requestId(), false,
+                            VttMapDefinitionResultPayload.REJECTED,
+                            "Could not duplicate the map", state.authorityRevision(), "");
                     return;
                 }
                 message = "Map duplicated";
             } else if (VttMapDefinitionCommandPayload.DELETE.equals(payload.operation())) {
                 Path file = findMapFile(payload.definitionId());
                 if (file == null || !Files.deleteIfExists(file)) {
-                    VttServerFeedback.showLimit(requester, "Could not delete the map");
+                    respond(requester, payload.requestId(), false,
+                            VttMapDefinitionResultPayload.REJECTED,
+                            "Could not delete the map", state.authorityRevision(), "");
                     return;
                 }
+                resultingId = "";
                 message = "Map deleted";
             } else {
+                respond(requester, payload.requestId(), false,
+                        VttMapDefinitionResultPayload.INVALID_REQUEST,
+                        "Unknown map definition command",
+                        state.authorityRevision(), "");
                 return;
             }
-            VttServerTabletopState state = VttServerTabletopState.get();
             state.markAssetCatalogChanged();
+            respond(requester, payload.requestId(), true,
+                    VttMapDefinitionResultPayload.OK, message,
+                    state.authorityRevision(), resultingId);
             broadcastReload(requester, state, payload.operation(), message);
         } catch (RuntimeException | IOException exception) {
-            VttServerFeedback.showLimit(requester,
-                    "Could not update the map definition on the server");
+            respond(requester, payload.requestId(), false,
+                    VttMapDefinitionResultPayload.REJECTED,
+                    "Could not update the map definition on the server",
+                    state.authorityRevision(), "");
             VTT.LOGGER.error("Failed VTT map definition command {} for {}",
                     payload.operation(), payload.definitionId(), exception);
         }
     }
 
-    private static boolean allowed(ServerPlayer requester) {
+    private static boolean authorize(
+            ServerPlayer requester, String requestId, VttServerTabletopState state
+    ) {
+        if (!VttServerPlayerEvents.isMaster(requester)) {
+            respond(requester, requestId, false,
+                    VttMapDefinitionResultPayload.PERMISSION_DENIED,
+                    "Only masters can update map definitions",
+                    state.authorityRevision(), "");
+            return false;
+        }
         if (!VttServerRequestRateLimiter.allow(
-                requester, VttServerRequestRateLimiter.Category.MAP_DEFINITION)) return false;
-        if (VttServerPlayerEvents.isMaster(requester)) return true;
-        VttServerRequestRateLimiter.reject(
-                requester, VttServerRequestRateLimiter.Category.MAP_DEFINITION,
-                "permission denied");
-        VttServerFeedback.showLimit(requester,
-                "Only masters can update map definitions");
-        return false;
+                requester, VttServerRequestRateLimiter.Category.MAP_DEFINITION)) {
+            respond(requester, requestId, false,
+                    VttMapDefinitionResultPayload.REJECTED,
+                    "Too many map operations; try again shortly",
+                    state.authorityRevision(), "");
+            return false;
+        }
+        return true;
+    }
+
+    private static void respond(
+            ServerPlayer player, String requestId, boolean success,
+            String code, String message, long authorityRevision, String definitionId
+    ) {
+        PacketDistributor.sendToPlayer(player, new VttMapDefinitionResultPayload(
+                requestId == null ? "" : requestId, success, code, message,
+                authorityRevision, definitionId == null ? "" : definitionId));
+    }
+
+    private static String failureMessage(Exception exception) {
+        String message = exception == null ? null : exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Could not save the map definition on the server";
+        }
+        return message.length() <= 256 ? message : message.substring(0, 256);
     }
 
     private static void validate(CreatedMapSaveData data) {
@@ -154,10 +240,10 @@ public final class VttServerMapDefinitionHandler {
         return file;
     }
 
-    private static boolean duplicate(String definitionId) throws IOException {
+    private static String duplicate(String definitionId) throws IOException {
         Path sourceFile = findMapFile(definitionId);
         CreatedMapSaveData source = read(sourceFile);
-        if (source == null) return false;
+        if (source == null) return null;
         validate(source);
         String name = uniqueName(source.displayName() + " Copy");
         CreatedMapSaveData copy = new CreatedMapSaveData(
@@ -167,7 +253,7 @@ public final class VttServerMapDefinitionHandler {
                 name, source.assetId(), source.imageWidth(), source.imageHeight(),
                 source.textureMode());
         save(copy, sourceFile.getParent());
-        return true;
+        return copy.mapDefinitionId();
     }
 
     private static String uniqueName(String base) throws IOException {
@@ -271,7 +357,8 @@ public final class VttServerMapDefinitionHandler {
                     VttServerPlayerEvents.isMaster(connected), () -> {
                         VttServerSceneSnapshotSync.sendToPlayer(connected, state);
                         VttServerVisionSourceSync.sendToPlayer(connected, state);
-                        if (VttServerPlayerEvents.isMaster(connected)) {
+                        if (connected != requester
+                                && VttServerPlayerEvents.isMaster(connected)) {
                             PacketDistributor.sendToPlayer(connected,
                                     new VttAssetManagerChangePayload(
                                             state.authorityRevision(), operation, "MAPS",

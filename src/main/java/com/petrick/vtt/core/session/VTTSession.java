@@ -34,6 +34,7 @@ import net.minecraft.client.Minecraft;
 import com.petrick.vtt.network.client.VttClientAssetCache;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
+import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 
 import java.nio.file.Path;
 import com.petrick.vtt.core.math.Vec2d;
@@ -956,6 +957,7 @@ public final class VTTSession {
         if (!networkAuthorityActive) return;
         VttClientAssetFolderResultState.reset();
         VttClientAssetManagerChangeState.reset();
+        VttClientMapDefinitionResultState.reset();
         networkAuthorityActive = false;
         networkSnapshotVersion = 0L;
         networkAuthorityRevision = 0L;
