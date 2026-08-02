@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.overlay;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.editor.hud.HexColorFormat;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
@@ -15,6 +16,8 @@ import java.util.List;
 public final class CanvasTokenContextMenuOverlay {
     private static final int MAIN_WIDTH = 112;
     private static final int STATES_WIDTH = 148;
+    private static final int COLOR_WIDTH = 82;
+    private static final int COLOR_HEIGHT = 106;
     private static final int ROW_HEIGHT = 18;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
@@ -34,6 +37,9 @@ public final class CanvasTokenContextMenuOverlay {
     private VisionField focusedField;
     private String fieldBuffer = "";
     private boolean replaceFieldOnType;
+    private boolean focusedColorField;
+    private String colorBuffer = "";
+    private boolean replaceColorOnType;
     private boolean masterMenu = true;
 
     public void open(
@@ -47,6 +53,8 @@ public final class CanvasTokenContextMenuOverlay {
         submenu = Submenu.NONE;
         focusedField = null;
         fieldBuffer = "";
+        focusedColorField = false;
+        colorBuffer = "";
     }
 
     public void close() {
@@ -55,6 +63,9 @@ public final class CanvasTokenContextMenuOverlay {
         focusedField = null;
         fieldBuffer = "";
         replaceFieldOnType = false;
+        focusedColorField = false;
+        colorBuffer = "";
+        replaceColorOnType = false;
     }
 
     public boolean isOpen() { return objectId != null; }
@@ -84,7 +95,7 @@ public final class CanvasTokenContextMenuOverlay {
 
         int childX = childX(context.screenWidth());
         if (submenu == Submenu.STATES) renderStates(context, font, token, childX);
-        else if (submenu == Submenu.COLOR) renderColors(context, childX, sceneObject);
+        else if (submenu == Submenu.COLOR) renderColors(context, font, childX, sceneObject);
         else if (submenu == Submenu.VISION) renderVision(context, font, childX, sceneObject);
         else if (submenu == Submenu.OWNER) renderOwners(
                 context, font, childX, sceneObject, players);
@@ -100,7 +111,7 @@ public final class CanvasTokenContextMenuOverlay {
         int childX = childX(screenWidth);
         Interaction child = switch (submenu) {
             case STATES -> clickStates(mouseX, mouseY, token, childX);
-            case COLOR -> clickColors(mouseX, mouseY, childX);
+            case COLOR -> clickColors(mouseX, mouseY, childX, sceneObject);
             case VISION -> clickVision(mouseX, mouseY, sceneObject, childX);
             case OWNER -> clickOwners(mouseX, mouseY, childX, players);
             case NONE -> Interaction.none();
@@ -137,6 +148,24 @@ public final class CanvasTokenContextMenuOverlay {
             close();
             return Interaction.handled();
         }
+        if (focusedColorField) {
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (replaceColorOnType) {
+                    colorBuffer = "";
+                    replaceColorOnType = false;
+                } else if (!colorBuffer.isEmpty()) {
+                    colorBuffer = colorBuffer.substring(0, colorBuffer.length() - 1);
+                }
+                return Interaction.handled();
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                var color = HexColorFormat.parse(colorBuffer);
+                return color.isPresent()
+                        ? new Interaction(Action.SET_COLOR, null, color.getAsInt(), true)
+                        : Interaction.handled();
+            }
+            return Interaction.handled();
+        }
         if (focusedField == null) return Interaction.none();
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             if (replaceFieldOnType) {
@@ -154,7 +183,17 @@ public final class CanvasTokenContextMenuOverlay {
     }
 
     public boolean charTyped(char character) {
-        if (!isOpen() || focusedField == null) return false;
+        if (!isOpen()) return false;
+        if (focusedColorField) {
+            if (!HexColorFormat.accepts(character)) return true;
+            if (replaceColorOnType) {
+                colorBuffer = "";
+                replaceColorOnType = false;
+            }
+            colorBuffer = HexColorFormat.append(colorBuffer, character);
+            return true;
+        }
+        if (focusedField == null) return false;
         if (character < '0' || character > '9') return true;
         if (replaceFieldOnType) {
             fieldBuffer = "";
@@ -174,14 +213,25 @@ public final class CanvasTokenContextMenuOverlay {
                 : new Interaction(Action.SET_STATE, state.id(), 0, true);
     }
 
-    private Interaction clickColors(double mouseX, double mouseY, int childX) {
-        if (!inside(mouseX, mouseY, childX, y, 82, 82)) return Interaction.none();
+    private Interaction clickColors(
+            double mouseX, double mouseY, int childX, VttSceneObject object
+    ) {
+        if (!inside(mouseX, mouseY, childX, y, COLOR_WIDTH, COLOR_HEIGHT)) {
+            return Interaction.none();
+        }
+        if (inside(mouseX, mouseY, childX + 5, y + 80, 72, 20)) {
+            focusedColorField = true;
+            colorBuffer = HexColorFormat.format(object.getState().getTintColorRgb());
+            replaceColorOnType = true;
+            return Interaction.handled();
+        }
         int column = (int) ((mouseX - childX - 5) / 18);
         int row = (int) ((mouseY - y - 5) / 18);
         int index = row * 4 + column;
         if (column < 0 || column >= 4 || row < 0 || row >= 4 || index >= COLORS.length) {
             return Interaction.handled();
         }
+        focusedColorField = false;
         return new Interaction(Action.SET_COLOR, null, COLORS[index], true);
     }
 
@@ -249,8 +299,10 @@ public final class CanvasTokenContextMenuOverlay {
         }
     }
 
-    private void renderColors(VRenderContext context, int childX, VttSceneObject object) {
-        fillPanel(context, childX, y, 82, 82);
+    private void renderColors(
+            VRenderContext context, Font font, int childX, VttSceneObject object
+    ) {
+        fillPanel(context, childX, y, COLOR_WIDTH, COLOR_HEIGHT);
         int selected = object.getState().getTintColorRgb();
         for (int i = 0; i < COLORS.length; i++) {
             int sx = childX + 5 + i % 4 * 18;
@@ -258,6 +310,16 @@ public final class CanvasTokenContextMenuOverlay {
             context.graphics().fill(sx, sy, sx + 14, sy + 14, 0xFF000000 | COLORS[i]);
             border(context, sx, sy, 14, 14, COLORS[i] == selected ? ACCENT : 0xFF888888);
         }
+        int fieldX = childX + 5;
+        int fieldY = y + 80;
+        context.graphics().fill(fieldX, fieldY, fieldX + 72, fieldY + 20, 0xFF101014);
+        border(context, fieldX, fieldY, 72, 20,
+                focusedColorField ? ACCENT : 0xFF66666C);
+        String value = focusedColorField
+                ? colorBuffer + (System.currentTimeMillis() / 500L % 2L == 0L ? "_" : "")
+                : HexColorFormat.format(selected);
+        context.graphics().drawString(font, value, fieldX + 4, fieldY + 6,
+                focusedColorField ? TEXT : MUTED, false);
     }
 
     private void renderVision(
@@ -327,6 +389,7 @@ public final class CanvasTokenContextMenuOverlay {
     private Interaction openSubmenu(Submenu submenu) {
         this.submenu = submenu;
         focusedField = null;
+        focusedColorField = false;
         return Interaction.handled();
     }
 
@@ -340,7 +403,7 @@ public final class CanvasTokenContextMenuOverlay {
         int desired = x + MAIN_WIDTH + 4;
         int childWidth = switch (submenu) {
             case VISION -> 190;
-            case COLOR -> 82;
+            case COLOR -> COLOR_WIDTH;
             case STATES -> STATES_WIDTH;
             case OWNER -> 180;
             case NONE -> 0;

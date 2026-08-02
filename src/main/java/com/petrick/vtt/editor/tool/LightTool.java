@@ -4,6 +4,7 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttLightType;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.editor.hud.HexColorFormat;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -186,13 +187,24 @@ public final class LightTool implements Tool {
 
     public boolean charTyped(char character) {
         if (popup != Popup.PROPERTIES || focusedField == null) return false;
-        if (replaceFieldOnType) {
-            fieldBuffer = "";
-            replaceFieldOnType = false;
+        if (focusedField == Field.COLOR) {
+            if (!HexColorFormat.accepts(character)) return true;
+            if (replaceFieldOnType) {
+                fieldBuffer = "";
+                replaceFieldOnType = false;
+            }
+            String updated = HexColorFormat.append(fieldBuffer, character);
+            if (updated.equals(fieldBuffer)) return true;
+            fieldBuffer = updated;
+            applyField();
+            return true;
         }
-        if ((character >= '0' && character <= '9') || character == '.'
-                || focusedField == Field.COLOR && (character == '#' || Character.digit(character, 16) >= 0)) {
-            if (fieldBuffer.length() < 12) fieldBuffer += Character.toUpperCase(character);
+        if ((character >= '0' && character <= '9') || character == '.') {
+            if (replaceFieldOnType) {
+                fieldBuffer = "";
+                replaceFieldOnType = false;
+            }
+            if (fieldBuffer.length() < 12) fieldBuffer += character;
             applyField();
         }
         return true;
@@ -387,9 +399,9 @@ public final class LightTool implements Tool {
         if (light == null || focusedField == null) return;
         try {
             if (focusedField == Field.COLOR) {
-                String hex = fieldBuffer.startsWith("#") ? fieldBuffer.substring(1) : fieldBuffer;
-                if (hex.length() == 6) {
-                    light.setColorRgb(Integer.parseUnsignedInt(hex, 16));
+                var color = HexColorFormat.parse(fieldBuffer);
+                if (color.isPresent()) {
+                    light.setColorRgb(color.getAsInt());
                     light.setTintEnabled(true);
                 }
             } else {
@@ -408,7 +420,7 @@ public final class LightTool implements Tool {
             case OUTER -> String.format(Locale.ROOT, "%.0f", light.getOuterRadius());
             case INNER -> String.format(Locale.ROOT, "%.0f", light.getInnerRadius());
             case COLOR -> light.isTintEnabled()
-                    ? String.format(Locale.ROOT, "#%06X", light.getColorRgb()) : "None";
+                    ? HexColorFormat.format(light.getColorRgb()) : "None";
         };
     }
 
