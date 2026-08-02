@@ -10,14 +10,12 @@ import com.petrick.vtt.platform.render.VRenderContext;
 
 /** Renders localized rectangular fog areas as the final scene overlay. */
 public final class SceneFogRenderer {
-    private static final int MASTER_FOG_COLOR = 0x9908080C;
-    private static final int PLAYER_FOG_COLOR = 0xFF08080C;
-
     public void render(VRenderContext context, VttScene scene, boolean masterView) {
         if (scene == null) return;
         VttFogOfWar fog = scene.getFogOfWar();
         if (!fog.isEnabled()) return;
-        int fogColor = masterView ? MASTER_FOG_COLOR : PLAYER_FOG_COLOR;
+        int darknessRgb = scene.getLighting().getDarknessColorRgb();
+        int fogColor = (masterView ? 0x99000000 : 0xFF000000) | darknessRgb;
 
         for (VttFogArea hiddenArea : fog.getHiddenAreas()) {
             if (hiddenArea == null || !hiddenArea.isVisible()) continue;

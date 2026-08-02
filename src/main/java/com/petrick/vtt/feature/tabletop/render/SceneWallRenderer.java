@@ -17,7 +17,6 @@ public final class SceneWallRenderer {
     private static final int BLOCKS_VISION_COLOR = 0xFFCC66FF;
     private static final int BLOCKS_MOVEMENT_COLOR = 0xFF66AAFF;
     private static final int DECORATIVE_COLOR = 0xFFAAAAAA;
-    private static final int PLAYER_WALL_COLOR = 0xFF08080C;
 
     public void render(VRenderContext context, VttScene scene, boolean masterView) {
         if (scene == null) return;
@@ -37,10 +36,11 @@ public final class SceneWallRenderer {
                 Math.abs(size.getHeight() * transform.getScaleY()) * zoom));
         int top = -height / 2;
         int bottom = top + height;
-        int borderColor = masterView ? getWallColor(wall) : PLAYER_WALL_COLOR;
+        int playerColor = 0xFF000000 | scene.getLighting().getDarknessColorRgb();
+        int borderColor = masterView ? getWallColor(wall) : playerColor;
         int fillColor = masterView
                 ? (borderColor & 0x00FFFFFF) | 0x66000000
-                : PLAYER_WALL_COLOR;
+                : playerColor;
 
         PoseStack pose = context.graphics().pose();
         pose.pushPose();

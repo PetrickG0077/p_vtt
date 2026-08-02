@@ -21,6 +21,7 @@ public record VttEnvironmentCommandPayload(
     public static final String FOG_CONFIG = "FOG_CONFIG";
     public static final String GRID_CONFIG = "GRID_CONFIG";
     public static final String LIGHTING_CONFIG = "LIGHTING_CONFIG";
+    public static final String LIGHTING_COLOR = "LIGHTING_COLOR";
     public static final String BACKGROUND_CONFIG = "BACKGROUND_CONFIG";
     public static final String CAMERA_CONFIG = "CAMERA_CONFIG";
     public static final String VISION = "VISION";

@@ -148,11 +148,11 @@ public final class SceneVisionMaskRenderer {
         int runStart = top;
         int firstBottom = Math.min(bottom, top + pixelSize);
         int runAlpha = quantizeAlpha(gradientAlpha(
-                x, top + (firstBottom - top) / 2.0, regions));
+                x, top + (firstBottom - top) / 2.0, regions, interval, pixelSize));
         for (int y = top + pixelSize; y < bottom; y += pixelSize) {
             int cellBottom = Math.min(bottom, y + pixelSize);
             int alpha = quantizeAlpha(gradientAlpha(
-                    x, y + (cellBottom - y) / 2.0, regions));
+                    x, y + (cellBottom - y) / 2.0, regions, interval, pixelSize));
             if (alpha == runAlpha) continue;
             fillAlphaRun(context, left, right, runStart, y, runAlpha, darknessRgb);
             runStart = y;
@@ -177,15 +177,25 @@ public final class SceneVisionMaskRenderer {
         }
     }
 
-    private int gradientAlpha(double x, double y, List<VisionRegion> regions) {
+    private int gradientAlpha(
+            double x, double y, List<VisionRegion> regions,
+            VisibleInterval interval, int pixelSize
+    ) {
         double darkness = 1.0;
         for (VisionRegion region : regions) {
             double distance = Math.hypot(x - region.origin().x(), y - region.origin().y());
             if (distance > region.outerRadiusPixels()) continue;
             double span = Math.max(1.0, region.outerRadiusPixels() - region.innerRadiusPixels());
-            darkness = Math.min(darkness,
-                    Math.max(0.0, Math.min(1.0, (distance - region.innerRadiusPixels()) / span)));
+            double radialDarkness = Math.max(0.0,
+                    Math.min(1.0, (distance - region.innerRadiusPixels()) / span));
+            darkness = Math.min(darkness, radialDarkness);
         }
+        double edgeSoftness = Math.max(4.0, pixelSize * 2.0);
+        double intervalEdgeDistance = Math.max(0.0,
+                Math.min(y - interval.start(), interval.end() - y));
+        double edgeDarkness = Math.max(0.0,
+                1.0 - intervalEdgeDistance / edgeSoftness);
+        darkness = Math.max(darkness, edgeDarkness);
         return (int) Math.round(darkness * 255.0);
     }
 

@@ -7,7 +7,7 @@ public final class VttSceneLighting {
     public static final int MIN_VISION_RAY_COUNT = 8;
     public static final int MAX_VISION_RAY_COUNT = DEFAULT_VISION_RAY_COUNT * 2;
     public static final int VISION_RAY_COUNT_STEP = 8;
-    public static final int DEFAULT_VISION_PIXEL_SIZE = 1;
+    public static final int DEFAULT_VISION_PIXEL_SIZE = 4;
     public static final int MIN_VISION_PIXEL_SIZE = 1;
     public static final int MAX_VISION_PIXEL_SIZE = 16;
 

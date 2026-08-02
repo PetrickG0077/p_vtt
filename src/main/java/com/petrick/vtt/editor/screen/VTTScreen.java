@@ -2038,6 +2038,10 @@ public final class VTTScreen extends Screen {
             return true;
         } else if (interaction == EditorSettingsOverlay.Interaction.CHANGED) {
             persistGridSettings();
+        } else if (interaction == EditorSettingsOverlay.Interaction.APPLY_LIGHTING_COLOR) {
+            inputController.endEditorAction();
+            VttClientEnvironmentCommandSync.sendLightingColor(session);
+            return true;
         } else if (interaction == EditorSettingsOverlay.Interaction.CHOOSE_BACKGROUND) {
             inputController.endEditorAction();
             openMapPicker(MapPickerTarget.ACTIVE_SCENE);

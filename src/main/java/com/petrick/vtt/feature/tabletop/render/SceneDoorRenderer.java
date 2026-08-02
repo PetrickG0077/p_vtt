@@ -9,16 +9,16 @@ import com.petrick.vtt.platform.render.VRenderContext;
 
 /** Renders persistent doors above scene walls. */
 public final class SceneDoorRenderer {
-    private static final int PLAYER_DOOR_COLOR = 0xFF08080C;
-
     public void render(VRenderContext context, VttScene scene, boolean masterView) {
         if (scene == null) return;
         for (VttDoor door : scene.getDoors()) {
-            if (door != null && door.isVisible()) renderDoor(context, door, masterView);
+            if (door != null && door.isVisible()) renderDoor(context, scene, door, masterView);
         }
     }
 
-    private void renderDoor(VRenderContext context, VttDoor door, boolean masterView) {
+    private void renderDoor(
+            VRenderContext context, VttScene scene, VttDoor door, boolean masterView
+    ) {
         var transform = door.getTransform();
         var size = door.getSize();
         Vec2d center = context.renderState().worldToScreen(new Vec2d(transform.getX(), transform.getY()));
@@ -29,12 +29,13 @@ public final class SceneDoorRenderer {
         int top = -height / 2;
         int right = left + width;
         int bottom = top + height;
+        int playerColor = 0xFF000000 | scene.getLighting().getDarknessColorRgb();
         int border = masterView
                 ? door.isLocked() ? 0xFFFF55FF : door.isOpen() ? 0xFF55FF88 : 0xFFFFCC44
-                : PLAYER_DOOR_COLOR;
+                : playerColor;
         int fill = masterView
                 ? (border & 0x00FFFFFF) | (door.isOpen() ? 0x22000000 : 0x88000000)
-                : door.isOpen() ? 0x2208080C : PLAYER_DOOR_COLOR;
+                : door.isOpen() ? (playerColor & 0x00FFFFFF) | 0x22000000 : playerColor;
 
         PoseStack pose = context.graphics().pose();
         pose.pushPose();

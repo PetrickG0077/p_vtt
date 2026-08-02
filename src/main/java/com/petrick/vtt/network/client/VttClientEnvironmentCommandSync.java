@@ -11,7 +11,6 @@ import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
-import com.petrick.vtt.feature.tabletop.VttSceneLighting;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
@@ -70,7 +69,8 @@ public final class VttClientEnvironmentCommandSync {
         Map<String, String> vision = visionById(session);
         String fogConfigJson = fogConfigJson(session);
         String gridConfigJson = GSON.toJson(session.getActiveScene().getGrid());
-        String lightingConfigJson = GSON.toJson(session.getActiveScene().getLighting());
+        String lightingConfigJson = GSON.toJson(new LightingRaycastConfig(
+                session.getActiveScene().getLighting().getVisionRayCount()));
 
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
@@ -222,13 +222,20 @@ public final class VttClientEnvironmentCommandSync {
                     stableGridConfigTicks = 0;
                 }
                 case VttEnvironmentCommandPayload.LIGHTING_CONFIG -> {
-                    VttSceneLighting lighting = GSON.fromJson(
-                            update.entityJson(), VttSceneLighting.class);
-                    session.getActiveScene().setLighting(lighting);
-                    lastLightingConfigJson = GSON.toJson(
-                            session.getActiveScene().getLighting());
+                    LightingRaycastConfig lighting = GSON.fromJson(
+                            update.entityJson(), LightingRaycastConfig.class);
+                    if (lighting != null) session.getActiveScene().getLighting()
+                            .setVisionRayCount(lighting.visionRayCount());
+                    lastLightingConfigJson = GSON.toJson(new LightingRaycastConfig(
+                            session.getActiveScene().getLighting().getVisionRayCount()));
                     observedLightingConfigJson = lastLightingConfigJson;
                     stableLightingConfigTicks = 0;
+                }
+                case VttEnvironmentCommandPayload.LIGHTING_COLOR -> {
+                    DarknessColorConfig color = GSON.fromJson(
+                            update.entityJson(), DarknessColorConfig.class);
+                    if (color != null) session.getActiveScene().getLighting()
+                            .setDarknessColorRgb(color.darknessColorRgb());
                 }
                 case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> {
                     VttSceneBackgroundTransform transform = GSON.fromJson(
@@ -383,6 +390,18 @@ public final class VttClientEnvironmentCommandSync {
                 view == null ? "" : GSON.toJson(view));
     }
 
+    public static void sendLightingColor(VTTSession session) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        send(VttEnvironmentCommandPayload.UPSERT,
+                VttEnvironmentCommandPayload.LIGHTING_COLOR,
+                "darkness_color",
+                GSON.toJson(new DarknessColorConfig(
+                        session.getActiveScene().getLighting().getDarknessColorRgb())));
+    }
+
     private static String entityKey(String entityType, String entityId) {
         return entityType + "\u0000" + entityId;
     }
@@ -421,6 +440,8 @@ public final class VttClientEnvironmentCommandSync {
             case VttEnvironmentCommandPayload.GRID_CONFIG -> "Grid changes confirmed";
             case VttEnvironmentCommandPayload.LIGHTING_CONFIG ->
                     "Lighting changes confirmed";
+            case VttEnvironmentCommandPayload.LIGHTING_COLOR ->
+                    "Darkness color applied to players";
             case VttEnvironmentCommandPayload.VISION -> "Token vision changes confirmed";
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     "Scene background changes confirmed";
@@ -462,6 +483,8 @@ public final class VttClientEnvironmentCommandSync {
     }
 
     private record FogConfig(boolean enabled, boolean defaultHidden) {}
+    private record LightingRaycastConfig(int visionRayCount) {}
+    private record DarknessColorConfig(int darknessColorRgb) {}
     private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
                                VttSceneCollisionBox collisionBox) {}
 }

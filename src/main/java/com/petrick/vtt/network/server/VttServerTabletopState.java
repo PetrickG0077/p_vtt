@@ -1228,6 +1228,8 @@ public final class VttServerTabletopState {
                         && applyGridConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.LIGHTING_CONFIG -> !delete
                         && applyLightingConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.LIGHTING_COLOR -> !delete
+                        && applyLightingColor(command.entityJson());
                 case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> !delete
                         && applyBackgroundConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.CAMERA_CONFIG -> delete
@@ -1410,11 +1412,16 @@ public final class VttServerTabletopState {
     }
 
     private boolean applyLightingConfig(String json) {
-        var lighting = GSON.fromJson(json,
-                com.petrick.vtt.feature.tabletop.VttSceneLighting.class);
+        LightingRaycastConfig lighting = GSON.fromJson(json, LightingRaycastConfig.class);
         if (lighting == null) return false;
-        lighting.normalize();
-        activeScene.setLighting(lighting);
+        activeScene.getLighting().setVisionRayCount(lighting.visionRayCount());
+        return true;
+    }
+
+    private boolean applyLightingColor(String json) {
+        DarknessColorConfig color = GSON.fromJson(json, DarknessColorConfig.class);
+        if (color == null) return false;
+        activeScene.getLighting().setDarknessColorRgb(color.darknessColorRgb());
         return true;
     }
 
@@ -1490,7 +1497,11 @@ public final class VttServerTabletopState {
             case VttEnvironmentCommandPayload.GRID_CONFIG ->
                     GSON.toJson(activeScene.getGrid());
             case VttEnvironmentCommandPayload.LIGHTING_CONFIG ->
-                    GSON.toJson(activeScene.getLighting());
+                    GSON.toJson(new LightingRaycastConfig(
+                            activeScene.getLighting().getVisionRayCount()));
+            case VttEnvironmentCommandPayload.LIGHTING_COLOR ->
+                    GSON.toJson(new DarknessColorConfig(
+                            activeScene.getLighting().getDarknessColorRgb()));
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     GSON.toJson(activeScene.getBackgroundTransform());
             case VttEnvironmentCommandPayload.CAMERA_CONFIG -> {
@@ -1531,6 +1542,8 @@ public final class VttServerTabletopState {
     }
 
     private record FogConfig(boolean enabled, boolean defaultHidden) {}
+    private record LightingRaycastConfig(int visionRayCount) {}
+    private record DarknessColorConfig(int darknessColorRgb) {}
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
         return currentEnvironmentState(null);
