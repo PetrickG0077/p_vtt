@@ -13,6 +13,8 @@ public final class VttLight {
     private double innerRadius = DEFAULT_INNER_RADIUS;
     private double outerRadius = DEFAULT_OUTER_RADIUS;
     private int colorRgb = DEFAULT_COLOR_RGB;
+    /** False means reveal-only: the light removes darkness without tinting the scene. */
+    private boolean tintEnabled = true;
     private boolean enabled = true;
 
     public VttLight() { this("light_1", 0.0, 0.0); }
@@ -42,6 +44,8 @@ public final class VttLight {
     }
     public int getColorRgb() { return colorRgb; }
     public void setColorRgb(int colorRgb) { this.colorRgb = colorRgb & 0x00FFFFFF; }
+    public boolean isTintEnabled() { return tintEnabled; }
+    public void setTintEnabled(boolean tintEnabled) { this.tintEnabled = tintEnabled; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 

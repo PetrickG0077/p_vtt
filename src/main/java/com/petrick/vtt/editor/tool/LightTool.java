@@ -24,7 +24,9 @@ public final class LightTool implements Tool {
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF88888E;
+    private static final int REVEAL_ONLY = -1;
     private static final int[] COLORS = {
+            REVEAL_ONLY,
             0xFFFFFF, 0xFFF1A8, 0xFFCC66, 0xFF8844,
             0xFF5555, 0x55AAFF, 0x66FFFF, 0x88FF88
     };
@@ -256,10 +258,8 @@ public final class LightTool implements Tool {
         renderField(context, font, Field.INNER, "Inner Radius", 47);
         renderField(context, font, Field.COLOR, "Color", 69);
         for (int i = 0; i < COLORS.length; i++) {
-            int x = popupX + 7 + i * 17;
-            context.graphics().fill(x, popupY + 91, x + 13, popupY + 104,
-                    0xFF000000 | COLORS[i]);
-            border(context, x, popupY + 91, 13, 13, 0xFFAAAAAA);
+            int x = popupX + 7 + i * 16;
+            renderColorSwatch(context, x, popupY + 91, COLORS[i]);
         }
         popupRow(context, font, 6, "Duplicate", true);
         popupRow(context, font, 7, "Delete", true);
@@ -300,11 +300,17 @@ public final class LightTool implements Tool {
                 return true;
             }
         }
-        if (mouseY >= popupY + 91 && mouseY <= popupY + 104) {
-            int index = (int) ((mouseX - popupX - 7) / 17);
+        if (mouseX >= popupX + 7 && mouseX <= popupX + 151
+                && mouseY >= popupY + 91 && mouseY <= popupY + 104) {
+            int index = (int) ((mouseX - popupX - 7) / 16);
             VttLight light = selectedLight();
             if (light != null && index >= 0 && index < COLORS.length) {
-                light.setColorRgb(COLORS[index]);
+                if (COLORS[index] == REVEAL_ONLY) {
+                    light.setTintEnabled(false);
+                } else {
+                    light.setColorRgb(COLORS[index]);
+                    light.setTintEnabled(true);
+                }
                 saveAction.run();
             }
             return true;
@@ -326,6 +332,7 @@ public final class LightTool implements Tool {
         copy.setOuterRadius(source.getOuterRadius());
         copy.setInnerRadius(source.getInnerRadius());
         copy.setColorRgb(source.getColorRgb());
+        copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         scene.addLight(copy);
         selectedId = copy.getId();
@@ -351,7 +358,10 @@ public final class LightTool implements Tool {
         try {
             if (focusedField == Field.COLOR) {
                 String hex = fieldBuffer.startsWith("#") ? fieldBuffer.substring(1) : fieldBuffer;
-                if (hex.length() == 6) light.setColorRgb(Integer.parseUnsignedInt(hex, 16));
+                if (hex.length() == 6) {
+                    light.setColorRgb(Integer.parseUnsignedInt(hex, 16));
+                    light.setTintEnabled(true);
+                }
             } else {
                 double value = Double.parseDouble(fieldBuffer);
                 if (focusedField == Field.OUTER) light.setOuterRadius(Math.max(value, light.getInnerRadius()));
@@ -367,8 +377,31 @@ public final class LightTool implements Tool {
         return switch (field) {
             case OUTER -> String.format(Locale.ROOT, "%.0f", light.getOuterRadius());
             case INNER -> String.format(Locale.ROOT, "%.0f", light.getInnerRadius());
-            case COLOR -> String.format(Locale.ROOT, "#%06X", light.getColorRgb());
+            case COLOR -> light.isTintEnabled()
+                    ? String.format(Locale.ROOT, "#%06X", light.getColorRgb()) : "None";
         };
+    }
+
+    private void renderColorSwatch(VRenderContext context, int x, int y, int color) {
+        VttLight selected = selectedLight();
+        boolean active = selected != null && (color == REVEAL_ONLY
+                ? !selected.isTintEnabled()
+                : selected.isTintEnabled() && selected.getColorRgb() == color);
+        if (color == REVEAL_ONLY) {
+            int cell = 4;
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < 4; column++) {
+                    int shade = (row + column) % 2 == 0 ? 0xFF55555B : 0xFFBBBBBF;
+                    int left = x + column * cell;
+                    int top = y + row * cell;
+                    context.graphics().fill(left, top,
+                            Math.min(x + 13, left + cell), Math.min(y + 13, top + cell), shade);
+                }
+            }
+        } else {
+            context.graphics().fill(x, y, x + 13, y + 13, 0xFF000000 | color);
+        }
+        border(context, x, y, 13, 13, active ? CYAN : 0xFFAAAAAA);
     }
 
     private VttLight lightAt(ToolContext context, double mouseX, double mouseY) {

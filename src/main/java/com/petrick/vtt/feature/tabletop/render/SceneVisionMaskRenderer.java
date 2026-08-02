@@ -100,7 +100,7 @@ public final class SceneVisionMaskRenderer {
                         context.renderState().worldToScreen(
                                 new Vec2d(light.getX(), light.getY())),
                         light.getInnerRadius() * zoom, light.getOuterRadius() * zoom,
-                        light.getColorRgb()))
+                        light.getColorRgb(), light.isTintEnabled()))
                 .toList();
         renderRadialGradient(context, regions, outerPolygons,
                 screenLights, darknessRgb, pixelSize);
@@ -260,6 +260,7 @@ public final class SceneVisionMaskRenderer {
                     double green = 0.0;
                     double blue = 0.0;
                     for (ScreenLight light : lights) {
+                        if (!light.tintEnabled()) continue;
                         double distance = Math.hypot(
                                 x - light.origin().x(), sampleY - light.origin().y());
                         if (distance > light.outerRadiusPixels()) continue;
@@ -387,5 +388,6 @@ public final class SceneVisionMaskRenderer {
             double innerRadiusPixels, double outerRadiusPixels,
             boolean ownLightEnabled) {}
     private record ScreenLight(
-            Vec2d origin, double innerRadiusPixels, double outerRadiusPixels, int colorRgb) {}
+            Vec2d origin, double innerRadiusPixels, double outerRadiusPixels,
+            int colorRgb, boolean tintEnabled) {}
 }

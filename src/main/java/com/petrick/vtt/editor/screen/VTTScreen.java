@@ -2989,17 +2989,14 @@ public final class VTTScreen extends Screen {
             case SET_STATE -> {
                 selectionManager.selectOnly(token.id());
                 inputController.setSelectedObjectsActiveState(interaction.stringValue());
-                canvasTokenContextMenuOverlay.close();
             }
             case SET_COLOR -> {
                 mutateCanvasTokenMetadata(() -> sceneObject.getState()
                         .setTintColorRgb(interaction.intValue()));
-                canvasTokenContextMenuOverlay.close();
             }
             case TOGGLE_VISIBLE -> {
                 selectionManager.selectOnly(token.id());
                 inputController.toggleSelectedObjectsVisibility();
-                canvasTokenContextMenuOverlay.close();
             }
             case TOGGLE_VISION -> mutateCanvasTokenMetadata(() ->
                     sceneObject.setVisionEnabled(!sceneObject.isVisionEnabled()));
@@ -3022,7 +3019,6 @@ public final class VTTScreen extends Screen {
             case DUPLICATE -> {
                 selectionManager.selectOnly(token.id());
                 inputController.duplicateSelectedObjects();
-                canvasTokenContextMenuOverlay.close();
             }
             case DELETE -> {
                 selectionManager.selectOnly(token.id());
@@ -3546,6 +3542,9 @@ public final class VTTScreen extends Screen {
                     keyCode, canvasTokenContextSceneObject());
             if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
                 handleCanvasTokenContextMenuAction(interaction);
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                canvasTokenContextMenuOverlay.close();
             }
             return true;
         }

@@ -11,7 +11,8 @@ import java.util.Locale;
 
 /** Context menu for a token instance placed on the canvas. */
 public final class CanvasTokenContextMenuOverlay {
-    private static final int WIDTH = 148;
+    private static final int MAIN_WIDTH = 112;
+    private static final int STATES_WIDTH = 148;
     private static final int ROW_HEIGHT = 18;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
@@ -34,7 +35,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     public void open(String objectId, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         this.objectId = objectId;
-        this.x = Math.max(4, Math.min(screenWidth - WIDTH - 4, mouseX + 8));
+        this.x = Math.max(4, Math.min(screenWidth - MAIN_WIDTH - 4, mouseX + 8));
         this.y = Math.max(4, Math.min(screenHeight - mainHeight() - 4, mouseY - 8));
         submenu = Submenu.NONE;
         focusedField = null;
@@ -56,12 +57,12 @@ public final class CanvasTokenContextMenuOverlay {
             VRenderContext context, Font font, CanvasObject token, VttSceneObject sceneObject
     ) {
         if (!isOpen() || token == null || sceneObject == null) return;
-        fillPanel(context, x, y, WIDTH, mainHeight());
+        fillPanel(context, x, y, MAIN_WIDTH, mainHeight());
         row(context, font, 0, "Edit", true);
         row(context, font, 1, "States  >", true);
         row(context, font, 2, "Color  >", true);
         row(context, font, 3, "Visible", true);
-        toggle(context, x + WIDTH - 24, y + 7 + 3 * ROW_HEIGHT, token.visible());
+        toggle(context, x + MAIN_WIDTH - 24, y + 7 + 3 * ROW_HEIGHT, token.visible());
         row(context, font, 4, "Vision  >", true);
         row(context, font, 5, "Duplicate", true);
         row(context, font, 6, "Delete", true);
@@ -87,7 +88,7 @@ public final class CanvasTokenContextMenuOverlay {
         };
         if (child.action() != Action.NONE || child.consumed()) return child;
 
-        if (inside(mouseX, mouseY, x, y, WIDTH, mainHeight())) {
+        if (inside(mouseX, mouseY, x, y, MAIN_WIDTH, mainHeight())) {
             int row = (int) ((mouseY - y - 5) / ROW_HEIGHT);
             return switch (row) {
                 case 0 -> new Interaction(Action.EDIT, null, 0, true);
@@ -139,7 +140,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     private Interaction clickStates(double mouseX, double mouseY, CanvasObject token, int childX) {
         int height = Math.max(24, 10 + token.states().size() * ROW_HEIGHT);
-        if (!inside(mouseX, mouseY, childX, y, WIDTH, height)) return Interaction.none();
+        if (!inside(mouseX, mouseY, childX, y, STATES_WIDTH, height)) return Interaction.none();
         int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
         if (index < 0 || index >= token.states().size()) return Interaction.handled();
         CanvasObjectState state = token.states().values().stream().skip(index).findFirst().orElse(null);
@@ -200,7 +201,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     private void renderStates(VRenderContext context, Font font, CanvasObject token, int childX) {
         int height = Math.max(24, 10 + token.states().size() * ROW_HEIGHT);
-        fillPanel(context, childX, y, WIDTH, height);
+        fillPanel(context, childX, y, STATES_WIDTH, height);
         int index = 0;
         for (CanvasObjectState state : token.states().values()) {
             boolean active = state.id().equals(token.activeStateId());
@@ -274,8 +275,13 @@ public final class CanvasTokenContextMenuOverlay {
     }
 
     private int childX(int screenWidth) {
-        int desired = x + WIDTH + 4;
-        int childWidth = submenu == Submenu.VISION ? 190 : WIDTH;
+        int desired = x + MAIN_WIDTH + 4;
+        int childWidth = switch (submenu) {
+            case VISION -> 190;
+            case COLOR -> 82;
+            case STATES -> STATES_WIDTH;
+            case NONE -> 0;
+        };
         return desired + childWidth <= screenWidth - 4 ? desired : x - childWidth - 4;
     }
 
