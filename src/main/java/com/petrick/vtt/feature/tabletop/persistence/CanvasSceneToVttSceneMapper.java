@@ -40,6 +40,8 @@ public final class CanvasSceneToVttSceneMapper {
         Map<String, Double> existingVisionRanges = new HashMap<>();
         Map<String, Double> existingVisionInnerRadii = new HashMap<>();
         Map<String, Boolean> existingVisionEnabled = new HashMap<>();
+        Map<String, Boolean> existingVisionOwnLightEnabled = new HashMap<>();
+        Map<String, Integer> existingTintColors = new HashMap<>();
         Map<String, String> existingOwnerIds = new HashMap<>();
         Map<String, VttSceneCollisionBox> existingCollisionBoxes = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
@@ -47,6 +49,10 @@ public final class CanvasSceneToVttSceneMapper {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
                 existingVisionInnerRadii.put(existingObject.getId(), existingObject.getVisionInnerRadius());
                 existingVisionEnabled.put(existingObject.getId(), existingObject.isVisionEnabled());
+                existingVisionOwnLightEnabled.put(existingObject.getId(),
+                        existingObject.isVisionOwnLightEnabled());
+                existingTintColors.put(existingObject.getId(), existingObject.getState() == null
+                        ? 0xFFFFFF : existingObject.getState().getTintColorRgb());
                 if (existingObject.getOwnerId() != null) {
                     existingOwnerIds.put(existingObject.getId(), existingObject.getOwnerId());
                 }
@@ -69,6 +75,8 @@ public final class CanvasSceneToVttSceneMapper {
                     existingVisionRanges.getOrDefault(metadataSourceId, 0.0),
                     existingVisionInnerRadii.getOrDefault(metadataSourceId, 256.0),
                     existingVisionEnabled.getOrDefault(metadataSourceId, true),
+                    existingVisionOwnLightEnabled.getOrDefault(metadataSourceId, true),
+                    existingTintColors.getOrDefault(metadataSourceId, 0xFFFFFF),
                     existingOwnerIds.get(metadataSourceId)
             );
             VttSceneCollisionBox collisionBox = existingCollisionBoxes.get(metadataSourceId);
@@ -100,6 +108,8 @@ public final class CanvasSceneToVttSceneMapper {
             double visionRange,
             double visionInnerRadius,
             boolean visionEnabled,
+            boolean visionOwnLightEnabled,
+            int tintColorRgb,
             String ownerId
     ) {
         VttSceneObject sceneObject = new VttSceneObject();
@@ -111,6 +121,7 @@ public final class CanvasSceneToVttSceneMapper {
         sceneObject.setVisionRange(visionRange);
         sceneObject.setVisionInnerRadius(visionInnerRadius);
         sceneObject.setVisionEnabled(visionEnabled);
+        sceneObject.setVisionOwnLightEnabled(visionOwnLightEnabled);
         sceneObject.setOwnerId(ownerId);
 
         sceneObject.setTransform(new VttSceneTransform(
@@ -126,11 +137,13 @@ public final class CanvasSceneToVttSceneMapper {
                 canvasObject.size().y()
         ));
 
-        sceneObject.setState(new VttSceneState(
+        VttSceneState state = new VttSceneState(
                 canvasObject.activeStateId(),
                 canvasObject.visible(),
                 canvasObject.flippedHorizontally()
-        ));
+        );
+        state.setTintColorRgb(tintColorRgb);
+        sceneObject.setState(state);
 
         return sceneObject;
     }

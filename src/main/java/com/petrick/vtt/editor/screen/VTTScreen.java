@@ -32,6 +32,7 @@ import com.petrick.vtt.editor.overlay.SceneOutlinerOverlay;
 import com.petrick.vtt.editor.overlay.SceneListOverlay;
 import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
+import com.petrick.vtt.editor.overlay.CanvasTokenContextMenuOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.scene.SceneBackgroundEditor;
@@ -192,6 +193,9 @@ public final class VTTScreen extends Screen {
     private final TokenCatalogContextMenu tokenCatalogContextMenu = new TokenCatalogContextMenu();
 
     private final TokenCatalogContextMenuOverlay tokenCatalogContextMenuOverlay = new TokenCatalogContextMenuOverlay();
+
+    private final CanvasTokenContextMenuOverlay canvasTokenContextMenuOverlay =
+            new CanvasTokenContextMenuOverlay();
 
     private final SceneContextMenu sceneContextMenu = new SceneContextMenu();
 
@@ -456,6 +460,7 @@ public final class VTTScreen extends Screen {
         if (playerViewPreview || spectatorView) {
             renderEditorNotice(context);
             renderEditorHud(context);
+            if (playerViewPreview) renderCanvasTokenContextMenu(context);
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
             return;
@@ -553,6 +558,7 @@ public final class VTTScreen extends Screen {
         sceneContextMenuOverlay.render(context, this.font, sceneContextMenu);
         renderEditorNotice(context);
         renderEditorHud(context);
+        renderCanvasTokenContextMenu(context);
         if (hudCreationOpen && session.isLocalMaster()) {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
@@ -2425,6 +2431,26 @@ public final class VTTScreen extends Screen {
         if (playerViewPreview) {
             if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
             if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
+            if (canvasTokenContextMenuOverlay.isOpen()) {
+                var interaction = canvasTokenContextMenuOverlay.mouseClicked(
+                        mouseX, mouseY, button, canvasTokenContextToken(),
+                        canvasTokenContextSceneObject(), this.width);
+                if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
+                    handleCanvasTokenContextMenuAction(interaction);
+                }
+                if (interaction.consumed()) return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && renderState != null) {
+                CanvasObject clickedToken = selectionManager.findTopmostObjectAtPoint(
+                        scene, renderState.screenToWorld(new Vec2d(mouseX, mouseY)), true);
+                if (clickedToken != null && clickedToken.hasSourceTokenDefinition()) {
+                    selectionManager.selectOnly(clickedToken.id());
+                    inputController.selectSelectTool();
+                    canvasTokenContextMenuOverlay.open(clickedToken.id(),
+                            (int) mouseX, (int) mouseY, this.width, this.height);
+                    return true;
+                }
+            }
             return renderState == null || inputController.mouseClicked(
                     mouseX, mouseY, button, getKeyboardModifiers(), renderState);
         }
@@ -2458,6 +2484,17 @@ public final class VTTScreen extends Screen {
                         getKeyboardModifiers(), renderState);
             }
             return true;
+        }
+
+        if (canvasTokenContextMenuOverlay.isOpen()) {
+            CanvasObject token = canvasTokenContextToken();
+            var sceneObject = canvasTokenContextSceneObject();
+            var interaction = canvasTokenContextMenuOverlay.mouseClicked(
+                    mouseX, mouseY, button, token, sceneObject, this.width);
+            if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
+                handleCanvasTokenContextMenuAction(interaction);
+            }
+            if (interaction.consumed()) return true;
         }
 
         if (sceneContextMenu.isOpen()) {
@@ -2563,6 +2600,23 @@ public final class VTTScreen extends Screen {
                 sceneContextMenu.close();
                 mapCatalogContextMenu.open(
                         (int) mouseX + 10, (int) mouseY - 45, clickedMap);
+                return true;
+            }
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && renderState != null) {
+            Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+            CanvasObject clickedToken = selectionManager.findTopmostObjectAtPoint(
+                    scene, world, true);
+            if (clickedToken != null && clickedToken.hasSourceTokenDefinition()) {
+                selectionManager.selectOnly(clickedToken.id());
+                inputController.selectSelectTool();
+                tokenCatalogContextMenu.close();
+                mapCatalogContextMenu.close();
+                sceneContextMenu.close();
+                canvasTokenContextMenuOverlay.open(
+                        clickedToken.id(), (int) mouseX, (int) mouseY,
+                        this.width, this.height);
                 return true;
             }
         }
@@ -2889,6 +2943,103 @@ public final class VTTScreen extends Screen {
 
             case NONE -> {
             }
+        }
+    }
+
+    private void renderCanvasTokenContextMenu(VRenderContext context) {
+        if (!canvasTokenContextMenuOverlay.isOpen()) return;
+        CanvasObject token = canvasTokenContextToken();
+        var sceneObject = canvasTokenContextSceneObject();
+        if (token == null || sceneObject == null) {
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        canvasTokenContextMenuOverlay.render(context, this.font, token, sceneObject);
+    }
+
+    private CanvasObject canvasTokenContextToken() {
+        return canvasTokenContextMenuOverlay.isOpen()
+                ? scene.findObjectById(canvasTokenContextMenuOverlay.objectId()) : null;
+    }
+
+    private com.petrick.vtt.feature.tabletop.VttSceneObject canvasTokenContextSceneObject() {
+        if (!canvasTokenContextMenuOverlay.isOpen() || session.getActiveScene() == null) return null;
+        String objectId = canvasTokenContextMenuOverlay.objectId();
+        return session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().orElse(null);
+    }
+
+    private void handleCanvasTokenContextMenuAction(
+            CanvasTokenContextMenuOverlay.Interaction interaction
+    ) {
+        CanvasObject token = canvasTokenContextToken();
+        var sceneObject = canvasTokenContextSceneObject();
+        if (token == null || sceneObject == null) {
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        switch (interaction.action()) {
+            case EDIT -> {
+                playerViewPreview = false;
+                tokenDefinitionRegistry.findById(token.sourceTokenDefinitionId())
+                        .ifPresent(this::beginEditTokenDefinition);
+                canvasTokenContextMenuOverlay.close();
+            }
+            case SET_STATE -> {
+                selectionManager.selectOnly(token.id());
+                inputController.setSelectedObjectsActiveState(interaction.stringValue());
+                canvasTokenContextMenuOverlay.close();
+            }
+            case SET_COLOR -> {
+                mutateCanvasTokenMetadata(() -> sceneObject.getState()
+                        .setTintColorRgb(interaction.intValue()));
+                canvasTokenContextMenuOverlay.close();
+            }
+            case TOGGLE_VISIBLE -> {
+                selectionManager.selectOnly(token.id());
+                inputController.toggleSelectedObjectsVisibility();
+                canvasTokenContextMenuOverlay.close();
+            }
+            case TOGGLE_VISION -> mutateCanvasTokenMetadata(() ->
+                    sceneObject.setVisionEnabled(!sceneObject.isVisionEnabled()));
+            case TOGGLE_OWN_LIGHT -> {
+                if (sceneObject.isVisionEnabled()) mutateCanvasTokenMetadata(() ->
+                        sceneObject.setVisionOwnLightEnabled(
+                                !sceneObject.isVisionOwnLightEnabled()));
+            }
+            case SET_VISION_INNER -> mutateCanvasTokenMetadata(() -> {
+                double outer = sceneObject.getVisionOuterRadius() > 0.0
+                        ? sceneObject.getVisionOuterRadius() : DEFAULT_TOKEN_VISION_OUTER_RADIUS;
+                sceneObject.setVisionInnerRadius(Math.min(
+                        outer, Math.max(0.0, interaction.intValue())));
+            });
+            case SET_VISION_OUTER -> mutateCanvasTokenMetadata(() -> {
+                double outer = Math.max(64.0, Math.min(100_000.0, interaction.intValue()));
+                outer = Math.max(outer, sceneObject.getVisionInnerRadius());
+                sceneObject.setVisionOuterRadius(outer);
+            });
+            case DUPLICATE -> {
+                selectionManager.selectOnly(token.id());
+                inputController.duplicateSelectedObjects();
+                canvasTokenContextMenuOverlay.close();
+            }
+            case DELETE -> {
+                selectionManager.selectOnly(token.id());
+                inputController.deleteSelectedObjects();
+                canvasTokenContextMenuOverlay.close();
+            }
+            case NONE -> {
+            }
+        }
+    }
+
+    private void mutateCanvasTokenMetadata(Runnable mutation) {
+        inputController.beginEditorAction();
+        try {
+            mutation.run();
+        } finally {
+            inputController.endEditorAction();
         }
     }
 
@@ -3387,6 +3538,14 @@ public final class VTTScreen extends Screen {
                 }
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 pendingAssetDeletion = null;
+            }
+            return true;
+        }
+        if (canvasTokenContextMenuOverlay.isOpen()) {
+            var interaction = canvasTokenContextMenuOverlay.keyPressed(
+                    keyCode, canvasTokenContextSceneObject());
+            if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
+                handleCanvasTokenContextMenuAction(interaction);
             }
             return true;
         }
@@ -4501,6 +4660,9 @@ public final class VTTScreen extends Screen {
     public boolean charTyped(char codePoint, int modifiers) {
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
+        if (canvasTokenContextMenuOverlay.isOpen()) {
+            return canvasTokenContextMenuOverlay.charTyped(codePoint);
+        }
         if (sceneBackgroundEditor.isActive()) return true;
         if (hudCreationOpen) {
             if (assetFolderNameBuffer != null) {

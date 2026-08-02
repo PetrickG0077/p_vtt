@@ -11,6 +11,9 @@ public final class VttSceneState {
 
     private boolean flippedHorizontally;
 
+    /** RGB multiplier applied while rendering this placed token. White is neutral. */
+    private int tintColorRgb = 0xFFFFFF;
+
     public VttSceneState() {}
 
     public VttSceneState(
@@ -49,5 +52,13 @@ public final class VttSceneState {
 
     public void setFlippedHorizontally(boolean flippedHorizontally) {
         this.flippedHorizontally = flippedHorizontally;
+    }
+
+    public int getTintColorRgb() {
+        return tintColorRgb & 0x00FFFFFF;
+    }
+
+    public void setTintColorRgb(int tintColorRgb) {
+        this.tintColorRgb = tintColorRgb & 0x00FFFFFF;
     }
 }

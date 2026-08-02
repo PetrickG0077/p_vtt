@@ -39,6 +39,7 @@ public record VttVisionSourcesPayload(
                         Vec2d origin = new Vec2d(buffer.readDouble(), buffer.readDouble());
                         double innerRadius = buffer.readDouble();
                         double outerRadius = buffer.readDouble();
+                        boolean ownLightEnabled = buffer.readBoolean();
                         int pointCount = buffer.readVarInt();
                         totalPoints += pointCount;
                         if (pointCount < 0
@@ -51,7 +52,8 @@ public record VttVisionSourcesPayload(
                             polygon.add(new Vec2d(buffer.readDouble(), buffer.readDouble()));
                         }
                         regions.add(new AuthoritativeVisionRegion(
-                                sourceId, origin, innerRadius, outerRadius, polygon));
+                                sourceId, origin, innerRadius, outerRadius,
+                                ownLightEnabled, polygon));
                     }
                     return new VttVisionSourcesPayload(
                             authorityRevision, visionRevision, sceneId,
@@ -83,6 +85,7 @@ public record VttVisionSourcesPayload(
                         buffer.writeDouble(region.origin().y());
                         buffer.writeDouble(region.innerRadius());
                         buffer.writeDouble(region.outerRadius());
+                        buffer.writeBoolean(region.ownLightEnabled());
                         buffer.writeVarInt(polygon.size());
                         for (Vec2d point : polygon) {
                             buffer.writeDouble(point.x());

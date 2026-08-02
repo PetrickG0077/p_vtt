@@ -56,17 +56,26 @@ public final class CanvasVisualRenderer {
             int bottom,
             float opacity
     ) {
+        render(context, visual, left, top, right, bottom, opacity, 0xFFFFFF);
+    }
+
+    public void render(
+            VRenderContext context, CanvasVisual visual,
+            int left, int top, int right, int bottom,
+            float opacity, int tintColorRgb
+    ) {
         float safeOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
         if (visual instanceof ColorVisual colorVisual) {
-            renderColorVisual(context, colorVisual, left, top, right, bottom, safeOpacity);
+            renderColorVisual(context, colorVisual, left, top, right, bottom, safeOpacity,
+                    tintColorRgb);
             return;
         }
 
-        boolean translucent = safeOpacity < 1.0F;
-        if (translucent) {
-            RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, safeOpacity);
-        }
+        float red = ((tintColorRgb >> 16) & 0xFF) / 255.0F;
+        float green = ((tintColorRgb >> 8) & 0xFF) / 255.0F;
+        float blue = (tintColorRgb & 0xFF) / 255.0F;
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(red, green, blue, safeOpacity);
         try {
             if (visual instanceof TextureVisual textureVisual) {
                 renderTextureVisual(context, textureVisual.assetRef(), left, top, right, bottom);
@@ -80,7 +89,7 @@ public final class CanvasVisualRenderer {
 
             renderMissingTexture(context, left, top, right, bottom, safeOpacity);
         } finally {
-            if (translucent) RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
 
@@ -91,15 +100,23 @@ public final class CanvasVisualRenderer {
             int top,
             int right,
             int bottom,
-            float opacity
+            float opacity,
+            int tintColorRgb
     ) {
         context.graphics().fill(
                 left,
                 top,
                 right,
                 bottom,
-                withOpacity(visual.color(), opacity)
+                multiplyColor(withOpacity(visual.color(), opacity), tintColorRgb)
         );
+    }
+
+    private int multiplyColor(int color, int tintRgb) {
+        int red = ((color >> 16) & 0xFF) * ((tintRgb >> 16) & 0xFF) / 255;
+        int green = ((color >> 8) & 0xFF) * ((tintRgb >> 8) & 0xFF) / 255;
+        int blue = (color & 0xFF) * (tintRgb & 0xFF) / 255;
+        return (color & 0xFF000000) | red << 16 | green << 8 | blue;
     }
 
     private void renderTextureVisual(

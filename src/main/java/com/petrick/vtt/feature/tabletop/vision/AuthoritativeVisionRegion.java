@@ -8,6 +8,7 @@ import java.util.List;
 public record AuthoritativeVisionRegion(
         String sourceObjectId, Vec2d origin,
         double innerRadius, double outerRadius,
+        boolean ownLightEnabled,
         List<Vec2d> outerPolygon
 ) {
     public AuthoritativeVisionRegion {

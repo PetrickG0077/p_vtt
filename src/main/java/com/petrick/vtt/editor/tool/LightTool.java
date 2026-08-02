@@ -242,7 +242,7 @@ public final class LightTool implements Tool {
 
     private void renderPopup(VRenderContext context, Font font) {
         int width = popup == Popup.CREATE ? 126 : 154;
-        int height = popup == Popup.CREATE ? 64 : 112;
+        int height = popup == Popup.CREATE ? 64 : 151;
         context.graphics().fill(popupX, popupY, popupX + width, popupY + height, PANEL);
         border(context, popupX, popupY, width, height, CYAN);
         if (popup == Popup.CREATE) {
@@ -261,6 +261,8 @@ public final class LightTool implements Tool {
                     0xFF000000 | COLORS[i]);
             border(context, x, popupY + 91, 13, 13, 0xFFAAAAAA);
         }
+        popupRow(context, font, 6, "Duplicate", true);
+        popupRow(context, font, 7, "Delete", true);
     }
 
     private void popupRow(VRenderContext context, Font font, int row, String label, boolean enabled) {
@@ -305,7 +307,30 @@ public final class LightTool implements Tool {
                 light.setColorRgb(COLORS[index]);
                 saveAction.run();
             }
+            return true;
         }
+        if (mouseX >= popupX && mouseX <= popupX + 154) {
+            int row = (int) ((mouseY - popupY - 5) / 19);
+            if (row == 6) duplicateSelected();
+            else if (row == 7) deleteSelected();
+        }
+        return true;
+    }
+
+    private boolean duplicateSelected() {
+        VttScene scene = sceneSupplier.get();
+        VttLight source = selectedLight();
+        if (scene == null || source == null) return false;
+        VttLight copy = new VttLight(nextId(scene), source.getX() + 32.0, source.getY() + 32.0);
+        copy.setType(source.getType());
+        copy.setOuterRadius(source.getOuterRadius());
+        copy.setInnerRadius(source.getInnerRadius());
+        copy.setColorRgb(source.getColorRgb());
+        copy.setEnabled(source.isEnabled());
+        scene.addLight(copy);
+        selectedId = copy.getId();
+        closePopup();
+        saveAction.run();
         return true;
     }
 
@@ -393,7 +418,7 @@ public final class LightTool implements Tool {
         popupX = Math.max(4, Math.min(screenWidth - popupWidth - 4,
                 (int) Math.round(mouseX) + 8));
         popupY = Math.max(4, (int) Math.round(mouseY)
-                - (popup == Popup.CREATE ? 64 : 112));
+                - (popup == Popup.CREATE ? 64 : 151));
         focusedField = null;
     }
 

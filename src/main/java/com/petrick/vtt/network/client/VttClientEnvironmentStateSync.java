@@ -74,6 +74,8 @@ public final class VttClientEnvironmentStateSync {
                                 object.setVisionInnerRadius(vision.innerRadius());
                                 object.setVisionOuterRadius(vision.outerRadius());
                                 object.setVisionEnabled(vision.enabled());
+                                object.setVisionOwnLightEnabled(vision.ownLightEnabled());
+                                object.getState().setTintColorRgb(vision.tintColorRgb());
                                 if (validCollisionBox(vision.collisionBox())) {
                                     object.setCollisionBox(vision.collisionBox());
                                 }
@@ -102,7 +104,8 @@ public final class VttClientEnvironmentStateSync {
                 .filter(object -> object != null && object.getId() != null)
                 .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                         object.getVisionOuterRadius() > 0.0 ? object.getVisionOuterRadius() : 512.0,
-                        object.isVisionEnabled(), object.getCollisionBox())).toList());
+                        object.isVisionEnabled(), object.isVisionOwnLightEnabled(),
+                        object.getState().getTintColorRgb(), object.getCollisionBox())).toList());
     }
 
     private static boolean validCollisionBox(VttSceneCollisionBox box) {
@@ -111,6 +114,7 @@ public final class VttClientEnvironmentStateSync {
                 && box.getWidth() >= 1.0 && box.getHeight() >= 1.0;
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
-                               VttSceneCollisionBox collisionBox) {}
+    private record VisionState(
+            String objectId, double innerRadius, double outerRadius, boolean enabled,
+            boolean ownLightEnabled, int tintColorRgb, VttSceneCollisionBox collisionBox) {}
 }

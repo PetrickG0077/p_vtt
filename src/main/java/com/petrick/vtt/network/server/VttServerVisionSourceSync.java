@@ -153,7 +153,8 @@ public final class VttServerVisionSourceSync {
                     Math.min(VttSceneLimits.MAX_POINTS_PER_VISION_REGION, remainingPoints));
             if (polygon.size() < 3) continue;
             regions.add(new AuthoritativeVisionRegion(
-                    object.getId(), origin, innerRadius, outerRadius, polygon));
+                    object.getId(), origin, innerRadius, outerRadius,
+                    object.isVisionOwnLightEnabled(), polygon));
             remainingPoints -= polygon.size();
         }
         boolean ownsDisabledToken = scene.getObjects().stream()
@@ -241,7 +242,8 @@ public final class VttServerVisionSourceSync {
     private static boolean illuminatedOrInVisionRadius(
             VttScene scene, AuthoritativeVisionRegion region, Vec2d point
     ) {
-        if (Math.hypot(point.x() - region.origin().x(), point.y() - region.origin().y())
+        if (region.ownLightEnabled()
+                && Math.hypot(point.x() - region.origin().x(), point.y() - region.origin().y())
                 <= region.outerRadius()) return true;
         for (VttLight light : scene.getLights()) {
             if (light != null && light.isEnabled()

@@ -48,6 +48,9 @@ public final class VttSceneObject {
     /** Null keeps old scene JSON compatible and means enabled. */
     private Boolean visionEnabled;
 
+    /** Whether this vision source illuminates its own inner/outer radius. */
+    private Boolean visionOwnLightEnabled;
+
     /** Stable player identifier that owns this placed token. Null means unowned. */
     private String ownerId;
 
@@ -163,6 +166,14 @@ public final class VttSceneObject {
 
     public void setVisionEnabled(boolean visionEnabled) {
         this.visionEnabled = visionEnabled;
+    }
+
+    public boolean isVisionOwnLightEnabled() {
+        return visionOwnLightEnabled == null || visionOwnLightEnabled;
+    }
+
+    public void setVisionOwnLightEnabled(boolean visionOwnLightEnabled) {
+        this.visionOwnLightEnabled = visionOwnLightEnabled;
     }
 
     public String getOwnerId() {

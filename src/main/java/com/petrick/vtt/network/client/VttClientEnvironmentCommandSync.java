@@ -325,7 +325,8 @@ public final class VttClientEnvironmentCommandSync {
                 .forEach(object -> result.put(object.getId(), GSON.toJson(new VisionState(
                         object.getId(), object.getVisionInnerRadius(),
                         object.getVisionOuterRadius() > 0.0 ? object.getVisionOuterRadius() : 512.0,
-                        object.isVisionEnabled(), object.getCollisionBox()))));
+                        object.isVisionEnabled(), object.isVisionOwnLightEnabled(),
+                        object.getState().getTintColorRgb(), object.getCollisionBox()))));
         return result;
     }
 
@@ -484,6 +485,8 @@ public final class VttClientEnvironmentCommandSync {
                     object.setVisionInnerRadius(vision.innerRadius());
                     object.setVisionOuterRadius(vision.outerRadius());
                     object.setVisionEnabled(vision.enabled());
+                    object.setVisionOwnLightEnabled(vision.ownLightEnabled());
+                    object.getState().setTintColorRgb(vision.tintColorRgb());
                     if (vision.collisionBox() == null || validCollisionBox(vision.collisionBox())) {
                         object.setCollisionBox(vision.collisionBox());
                     }
@@ -499,6 +502,7 @@ public final class VttClientEnvironmentCommandSync {
     private record FogConfig(boolean enabled, boolean defaultHidden) {}
     private record LightingRaycastConfig(int visionRayCount) {}
     private record DarknessColorConfig(int darknessColorRgb) {}
-    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
-                               VttSceneCollisionBox collisionBox) {}
+    private record VisionState(
+            String objectId, double innerRadius, double outerRadius, boolean enabled,
+            boolean ownLightEnabled, int tintColorRgb, VttSceneCollisionBox collisionBox) {}
 }

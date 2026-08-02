@@ -153,6 +153,10 @@ public final class VttClientTokenLifecycleSync {
             result.setVisionInnerRadius(metadataSource.getVisionInnerRadius());
             result.setVisionOuterRadius(metadataSource.getVisionOuterRadius());
             result.setVisionEnabled(metadataSource.isVisionEnabled());
+            result.setVisionOwnLightEnabled(metadataSource.isVisionOwnLightEnabled());
+            if (metadataSource.getState() != null) {
+                result.getState().setTintColorRgb(metadataSource.getState().getTintColorRgb());
+            }
             VttSceneCollisionBox sourceBox = metadataSource.getCollisionBox();
             if (sourceBox != null) {
                 result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),

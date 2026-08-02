@@ -23,6 +23,8 @@ import com.petrick.vtt.platform.render.VRenderContext;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Renderer inicial do canvas do VTT.
@@ -91,7 +93,7 @@ public final class CanvasRenderer {
         var grid = tabletopScene == null ? null : tabletopScene.getGrid();
         if (grid != null && !grid.isTopLayer()) gridRenderer.render(context, grid);
         sceneBackgroundRenderer.render(context, tabletopScene);
-        renderObjects(context, scene, selectionManager, editorSelectionVisible,
+        renderObjects(context, tabletopScene, scene, selectionManager, editorSelectionVisible,
                 resizeHandlesVisible, masterView, authoritativeVisibleObjectIds);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
@@ -109,6 +111,7 @@ public final class CanvasRenderer {
 
     private void renderObjects(
             VRenderContext context,
+            VttScene tabletopScene,
             CanvasScene scene,
             SelectionManager selectionManager,
             boolean editorSelectionVisible,
@@ -118,11 +121,18 @@ public final class CanvasRenderer {
     ) {
         Set<String> visibleIds = authoritativeVisibleObjectIds == null
                 ? null : new HashSet<>(authoritativeVisibleObjectIds);
+        Map<String, Integer> tintColors = new HashMap<>();
+        if (tabletopScene != null) tabletopScene.getObjects().forEach(object -> {
+            if (object != null && object.getId() != null && object.getState() != null) {
+                tintColors.put(object.getId(), object.getState().getTintColorRgb());
+            }
+        });
         for (CanvasObject object : scene.getObjects()) {
             if (!object.visible() && !masterView) continue;
             if (visibleIds != null && !visibleIds.contains(object.id())) continue;
 
-            renderObject(context, object, object.visible() ? 1.0F : 0.5F);
+            renderObject(context, object, object.visible() ? 1.0F : 0.5F,
+                    tintColors.getOrDefault(object.id(), 0xFFFFFF));
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
@@ -132,7 +142,9 @@ public final class CanvasRenderer {
         }
     }
 
-    private void renderObject(VRenderContext context, CanvasObject object, float opacity) {
+    private void renderObject(
+            VRenderContext context, CanvasObject object, float opacity, int tintColorRgb
+    ) {
         Vec2d screenCenter = context.renderState().worldToScreen(object.transform().position());
 
         double zoom = context.renderState().getCamera().getZoom();
@@ -177,7 +189,8 @@ public final class CanvasRenderer {
                 localTop,
                 localRight,
                 localBottom,
-                opacity
+                opacity,
+                tintColorRgb
         );
 
         poseStack.popPose();

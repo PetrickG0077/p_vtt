@@ -49,7 +49,8 @@ public final class SceneVisionMaskRenderer {
                 regions.add(new VisionRegion(
                         region.outerPolygon().stream().map(context.renderState()::worldToScreen).toList(),
                         context.renderState().worldToScreen(region.origin()),
-                        region.innerRadius() * zoom, region.outerRadius() * zoom));
+                        region.innerRadius() * zoom, region.outerRadius() * zoom,
+                        region.ownLightEnabled()));
             }
         } else {
             List<CanvasObject> sources = sourceResolver.resolveAll(
@@ -75,7 +76,8 @@ public final class SceneVisionMaskRenderer {
                 regions.add(new VisionRegion(
                         outerWorldPolygon.stream().map(context.renderState()::worldToScreen).toList(),
                         context.renderState().worldToScreen(source.transform().position()),
-                        radii.innerRadius() * zoom, radii.outerRadius() * zoom));
+                        radii.innerRadius() * zoom, radii.outerRadius() * zoom,
+                        radii.ownLightEnabled()));
             }
         }
         if (regions.isEmpty()) {
@@ -129,10 +131,11 @@ public final class SceneVisionMaskRenderer {
                     double outer = object.getVisionOuterRadius() > 0.0
                             ? object.getVisionOuterRadius() : DEFAULT_OUTER_RADIUS;
                     double inner = Math.max(0.0, object.getVisionInnerRadius());
-                    return new VisionRadii(Math.min(inner, outer), outer);
+                    return new VisionRadii(Math.min(inner, outer), outer,
+                            object.isVisionOwnLightEnabled());
                 })
                 .findFirst()
-                .orElse(new VisionRadii(DEFAULT_INNER_RADIUS, DEFAULT_OUTER_RADIUS));
+                .orElse(new VisionRadii(DEFAULT_INNER_RADIUS, DEFAULT_OUTER_RADIUS, true));
     }
 
     private void renderRadialGradient(
@@ -199,6 +202,7 @@ public final class SceneVisionMaskRenderer {
     ) {
         double darkness = 1.0;
         for (VisionRegion region : regions) {
+            if (!region.ownLightEnabled()) continue;
             double distance = Math.hypot(x - region.origin().x(), y - region.origin().y());
             if (distance > region.outerRadiusPixels()) continue;
             double span = Math.max(1.0, region.outerRadiusPixels() - region.innerRadiusPixels());
@@ -376,10 +380,12 @@ public final class SceneVisionMaskRenderer {
     }
 
     private record VisibleInterval(double start, double end) {}
-    private record VisionRadii(double innerRadius, double outerRadius) {}
+    private record VisionRadii(
+            double innerRadius, double outerRadius, boolean ownLightEnabled) {}
     private record VisionRegion(
             List<Vec2d> outerPolygon, Vec2d origin,
-            double innerRadiusPixels, double outerRadiusPixels) {}
+            double innerRadiusPixels, double outerRadiusPixels,
+            boolean ownLightEnabled) {}
     private record ScreenLight(
             Vec2d origin, double innerRadiusPixels, double outerRadiusPixels, int colorRgb) {}
 }

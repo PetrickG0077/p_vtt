@@ -1184,6 +1184,8 @@ public final class VttServerTabletopState {
                             object.setVisionOuterRadius(outer);
                             object.setVisionInnerRadius(Math.min(outer, Math.max(0.0, vision.innerRadius())));
                             object.setVisionEnabled(vision.enabled());
+                            object.setVisionOwnLightEnabled(vision.ownLightEnabled());
+                            object.getState().setTintColorRgb(vision.tintColorRgb());
                             if (validCollisionBox(vision.collisionBox(), false)) {
                                 object.setCollisionBox(vision.collisionBox());
                             }
@@ -1476,6 +1478,8 @@ public final class VttServerTabletopState {
         object.setVisionInnerRadius(vision.innerRadius());
         object.setVisionOuterRadius(vision.outerRadius());
         object.setVisionEnabled(vision.enabled());
+        object.setVisionOwnLightEnabled(vision.ownLightEnabled());
+        object.getState().setTintColorRgb(vision.tintColorRgb());
         object.setCollisionBox(vision.collisionBox());
         return true;
     }
@@ -1538,7 +1542,9 @@ public final class VttServerTabletopState {
                 VttSceneObject object = activeScene.getObjects().stream()
                         .filter(value -> value != null && id.equals(value.getId())).findFirst().orElseThrow();
                 yield GSON.toJson(new VisionState(id, object.getVisionInnerRadius(),
-                        object.getVisionOuterRadius(), object.isVisionEnabled(), object.getCollisionBox()));
+                        object.getVisionOuterRadius(), object.isVisionEnabled(),
+                        object.isVisionOwnLightEnabled(), object.getState().getTintColorRgb(),
+                        object.getCollisionBox()));
             }
             case VttEnvironmentCommandPayload.LIGHT -> GSON.toJson(
                     activeScene.getLights().stream()
@@ -1590,7 +1596,8 @@ public final class VttServerTabletopState {
                         .map(object -> new VisionState(object.getId(), object.getVisionInnerRadius(),
                                 object.getVisionOuterRadius() > 0.0
                                         ? object.getVisionOuterRadius() : 512.0,
-                                object.isVisionEnabled(), object.getCollisionBox())).toList()));
+                                object.isVisionEnabled(), object.isVisionOwnLightEnabled(),
+                                object.getState().getTintColorRgb(), object.getCollisionBox())).toList()));
     }
 
     private boolean validCollisionBox(VttSceneCollisionBox box, boolean allowNull) {
@@ -1603,8 +1610,9 @@ public final class VttServerTabletopState {
                 && box.getHeight() >= 1.0 && box.getHeight() <= 1_000_000.0;
     }
 
-    private record VisionState(String objectId, double innerRadius, double outerRadius, boolean enabled,
-                               VttSceneCollisionBox collisionBox) {}
+    private record VisionState(
+            String objectId, double innerRadius, double outerRadius, boolean enabled,
+            boolean ownLightEnabled, int tintColorRgb, VttSceneCollisionBox collisionBox) {}
 
     private boolean valid(VttTokenTransformRequestPayload request) {
         return request.authorityRevision() > 0L && request.clientSequence() > 0L
