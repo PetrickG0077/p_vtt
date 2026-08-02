@@ -10,7 +10,7 @@ import java.util.List;
 public final class SceneVisionRaycaster {
     private static final double ANGLE_EPSILON = 0.00001;
     private static final double INTERSECTION_EPSILON = 0.0000001;
-    private static final int BASE_RAY_COUNT = 256;
+    private static final int DEFAULT_BASE_RAY_COUNT = 256;
 
     public VisionRayHit castRay(
             Vec2d origin, double angleRadians, double maxDistance, List<VisionSegment> segments
@@ -37,11 +37,18 @@ public final class SceneVisionRaycaster {
     public List<Vec2d> buildVisibilityPolygon(
             Vec2d origin, double maxDistance, List<VisionSegment> segments
     ) {
+        return buildVisibilityPolygon(origin, maxDistance, segments, DEFAULT_BASE_RAY_COUNT);
+    }
+
+    public List<Vec2d> buildVisibilityPolygon(
+            Vec2d origin, double maxDistance, List<VisionSegment> segments, int baseRayCount
+    ) {
         if (origin == null) return List.of();
         List<VisionSegment> safeSegments = segments == null ? List.of() : segments;
-        List<AngularPoint> hits = new ArrayList<>(BASE_RAY_COUNT + safeSegments.size() * 6);
-        for (int index = 0; index < BASE_RAY_COUNT; index++) {
-            double angle = Math.PI * 2.0 * index / BASE_RAY_COUNT - Math.PI;
+        int rayCount = Math.max(8, Math.min(512, baseRayCount));
+        List<AngularPoint> hits = new ArrayList<>(rayCount + safeSegments.size() * 6);
+        for (int index = 0; index < rayCount; index++) {
+            double angle = Math.PI * 2.0 * index / rayCount - Math.PI;
             addRay(hits, origin, angle, maxDistance, safeSegments);
         }
         for (VisionSegment segment : safeSegments) {

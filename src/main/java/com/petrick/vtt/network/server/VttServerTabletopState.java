@@ -1226,6 +1226,8 @@ public final class VttServerTabletopState {
                         && applyFogConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.GRID_CONFIG -> !delete
                         && applyGridConfig(command.entityJson());
+                case VttEnvironmentCommandPayload.LIGHTING_CONFIG -> !delete
+                        && applyLightingConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> !delete
                         && applyBackgroundConfig(command.entityJson());
                 case VttEnvironmentCommandPayload.CAMERA_CONFIG -> delete
@@ -1407,6 +1409,15 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean applyLightingConfig(String json) {
+        var lighting = GSON.fromJson(json,
+                com.petrick.vtt.feature.tabletop.VttSceneLighting.class);
+        if (lighting == null) return false;
+        lighting.normalize();
+        activeScene.setLighting(lighting);
+        return true;
+    }
+
     private boolean applyBackgroundConfig(String json) {
         var transform = GSON.fromJson(
                 json, com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform.class);
@@ -1478,6 +1489,8 @@ public final class VttServerTabletopState {
                     activeScene.getFogOfWar().isEnabled(), activeScene.getFogOfWar().isDefaultHidden()));
             case VttEnvironmentCommandPayload.GRID_CONFIG ->
                     GSON.toJson(activeScene.getGrid());
+            case VttEnvironmentCommandPayload.LIGHTING_CONFIG ->
+                    GSON.toJson(activeScene.getLighting());
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     GSON.toJson(activeScene.getBackgroundTransform());
             case VttEnvironmentCommandPayload.CAMERA_CONFIG -> {

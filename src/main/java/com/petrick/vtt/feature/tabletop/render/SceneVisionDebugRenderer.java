@@ -54,7 +54,9 @@ public final class SceneVisionDebugRenderer {
         double innerRadius = sceneObject != null
                 ? Math.min(sceneObject.getVisionInnerRadius(), outerRadius)
                 : DEFAULT_INNER_RADIUS;
-        List<Vec2d> polygon = raycaster.buildVisibilityPolygon(origin, outerRadius, segments);
+        int rayCount = tabletopScene.getLighting().getVisionRayCount();
+        List<Vec2d> polygon = raycaster.buildVisibilityPolygon(
+                origin, outerRadius, segments, rayCount);
         if (polygon.size() < 2) return;
         for (int index = 0; index < polygon.size(); index++) {
             Vec2d point = polygon.get(index);
@@ -63,7 +65,8 @@ public final class SceneVisionDebugRenderer {
         }
         if (innerRadius > 0.0) {
             renderPolygonBoundary(context,
-                    raycaster.buildVisibilityPolygon(origin, innerRadius, segments), INNER_RADIUS_COLOR);
+                    raycaster.buildVisibilityPolygon(origin, innerRadius, segments, rayCount),
+                    INNER_RADIUS_COLOR);
         }
         Vec2d screenOrigin = context.renderState().worldToScreen(origin);
         int x = (int) Math.round(screenOrigin.x());

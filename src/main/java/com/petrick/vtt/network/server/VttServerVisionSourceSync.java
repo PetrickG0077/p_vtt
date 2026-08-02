@@ -146,7 +146,8 @@ public final class VttServerVisionSourceSync {
                     object.getTransform().getX(), object.getTransform().getY());
             var nearbySegments = state.queryVisionSegments(origin, outerRadius);
             List<Vec2d> polygon = boundedPolygon(
-                    RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments),
+                    RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments,
+                            scene.getLighting().getVisionRayCount()),
                     Math.min(VttSceneLimits.MAX_POINTS_PER_VISION_REGION, remainingPoints));
             if (polygon.size() < 3) continue;
             regions.add(new AuthoritativeVisionRegion(

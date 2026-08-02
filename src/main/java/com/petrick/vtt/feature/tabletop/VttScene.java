@@ -61,6 +61,9 @@ public final class VttScene {
     /** Null is tolerated when loading scene JSON written before grid settings existed. */
     private VttSceneGrid grid;
 
+    /** Null is tolerated when loading scene JSON written before lighting settings existed. */
+    private VttSceneLighting lighting;
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -271,6 +274,17 @@ public final class VttScene {
     public void setGrid(VttSceneGrid grid) {
         this.grid = grid == null ? new VttSceneGrid() : grid;
         this.grid.normalize();
+    }
+
+    public VttSceneLighting getLighting() {
+        if (lighting == null) lighting = new VttSceneLighting();
+        lighting.normalize();
+        return lighting;
+    }
+
+    public void setLighting(VttSceneLighting lighting) {
+        this.lighting = lighting == null ? new VttSceneLighting() : lighting;
+        this.lighting.normalize();
     }
 
     private String normalizeId(String value) {

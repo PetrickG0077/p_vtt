@@ -18,8 +18,6 @@ import java.util.List;
 
 /** Draws the player-only darkness outside the selected token's visibility polygon. */
 public final class SceneVisionMaskRenderer {
-    private static final int MASK_COLOR = 0xFF08080C;
-    private static final int COLUMN_WIDTH = 1;
     private static final int ALPHA_QUANTIZATION = 4;
     private static final double DEFAULT_INNER_RADIUS = 256.0;
     private static final double DEFAULT_OUTER_RADIUS = 512.0;
@@ -37,7 +35,7 @@ public final class SceneVisionMaskRenderer {
         if (tabletopScene == null) return;
         if (authoritativeRegions != null && authoritativeRegions.isEmpty()) {
             if (maskWhenAuthoritativeSourcesEmpty) {
-                context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+                fillScreenMask(context, tabletopScene);
             }
             return;
         }
@@ -59,7 +57,7 @@ public final class SceneVisionMaskRenderer {
                 boolean renderEmptyMask = shouldRenderNoVisionMask(
                         tabletopScene, selectionManager, visionOwnerId);
                 if (renderEmptyMask) {
-                    context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+                    fillScreenMask(context, tabletopScene);
                 }
                 return;
             }
@@ -67,7 +65,8 @@ public final class SceneVisionMaskRenderer {
             for (CanvasObject source : sources) {
                 VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
                 List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
-                        source.transform().position(), radii.outerRadius(), segments);
+                        source.transform().position(), radii.outerRadius(), segments,
+                        tabletopScene.getLighting().getVisionRayCount());
                 if (outerWorldPolygon.size() < 3) continue;
                 double zoom = context.renderState().getCamera().getZoom();
                 regions.add(new VisionRegion(
@@ -81,13 +80,15 @@ public final class SceneVisionMaskRenderer {
                     ? shouldRenderNoVisionMask(tabletopScene, selectionManager, visionOwnerId)
                     : maskWhenAuthoritativeSourcesEmpty;
             if (renderEmptyMask) {
-                context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), MASK_COLOR);
+                fillScreenMask(context, tabletopScene);
             }
             return;
         }
         List<List<Vec2d>> outerPolygons = regions.stream().map(VisionRegion::outerPolygon).toList();
-        fillOutsidePolygons(context, outerPolygons);
-        renderRadialGradient(context, regions, outerPolygons);
+        int darknessRgb = tabletopScene.getLighting().getDarknessColorRgb();
+        int pixelSize = tabletopScene.getLighting().getVisionPixelSize();
+        fillOutsidePolygons(context, outerPolygons, darknessRgb, pixelSize);
+        renderRadialGradient(context, regions, outerPolygons, darknessRgb, pixelSize);
     }
 
     private boolean shouldRenderNoVisionMask(
@@ -121,36 +122,43 @@ public final class SceneVisionMaskRenderer {
     }
 
     private void renderRadialGradient(
-            VRenderContext context, List<VisionRegion> regions, List<List<Vec2d>> outerPolygons
+            VRenderContext context, List<VisionRegion> regions, List<List<Vec2d>> outerPolygons,
+            int darknessRgb, int pixelSize
     ) {
-        for (int left = 0; left < context.screenWidth(); left += COLUMN_WIDTH) {
-            int right = Math.min(context.screenWidth(), left + COLUMN_WIDTH);
+        for (int left = 0; left < context.screenWidth(); left += pixelSize) {
+            int right = Math.min(context.screenWidth(), left + pixelSize);
             double sampleX = left + (right - left) / 2.0;
             List<VisibleInterval> outer = visibleIntervalsAtX(outerPolygons, sampleX, context.screenHeight());
             for (VisibleInterval outerInterval : outer) {
-                renderGradientInterval(context, left, right, sampleX, outerInterval, regions);
+                renderGradientInterval(context, left, right, sampleX, outerInterval, regions,
+                        darknessRgb, pixelSize);
             }
         }
     }
 
     private void renderGradientInterval(
             VRenderContext context, int left, int right, double x,
-            VisibleInterval interval, List<VisionRegion> regions
+            VisibleInterval interval, List<VisionRegion> regions, int darknessRgb,
+            int pixelSize
     ) {
-        int top = Math.max(0, (int) Math.floor(interval.start()));
-        int bottom = Math.min(context.screenHeight(), (int) Math.ceil(interval.end()));
+        int top = Math.max(0, alignDown(interval.start(), pixelSize));
+        int bottom = Math.min(context.screenHeight(), alignUp(interval.end(), pixelSize));
         if (bottom <= top) return;
 
         int runStart = top;
-        int runAlpha = quantizeAlpha(gradientAlpha(x, top + 0.5, regions));
-        for (int y = top + 1; y < bottom; y++) {
-            int alpha = quantizeAlpha(gradientAlpha(x, y + 0.5, regions));
+        int firstBottom = Math.min(bottom, top + pixelSize);
+        int runAlpha = quantizeAlpha(gradientAlpha(
+                x, top + (firstBottom - top) / 2.0, regions));
+        for (int y = top + pixelSize; y < bottom; y += pixelSize) {
+            int cellBottom = Math.min(bottom, y + pixelSize);
+            int alpha = quantizeAlpha(gradientAlpha(
+                    x, y + (cellBottom - y) / 2.0, regions));
             if (alpha == runAlpha) continue;
-            fillAlphaRun(context, left, right, runStart, y, runAlpha);
+            fillAlphaRun(context, left, right, runStart, y, runAlpha, darknessRgb);
             runStart = y;
             runAlpha = alpha;
         }
-        fillAlphaRun(context, left, right, runStart, bottom, runAlpha);
+        fillAlphaRun(context, left, right, runStart, bottom, runAlpha, darknessRgb);
     }
 
     private int quantizeAlpha(int alpha) {
@@ -161,10 +169,11 @@ public final class SceneVisionMaskRenderer {
     }
 
     private void fillAlphaRun(
-            VRenderContext context, int left, int right, int top, int bottom, int alpha
+            VRenderContext context, int left, int right, int top, int bottom, int alpha,
+            int darknessRgb
     ) {
         if (alpha > 0 && bottom > top) {
-            context.graphics().fill(left, top, right, bottom, maskColor(alpha));
+            context.graphics().fill(left, top, right, bottom, maskColor(alpha, darknessRgb));
         }
     }
 
@@ -180,13 +189,18 @@ public final class SceneVisionMaskRenderer {
         return (int) Math.round(darkness * 255.0);
     }
 
-    private int maskColor(int alpha) {
-        return (Math.max(0, Math.min(255, alpha)) << 24) | 0x0008080C;
+    private int maskColor(int alpha, int darknessRgb) {
+        return (Math.max(0, Math.min(255, alpha)) << 24)
+                | (darknessRgb & 0x00FFFFFF);
     }
 
-    private void fillOutsidePolygons(VRenderContext context, List<List<Vec2d>> polygons) {
-        for (int left = 0; left < context.screenWidth(); left += COLUMN_WIDTH) {
-            int right = Math.min(context.screenWidth(), left + COLUMN_WIDTH);
+    private void fillOutsidePolygons(
+            VRenderContext context, List<List<Vec2d>> polygons, int darknessRgb,
+            int pixelSize
+    ) {
+        int opaqueMask = maskColor(255, darknessRgb);
+        for (int left = 0; left < context.screenWidth(); left += pixelSize) {
+            int right = Math.min(context.screenWidth(), left + pixelSize);
             double sampleX = left + (right - left) / 2.0;
             List<VisibleInterval> visibleIntervals = visibleIntervalsAtX(
                     polygons, sampleX, context.screenHeight());
@@ -194,14 +208,29 @@ public final class SceneVisionMaskRenderer {
             for (VisibleInterval interval : visibleIntervals) {
                 double insideStart = interval.start();
                 double insideEnd = interval.end();
-                int opaqueEnd = Math.max(cursor, (int) Math.floor(insideStart));
-                if (opaqueEnd > cursor) context.graphics().fill(left, cursor, right, opaqueEnd, MASK_COLOR);
-                cursor = Math.max(cursor, (int) Math.ceil(insideEnd));
+                int opaqueEnd = Math.max(cursor, alignDown(insideStart, pixelSize));
+                if (opaqueEnd > cursor) context.graphics().fill(
+                        left, cursor, right, opaqueEnd, opaqueMask);
+                cursor = Math.max(cursor, alignUp(insideEnd, pixelSize));
             }
             if (cursor < context.screenHeight()) {
-                context.graphics().fill(left, cursor, right, context.screenHeight(), MASK_COLOR);
+                context.graphics().fill(
+                        left, cursor, right, context.screenHeight(), opaqueMask);
             }
         }
+    }
+
+    private int alignDown(double value, int pixelSize) {
+        return (int) Math.floor(value / pixelSize) * pixelSize;
+    }
+
+    private int alignUp(double value, int pixelSize) {
+        return (int) Math.ceil(value / pixelSize) * pixelSize;
+    }
+
+    private void fillScreenMask(VRenderContext context, VttScene scene) {
+        context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(),
+                maskColor(255, scene.getLighting().getDarknessColorRgb()));
     }
 
     private List<VisibleInterval> visibleIntervalsAtX(

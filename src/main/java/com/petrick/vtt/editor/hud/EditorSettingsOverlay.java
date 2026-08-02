@@ -2,6 +2,7 @@ package com.petrick.vtt.editor.hud;
 
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
+import com.petrick.vtt.feature.tabletop.VttSceneLighting;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
@@ -27,13 +28,22 @@ public final class EditorSettingsOverlay {
             0x66DDEE, 0x3399FF, 0x7655FF, 0xAA55FF,
             0xFF5577, 0xFF9F43, 0xFFE066, 0x55D98B
     };
+    private static final int[] DARKNESS_COLOR_PRESETS = {
+            0x000000, 0x08080C, 0x101827, 0x181020,
+            0x201010, 0x0A1820, 0x181818, 0x28282E
+    };
 
     private boolean draggingOpacity;
+    private boolean draggingVisionQuality;
+    private boolean draggingVisionPixels;
     private Category selectedCategory = Category.GRID;
     private ThemeColor selectedThemeColor = ThemeColor.OUTLINE;
     private ThemeColor focusedHudHexColor;
     private String hudHexBuffer = "";
     private boolean replaceHudHexOnType;
+    private boolean focusedLightingHexColor;
+    private String lightingHexBuffer = "";
+    private boolean replaceLightingHexOnType;
 
     public void render(
             VRenderContext context,
@@ -58,11 +68,17 @@ public final class EditorSettingsOverlay {
                 selectedCategory == Category.SCENE);
         renderCategory(context, font, hudCategoryBounds(panel), "HUD",
                 selectedCategory == Category.HUD);
+        renderCategory(context, font, lightingCategoryBounds(panel), "Lighting",
+                selectedCategory == Category.LIGHTING);
         context.graphics().vLine(panel.x() + CATEGORY_WIDTH + 8,
                 panel.y() + 29, panel.bottom() - 8, 0xFF66666C);
 
         if (selectedCategory == Category.HUD) {
             renderHudTheme(context, font, panel);
+            return;
+        }
+        if (selectedCategory == Category.LIGHTING) {
+            renderLighting(context, font, panel, scene.getLighting(), editable);
             return;
         }
         if (selectedCategory == Category.SCENE) {
@@ -114,6 +130,13 @@ public final class EditorSettingsOverlay {
             draggingOpacity = false;
             return Interaction.CONSUMED;
         }
+        if (lightingCategoryBounds(panel).contains(mouseX, mouseY)) {
+            selectedCategory = Category.LIGHTING;
+            draggingOpacity = false;
+            focusedHudHexColor = null;
+            focusedLightingHexColor = false;
+            return Interaction.CONSUMED;
+        }
         if (selectedCategory == Category.HUD) {
             for (ThemeColor themeColor : ThemeColor.values()) {
                 Bounds row = hudColorRowBounds(panel, themeColor);
@@ -141,6 +164,36 @@ public final class EditorSettingsOverlay {
             return Interaction.CONSUMED;
         }
         if (!editable || scene == null) return Interaction.CONSUMED;
+
+        if (selectedCategory == Category.LIGHTING) {
+            VttSceneLighting lighting = scene.getLighting();
+            if (darknessHexFieldBounds(panel).contains(mouseX, mouseY)) {
+                focusedLightingHexColor = true;
+                lightingHexBuffer = colorHex(lighting.getDarknessColorRgb());
+                replaceLightingHexOnType = true;
+                return Interaction.CONSUMED;
+            }
+            for (int index = 0; index < DARKNESS_COLOR_PRESETS.length; index++) {
+                if (darknessColorBounds(panel, index).contains(mouseX, mouseY)) {
+                    focusedLightingHexColor = false;
+                    lighting.setDarknessColorRgb(DARKNESS_COLOR_PRESETS[index]);
+                    return Interaction.CHANGED;
+                }
+            }
+            Bounds pixels = visionPixelSizeSliderBounds(panel);
+            if (pixels.contains(mouseX, mouseY)) {
+                draggingVisionPixels = true;
+                updateVisionPixelSize(lighting, pixels, mouseX);
+                return Interaction.CHANGED;
+            }
+            Bounds quality = visionQualitySliderBounds(panel);
+            if (quality.contains(mouseX, mouseY)) {
+                draggingVisionQuality = true;
+                updateVisionQuality(lighting, quality, mouseX);
+                return Interaction.CHANGED;
+            }
+            return Interaction.CONSUMED;
+        }
 
         if (selectedCategory == Category.SCENE) {
             if (chooseBackgroundBounds(panel).contains(mouseX, mouseY)) {
@@ -208,13 +261,24 @@ public final class EditorSettingsOverlay {
             double mouseX,
             int screenWidth,
             int screenHeight,
-            VttSceneGrid grid,
+            VttScene scene,
             boolean editable
     ) {
-        if (selectedCategory != Category.GRID
-                || !draggingOpacity || !editable || grid == null) return false;
-        updateOpacity(grid, opacitySliderBounds(bounds(screenWidth, screenHeight)), mouseX);
-        return true;
+        if (!editable || scene == null) return false;
+        Bounds panel = bounds(screenWidth, screenHeight);
+        if (selectedCategory == Category.GRID && draggingOpacity) {
+            updateOpacity(scene.getGrid(), opacitySliderBounds(panel), mouseX);
+            return true;
+        }
+        if (selectedCategory == Category.LIGHTING && draggingVisionQuality) {
+            updateVisionQuality(scene.getLighting(), visionQualitySliderBounds(panel), mouseX);
+            return true;
+        }
+        if (selectedCategory == Category.LIGHTING && draggingVisionPixels) {
+            updateVisionPixelSize(scene.getLighting(), visionPixelSizeSliderBounds(panel), mouseX);
+            return true;
+        }
+        return false;
     }
 
     public boolean mouseReleased(
@@ -222,14 +286,27 @@ public final class EditorSettingsOverlay {
             int button,
             int screenWidth,
             int screenHeight,
-            VttSceneGrid grid,
+            VttScene scene,
             boolean editable
     ) {
-        if (button != 0 || !draggingOpacity) return false;
-        if (editable && grid != null) {
-            updateOpacity(grid, opacitySliderBounds(bounds(screenWidth, screenHeight)), mouseX);
+        if (button != 0 || !draggingOpacity && !draggingVisionQuality
+                && !draggingVisionPixels) return false;
+        if (editable && scene != null) {
+            Bounds panel = bounds(screenWidth, screenHeight);
+            if (draggingOpacity) {
+                updateOpacity(scene.getGrid(), opacitySliderBounds(panel), mouseX);
+            }
+            if (draggingVisionQuality) {
+                updateVisionQuality(scene.getLighting(), visionQualitySliderBounds(panel), mouseX);
+            }
+            if (draggingVisionPixels) {
+                updateVisionPixelSize(
+                        scene.getLighting(), visionPixelSizeSliderBounds(panel), mouseX);
+            }
         }
         draggingOpacity = false;
+        draggingVisionQuality = false;
+        draggingVisionPixels = false;
         return true;
     }
 
@@ -237,7 +314,33 @@ public final class EditorSettingsOverlay {
         return bounds(screenWidth, screenHeight).contains(mouseX, mouseY);
     }
 
-    public boolean keyPressed(int keyCode) {
+    public boolean keyPressed(int keyCode, VttScene scene, boolean editable) {
+        if (selectedCategory == Category.LIGHTING && focusedLightingHexColor) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                focusedLightingHexColor = false;
+                lightingHexBuffer = "";
+                replaceLightingHexOnType = false;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                applyLightingHexBuffer(scene, editable);
+                focusedLightingHexColor = false;
+                replaceLightingHexOnType = false;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (replaceLightingHexOnType) {
+                    lightingHexBuffer = "";
+                    replaceLightingHexOnType = false;
+                } else if (!lightingHexBuffer.isEmpty()) {
+                    lightingHexBuffer = lightingHexBuffer.substring(
+                            0, lightingHexBuffer.length() - 1);
+                }
+                applyLightingHexBuffer(scene, editable);
+                return true;
+            }
+            return true;
+        }
         if (selectedCategory != Category.HUD || focusedHudHexColor == null) return false;
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             focusedHudHexColor = null;
@@ -264,7 +367,27 @@ public final class EditorSettingsOverlay {
         return true;
     }
 
-    public boolean charTyped(char codePoint) {
+    public boolean charTyped(char codePoint, VttScene scene, boolean editable) {
+        if (selectedCategory == Category.LIGHTING && focusedLightingHexColor) {
+            boolean hash = codePoint == '#';
+            boolean hexadecimal = Character.digit(codePoint, 16) >= 0;
+            if (!hash && !hexadecimal) return true;
+            if (replaceLightingHexOnType) {
+                lightingHexBuffer = "";
+                replaceLightingHexOnType = false;
+            }
+            if (hash) {
+                if (!lightingHexBuffer.isEmpty()) return true;
+                lightingHexBuffer = "#";
+            } else {
+                int digitCount = lightingHexBuffer.startsWith("#")
+                        ? lightingHexBuffer.length() - 1 : lightingHexBuffer.length();
+                if (digitCount >= 6) return true;
+                lightingHexBuffer += Character.toUpperCase(codePoint);
+            }
+            applyLightingHexBuffer(scene, editable);
+            return true;
+        }
         if (selectedCategory != Category.HUD || focusedHudHexColor == null) return false;
         boolean hash = codePoint == '#';
         boolean hexadecimal = Character.digit(codePoint, 16) >= 0;
@@ -301,12 +424,15 @@ public final class EditorSettingsOverlay {
 
     public void cancelDrag() {
         draggingOpacity = false;
+        draggingVisionQuality = false;
+        draggingVisionPixels = false;
         focusedHudHexColor = null;
+        focusedLightingHexColor = false;
         replaceHudHexOnType = false;
     }
 
     public boolean isDraggingOpacity() {
-        return draggingOpacity;
+        return draggingOpacity || draggingVisionQuality || draggingVisionPixels;
     }
 
     private void renderCategory(
@@ -445,6 +571,87 @@ public final class EditorSettingsOverlay {
         }
     }
 
+    private void renderLighting(
+            VRenderContext context, Font font, Bounds panel,
+            VttSceneLighting lighting, boolean editable
+    ) {
+        int contentX = panel.x() + CATEGORY_WIDTH + 20;
+        context.graphics().drawString(
+                font, "Lighting", contentX, panel.y() + 31, TEXT, false);
+        if (!editable) {
+            context.graphics().drawString(
+                    font, "Read only", panel.right() - 58, panel.y() + 31, MUTED, false);
+        }
+
+        context.graphics().drawString(
+                font, "Darkness Color", contentX, panel.y() + 51, TEXT, false);
+        for (int index = 0; index < DARKNESS_COLOR_PRESETS.length; index++) {
+            Bounds swatch = darknessColorBounds(panel, index);
+            context.graphics().fill(swatch.x(), swatch.y(), swatch.right(), swatch.bottom(),
+                    0xFF000000 | DARKNESS_COLOR_PRESETS[index]);
+            border(context, swatch,
+                    lighting.getDarknessColorRgb() == DARKNESS_COLOR_PRESETS[index]
+                            ? EditorHudTheme.opaqueSelection()
+                            : EditorHudTheme.outline());
+            if (!editable) context.graphics().fill(
+                    swatch.x(), swatch.y(), swatch.right(), swatch.bottom(), 0x55000000);
+        }
+        Bounds hexField = darknessHexFieldBounds(panel);
+        context.graphics().fill(hexField.x(), hexField.y(), hexField.right(), hexField.bottom(),
+                focusedLightingHexColor ? 0xFF25252C : 0xFF18181E);
+        border(context, hexField, focusedLightingHexColor
+                ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline());
+        String hexValue = focusedLightingHexColor
+                ? lightingHexBuffer + (System.currentTimeMillis() / 500L % 2L == 0L ? "_" : "")
+                : colorHex(lighting.getDarknessColorRgb());
+        context.graphics().drawString(font, hexValue,
+                hexField.x() + 4, hexField.y() + 4,
+                focusedLightingHexColor ? TEXT : MUTED, false);
+
+        Bounds pixelSlider = visionPixelSizeSliderBounds(panel);
+        context.graphics().drawString(font,
+                "Vision Pixel Size  " + lighting.getVisionPixelSize() + " px",
+                pixelSlider.x(), pixelSlider.y() - 14, TEXT, false);
+        renderLightingSlider(context, pixelSlider,
+                (lighting.getVisionPixelSize() - VttSceneLighting.MIN_VISION_PIXEL_SIZE)
+                        / (double) (VttSceneLighting.MAX_VISION_PIXEL_SIZE
+                        - VttSceneLighting.MIN_VISION_PIXEL_SIZE), editable);
+
+        Bounds slider = visionQualitySliderBounds(panel);
+        context.graphics().drawString(font,
+                "Vision Quality  " + lighting.getVisionRayCount() + " rays",
+                slider.x(), slider.y() - 14, TEXT, false);
+        double progress = (lighting.getVisionRayCount()
+                - VttSceneLighting.MIN_VISION_RAY_COUNT)
+                / (double) (VttSceneLighting.MAX_VISION_RAY_COUNT
+                - VttSceneLighting.MIN_VISION_RAY_COUNT);
+        renderLightingSlider(context, slider, progress, editable);
+
+        context.graphics().drawString(font,
+                "Larger pixels are faster but more pixelated.",
+                contentX, panel.y() + 163, MUTED, false);
+        context.graphics().drawString(font,
+                "Ray count controls the visibility outline.",
+                contentX, panel.y() + 176, MUTED, false);
+        context.graphics().drawString(font,
+                "Ambient light and light sources: future",
+                contentX, panel.y() + 196, MUTED, false);
+    }
+
+    private void renderLightingSlider(
+            VRenderContext context, Bounds slider, double progress, boolean editable
+    ) {
+        context.graphics().fill(
+                slider.x(), slider.y() + 3, slider.right(), slider.y() + 6, 0xFF55555A);
+        int knobX = slider.x() + (int) Math.round(progress * slider.width());
+        context.graphics().fill(
+                slider.x(), slider.y() + 3, knobX, slider.y() + 6,
+                editable ? EditorHudTheme.opaqueSelection() : MUTED);
+        context.graphics().fill(
+                knobX - 3, slider.y(), knobX + 4, slider.bottom(),
+                editable ? 0xFFFFFFFF : MUTED);
+    }
+
     private int hudColor(ThemeColor color) {
         return switch (color) {
             case OUTLINE -> EditorHudTheme.outline();
@@ -473,6 +680,18 @@ public final class EditorSettingsOverlay {
         if (value.length() != 6) return;
         try {
             applyHudColor(focusedHudHexColor, Integer.parseUnsignedInt(value, 16));
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private void applyLightingHexBuffer(VttScene scene, boolean editable) {
+        if (!editable || scene == null) return;
+        String value = lightingHexBuffer == null ? "" : lightingHexBuffer.trim();
+        if (value.startsWith("#")) value = value.substring(1);
+        if (value.length() != 6) return;
+        try {
+            scene.getLighting().setDarknessColorRgb(
+                    Integer.parseUnsignedInt(value, 16));
         } catch (NumberFormatException ignored) {
         }
     }
@@ -641,6 +860,28 @@ public final class EditorSettingsOverlay {
         grid.setOpacity((mouseX - slider.x()) / slider.width());
     }
 
+    private void updateVisionQuality(
+            VttSceneLighting lighting, Bounds slider, double mouseX
+    ) {
+        double progress = Math.max(0.0,
+                Math.min(1.0, (mouseX - slider.x()) / slider.width()));
+        int range = VttSceneLighting.MAX_VISION_RAY_COUNT
+                - VttSceneLighting.MIN_VISION_RAY_COUNT;
+        lighting.setVisionRayCount(VttSceneLighting.MIN_VISION_RAY_COUNT
+                + (int) Math.round(progress * range));
+    }
+
+    private void updateVisionPixelSize(
+            VttSceneLighting lighting, Bounds slider, double mouseX
+    ) {
+        double progress = Math.max(0.0,
+                Math.min(1.0, (mouseX - slider.x()) / slider.width()));
+        int range = VttSceneLighting.MAX_VISION_PIXEL_SIZE
+                - VttSceneLighting.MIN_VISION_PIXEL_SIZE;
+        lighting.setVisionPixelSize(VttSceneLighting.MIN_VISION_PIXEL_SIZE
+                + (int) Math.round(progress * range));
+    }
+
     private Bounds bounds(int screenWidth, int screenHeight) {
         int x = (screenWidth - WIDTH) / 2;
         int y = Math.max(42, (screenHeight - HEIGHT) / 3);
@@ -657,6 +898,34 @@ public final class EditorSettingsOverlay {
 
     private Bounds hudCategoryBounds(Bounds panel) {
         return new Bounds(panel.x() + 8, panel.y() + 93, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds lightingCategoryBounds(Bounds panel) {
+        return new Bounds(panel.x() + 8, panel.y() + 118, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds darknessColorBounds(Bounds panel, int index) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20 + index * 20,
+                panel.y() + 66, 16, 16);
+    }
+
+    private Bounds visionQualitySliderBounds(Bounds panel) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 145, 210, 10);
+    }
+
+    private Bounds visionPixelSizeSliderBounds(Bounds panel) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 108, 210, 10);
+    }
+
+    private Bounds darknessHexFieldBounds(Bounds panel) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 184,
+                panel.y() + 64, 66, 20);
     }
 
     private Bounds hudColorRowBounds(Bounds panel, ThemeColor color) {
@@ -748,7 +1017,8 @@ public final class EditorSettingsOverlay {
     private enum Category {
         GRID,
         SCENE,
-        HUD
+        HUD,
+        LIGHTING
     }
 
     private enum ThemeColor {

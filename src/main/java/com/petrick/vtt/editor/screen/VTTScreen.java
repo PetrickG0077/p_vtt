@@ -3062,7 +3062,7 @@ public final class VTTScreen extends Screen {
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseReleased(
                 mouseX, button, this.width, this.height,
-                session.getActiveScene().getGrid(), session.isLocalMaster())) {
+                session.getActiveScene(), session.isLocalMaster())) {
             persistGridSettings();
             inputController.endEditorAction();
             return true;
@@ -3154,7 +3154,7 @@ public final class VTTScreen extends Screen {
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseDragged(
                 mouseX, this.width, this.height,
-                session.getActiveScene().getGrid(), session.isLocalMaster())) {
+                session.getActiveScene(), session.isLocalMaster())) {
             return true;
         }
         if (playerViewPreview) {
@@ -3435,7 +3435,9 @@ public final class VTTScreen extends Screen {
             }
             return true;
         }
-        if (hudSettingsOpen && editorSettingsOverlay.keyPressed(keyCode)) {
+        if (hudSettingsOpen && editorSettingsOverlay.keyPressed(
+                keyCode, session.getActiveScene(), session.isLocalMaster())) {
+            persistGridSettings();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_P
@@ -4504,7 +4506,9 @@ public final class VTTScreen extends Screen {
             }
             return true;
         }
-        if (hudSettingsOpen && editorSettingsOverlay.charTyped(codePoint)) {
+        if (hudSettingsOpen && editorSettingsOverlay.charTyped(
+                codePoint, session.getActiveScene(), session.isLocalMaster())) {
+            persistGridSettings();
             return true;
         }
         if (renamingSceneId != null) {

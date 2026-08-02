@@ -11,6 +11,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
+import com.petrick.vtt.feature.tabletop.VttSceneLighting;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
@@ -45,6 +46,9 @@ public final class VttClientEnvironmentCommandSync {
     private static String lastGridConfigJson;
     private static String observedGridConfigJson;
     private static int stableGridConfigTicks;
+    private static String lastLightingConfigJson;
+    private static String observedLightingConfigJson;
+    private static int stableLightingConfigTicks;
     private static String activeSceneId;
     private static boolean mapPreviewActive;
     private static boolean environmentConfirmationPending;
@@ -66,6 +70,7 @@ public final class VttClientEnvironmentCommandSync {
         Map<String, String> vision = visionById(session);
         String fogConfigJson = fogConfigJson(session);
         String gridConfigJson = GSON.toJson(session.getActiveScene().getGrid());
+        String lightingConfigJson = GSON.toJson(session.getActiveScene().getLighting());
 
         if (snapshotVersion != session.getNetworkSnapshotVersion()) {
             snapshotVersion = session.getNetworkSnapshotVersion();
@@ -88,6 +93,9 @@ public final class VttClientEnvironmentCommandSync {
             lastGridConfigJson = gridConfigJson;
             observedGridConfigJson = gridConfigJson;
             stableGridConfigTicks = 0;
+            lastLightingConfigJson = lightingConfigJson;
+            observedLightingConfigJson = lightingConfigJson;
+            stableLightingConfigTicks = 0;
             return;
         }
 
@@ -117,6 +125,19 @@ public final class VttClientEnvironmentCommandSync {
             send(VttEnvironmentCommandPayload.UPSERT, VttEnvironmentCommandPayload.GRID_CONFIG,
                     "grid", gridConfigJson);
             lastGridConfigJson = gridConfigJson;
+        }
+        if (!Objects.equals(lightingConfigJson, observedLightingConfigJson)) {
+            observedLightingConfigJson = lightingConfigJson;
+            stableLightingConfigTicks = 0;
+        } else if (stableLightingConfigTicks < 3) {
+            stableLightingConfigTicks++;
+        }
+        if (stableLightingConfigTicks >= 3
+                && !Objects.equals(lightingConfigJson, lastLightingConfigJson)) {
+            send(VttEnvironmentCommandPayload.UPSERT,
+                    VttEnvironmentCommandPayload.LIGHTING_CONFIG,
+                    "lighting", lightingConfigJson);
+            lastLightingConfigJson = lightingConfigJson;
         }
         finishEnvironmentConfirmationIfReady(session);
     }
@@ -200,6 +221,15 @@ public final class VttClientEnvironmentCommandSync {
                     observedGridConfigJson = lastGridConfigJson;
                     stableGridConfigTicks = 0;
                 }
+                case VttEnvironmentCommandPayload.LIGHTING_CONFIG -> {
+                    VttSceneLighting lighting = GSON.fromJson(
+                            update.entityJson(), VttSceneLighting.class);
+                    session.getActiveScene().setLighting(lighting);
+                    lastLightingConfigJson = GSON.toJson(
+                            session.getActiveScene().getLighting());
+                    observedLightingConfigJson = lastLightingConfigJson;
+                    stableLightingConfigTicks = 0;
+                }
                 case VttEnvironmentCommandPayload.BACKGROUND_CONFIG -> {
                     VttSceneBackgroundTransform transform = GSON.fromJson(
                             update.entityJson(), VttSceneBackgroundTransform.class);
@@ -247,6 +277,9 @@ public final class VttClientEnvironmentCommandSync {
         lastGridConfigJson = null;
         observedGridConfigJson = null;
         stableGridConfigTicks = 0;
+        lastLightingConfigJson = null;
+        observedLightingConfigJson = null;
+        stableLightingConfigTicks = 0;
         activeSceneId = null;
         authorityRevision = -1L;
         mapPreviewActive = false;
@@ -386,6 +419,8 @@ public final class VttClientEnvironmentCommandSync {
                  VttEnvironmentCommandPayload.FOG_REVEALED,
                  VttEnvironmentCommandPayload.FOG_CONFIG -> "Fog changes confirmed";
             case VttEnvironmentCommandPayload.GRID_CONFIG -> "Grid changes confirmed";
+            case VttEnvironmentCommandPayload.LIGHTING_CONFIG ->
+                    "Lighting changes confirmed";
             case VttEnvironmentCommandPayload.VISION -> "Token vision changes confirmed";
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     "Scene background changes confirmed";
