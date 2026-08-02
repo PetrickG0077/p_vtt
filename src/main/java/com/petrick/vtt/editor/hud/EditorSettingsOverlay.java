@@ -633,14 +633,17 @@ public final class EditorSettingsOverlay {
         renderLightingSlider(context, slider, progress, editable);
 
         context.graphics().drawString(font,
-                "Larger pixels are faster but more pixelated.",
+                "Larger pixels improve performance",
                 contentX, panel.y() + 180, MUTED, false);
         context.graphics().drawString(font,
-                "Ray count controls the visibility outline.",
+                "but make vision more pixelated.",
                 contentX, panel.y() + 193, MUTED, false);
         context.graphics().drawString(font,
-                "Ambient light and light sources: future",
-                contentX, panel.y() + 215, MUTED, false);
+                "Ray count controls the outline.",
+                contentX, panel.y() + 210, MUTED, false);
+        context.graphics().drawString(font,
+                "Ambient light and sources: future",
+                contentX, panel.y() + 227, MUTED, false);
     }
 
     private void renderLightingSlider(
@@ -930,13 +933,13 @@ public final class EditorSettingsOverlay {
     private Bounds applyDarknessColorBounds(Bounds panel) {
         return new Bounds(
                 panel.x() + CATEGORY_WIDTH + 20,
-                panel.y() + 91, 132, 20);
+                panel.y() + 91, 142, 20);
     }
 
     private Bounds darknessHexFieldBounds(Bounds panel) {
         return new Bounds(
-                panel.x() + CATEGORY_WIDTH + 184,
-                panel.y() + 64, 66, 20);
+                panel.x() + CATEGORY_WIDTH + 178,
+                panel.y() + 64, 60, 20);
     }
 
     private Bounds hudColorRowBounds(Bounds panel, ThemeColor color) {
