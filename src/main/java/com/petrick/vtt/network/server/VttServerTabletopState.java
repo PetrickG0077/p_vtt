@@ -713,7 +713,10 @@ public final class VttServerTabletopState {
                 || targetSceneJson.length() > VttSceneHistoryCommandPayload.MAX_SCENE_JSON_LENGTH) {
             return SceneHistoryApplyResult.INVALID;
         }
-        if (!expectedFingerprint.equals(VttSceneFingerprint.of(activeScene))) {
+        String currentFingerprint = VttSceneFingerprint.of(activeScene);
+        if (!expectedFingerprint.equals(currentFingerprint)) {
+            VTT.LOGGER.warn("Rejected stale VTT scene history state for {}: expected={}, current={}",
+                    sceneId, expectedFingerprint, currentFingerprint);
             return SceneHistoryApplyResult.STALE;
         }
         final VttScene target;

@@ -79,6 +79,7 @@ import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
+import com.petrick.vtt.network.VttSceneFingerprint;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
@@ -4464,6 +4465,7 @@ public final class VTTScreen extends Screen {
             VttClientEditorNotice.show("Scene is too large for network undo/redo");
             return;
         }
+        String expectedFingerprint = VttSceneFingerprint.of(session.getActiveScene());
         VttClientSceneHistorySync.begin(session.getNetworkSnapshotVersion());
         boolean changed = redo
                 ? inputController.redoEditorAction()
@@ -4481,9 +4483,11 @@ public final class VTTScreen extends Screen {
         pendingHistoryStartedSnapshotVersion = session.getNetworkSnapshotVersion();
         pendingHistoryRequestUntil = System.currentTimeMillis() + 120_000L;
         pendingHistoryRejected = false;
+        VTT.LOGGER.info("Sending VTT {} for scene {} with expected fingerprint {}",
+                operation, session.getActiveScene().getId(), expectedFingerprint);
         PacketDistributor.sendToServer(new VttSceneHistoryCommandPayload(
                 pendingHistoryRequestId, session.getNetworkAuthorityRevision(), operation,
-                session.getActiveScene().getId(), prepared.expectedFingerprint(), targetSceneJson));
+                session.getActiveScene().getId(), expectedFingerprint, targetSceneJson));
         VttClientEditorNotice.show((redo ? "Redo" : "Undo") + " sent to server");
     }
 
