@@ -388,7 +388,10 @@ public final class LightTool implements Tool {
 
     private void openPopup(Popup popup, double mouseX, double mouseY) {
         this.popup = popup;
-        popupX = Math.max(4, (int) Math.round(mouseX) - (popup == Popup.CREATE ? 126 : 154));
+        int popupWidth = popup == Popup.CREATE ? 126 : 154;
+        int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        popupX = Math.max(4, Math.min(screenWidth - popupWidth - 4,
+                (int) Math.round(mouseX) + 8));
         popupY = Math.max(4, (int) Math.round(mouseY)
                 - (popup == Popup.CREATE ? 64 : 112));
         focusedField = null;

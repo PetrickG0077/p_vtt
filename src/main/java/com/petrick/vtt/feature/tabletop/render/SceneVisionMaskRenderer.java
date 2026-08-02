@@ -250,8 +250,11 @@ public final class SceneVisionMaskRenderer {
                 for (int y = top; y < bottom; y += pixelSize) {
                     int cellBottom = Math.min(bottom, y + pixelSize);
                     double sampleY = y + (cellBottom - y) / 2.0;
-                    ScreenLight strongest = null;
-                    double strength = 0.0;
+                    double combinedStrength = 0.0;
+                    double totalWeight = 0.0;
+                    double red = 0.0;
+                    double green = 0.0;
+                    double blue = 0.0;
                     for (ScreenLight light : lights) {
                         double distance = Math.hypot(
                                 x - light.origin().x(), sampleY - light.origin().y());
@@ -260,15 +263,25 @@ public final class SceneVisionMaskRenderer {
                                 : 1.0 - (distance - light.innerRadiusPixels())
                                 / Math.max(1.0, light.outerRadiusPixels()
                                 - light.innerRadiusPixels());
-                        if (candidate > strength) {
-                            strength = candidate;
-                            strongest = light;
-                        }
+                        candidate = Math.max(0.0, Math.min(1.0, candidate));
+                        if (candidate <= 0.0) continue;
+                        combinedStrength = 1.0
+                                - (1.0 - combinedStrength) * (1.0 - candidate);
+                        totalWeight += candidate;
+                        red += ((light.colorRgb() >> 16) & 0xFF) * candidate;
+                        green += ((light.colorRgb() >> 8) & 0xFF) * candidate;
+                        blue += (light.colorRgb() & 0xFF) * candidate;
                     }
-                    if (strongest != null && strength > 0.0) {
-                        int alpha = (int) Math.round(28.0 * strength);
+                    if (totalWeight > 0.0 && combinedStrength > 0.0) {
+                        int mixedRed = (int) Math.round(red / totalWeight);
+                        int mixedGreen = (int) Math.round(green / totalWeight);
+                        int mixedBlue = (int) Math.round(blue / totalWeight);
+                        int mixedRgb = (Math.max(0, Math.min(255, mixedRed)) << 16)
+                                | (Math.max(0, Math.min(255, mixedGreen)) << 8)
+                                | Math.max(0, Math.min(255, mixedBlue));
+                        int alpha = (int) Math.round(104.0 * combinedStrength);
                         context.graphics().fill(left, y, right, cellBottom,
-                                (alpha << 24) | strongest.colorRgb());
+                                (alpha << 24) | mixedRgb);
                     }
                 }
             }
