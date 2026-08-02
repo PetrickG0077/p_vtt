@@ -2792,6 +2792,11 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        if (!tokenCreationDraft.hasValidDefaultSize()) {
+            tokenCreationDraft.setErrorMessage("Token size must be between 1 and 10000 px");
+            return;
+        }
+
         if (!tokenCreationDraft.hasAnyStateImage()) {
             tokenCreationDraft.setErrorMessage("Choose an image first");
             return;

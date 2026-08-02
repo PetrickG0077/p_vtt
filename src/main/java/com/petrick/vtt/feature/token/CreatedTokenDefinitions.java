@@ -22,8 +22,6 @@ public final class CreatedTokenDefinitions {
     private static final String USER_TOKEN_ID_PREFIX = "user/tokens/";
     private static final String USER_TOKEN_IMAGE_ID_PREFIX = "user/token_images/";
 
-    private static final double MAX_DEFAULT_TOKEN_SIZE = 96.0;
-
     private CreatedTokenDefinitions() {}
 
     public static TokenDefinition createAndRegister(
@@ -51,6 +49,10 @@ public final class CreatedTokenDefinitions {
             throw new IllegalStateException("Cannot create token while some states have no image");
         }
 
+        if (!draft.hasValidDefaultSize()) {
+            throw new IllegalStateException("Cannot create token with an invalid default size");
+        }
+
         String displayName = draft.getResolvedDisplayName();
         String safeName = sanitizeIdPart(displayName);
 
@@ -67,15 +69,10 @@ public final class CreatedTokenDefinitions {
 
         String defaultStateId = draft.getDefaultStateIdForSave();
 
-        TokenStateDraft defaultState = draft.getDefaultStateForSave();
-
         TokenDefinition definition = new TokenDefinition(
                 tokenDefinitionId,
                 displayName,
-                calculateDefaultSize(
-                        defaultState.getImageWidth(),
-                        defaultState.getImageHeight()
-                ),
+                new Vec2d(draft.getDefaultWidth(), draft.getDefaultHeight()),
                 states,
                 defaultStateId,
                 draft.getPlayer()
@@ -187,28 +184,4 @@ public final class CreatedTokenDefinitions {
         return sanitized;
     }
 
-    private static Vec2d calculateDefaultSize(
-            int textureWidth,
-            int textureHeight
-    ) {
-        if (textureWidth <= 0 || textureHeight <= 0) {
-            return new Vec2d(MAX_DEFAULT_TOKEN_SIZE, MAX_DEFAULT_TOKEN_SIZE);
-        }
-
-        double width = textureWidth;
-        double height = textureHeight;
-
-        double largestSide = Math.max(width, height);
-
-        if (largestSide <= MAX_DEFAULT_TOKEN_SIZE) {
-            return new Vec2d(width, height);
-        }
-
-        double scale = MAX_DEFAULT_TOKEN_SIZE / largestSide;
-
-        return new Vec2d(
-                width * scale,
-                height * scale
-        );
-    }
 }

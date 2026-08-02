@@ -354,7 +354,7 @@ public record CanvasObject(
                 displayName,
                 sourceTokenDefinitionId,
                 transform,
-                definition.defaultSize(),
+                size,
                 definition.states(),
                 newActiveStateId,
                 visible,

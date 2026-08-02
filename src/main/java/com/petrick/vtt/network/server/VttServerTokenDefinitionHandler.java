@@ -289,7 +289,11 @@ public final class VttServerTokenDefinitionHandler {
         if (data == null || data.tokenDefinitionId == null
                 || !data.tokenDefinitionId.startsWith("user/tokens/")
                 || data.displayName == null || data.displayName.isBlank()
-                || data.defaultWidth <= 0.0 || data.defaultHeight <= 0.0) {
+                || !Double.isFinite(data.defaultWidth) || !Double.isFinite(data.defaultHeight)
+                || data.defaultWidth < com.petrick.vtt.feature.token.TokenDefinition.MIN_DEFAULT_SIZE
+                || data.defaultHeight < com.petrick.vtt.feature.token.TokenDefinition.MIN_DEFAULT_SIZE
+                || data.defaultWidth > com.petrick.vtt.feature.token.TokenDefinition.MAX_DEFAULT_SIZE
+                || data.defaultHeight > com.petrick.vtt.feature.token.TokenDefinition.MAX_DEFAULT_SIZE) {
             throw new JsonParseException("Invalid token definition metadata");
         }
         Set<String> stateIds = new HashSet<>();

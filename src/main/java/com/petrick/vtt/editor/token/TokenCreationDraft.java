@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.token;
 import net.minecraft.resources.ResourceLocation;
 
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.token.TokenDefinition;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,6 +20,10 @@ public final class TokenCreationDraft {
     }
 
     private static final int MAX_STATES = 9;
+    public static final double DEFAULT_TOKEN_WIDTH = 226.36;
+    public static final double DEFAULT_TOKEN_HEIGHT = 226.36;
+    public static final double MIN_TOKEN_SIZE = TokenDefinition.MIN_DEFAULT_SIZE;
+    public static final double MAX_TOKEN_SIZE = TokenDefinition.MAX_DEFAULT_SIZE;
 
     private Mode mode = Mode.CREATE;
 
@@ -31,6 +36,10 @@ public final class TokenCreationDraft {
     private String player = "";
 
     private String notes = "";
+
+    private String defaultWidthText = formatSize(DEFAULT_TOKEN_WIDTH);
+
+    private String defaultHeightText = formatSize(DEFAULT_TOKEN_HEIGHT);
 
     private String errorMessage = "";
 
@@ -215,6 +224,34 @@ public final class TokenCreationDraft {
     public void setNotes(String notes) {
         this.notes = sanitize(notes);
         clearError();
+    }
+
+    public String getDefaultWidthText() { return defaultWidthText; }
+
+    public String getDefaultHeightText() { return defaultHeightText; }
+
+    public void setDefaultWidthText(String value) {
+        defaultWidthText = value == null ? "" : value;
+        clearError();
+    }
+
+    public void setDefaultHeightText(String value) {
+        defaultHeightText = value == null ? "" : value;
+        clearError();
+    }
+
+    public void setDefaultSize(double width, double height) {
+        defaultWidthText = formatSize(width);
+        defaultHeightText = formatSize(height);
+        clearError();
+    }
+
+    public double getDefaultWidth() { return parseSize(defaultWidthText); }
+
+    public double getDefaultHeight() { return parseSize(defaultHeightText); }
+
+    public boolean hasValidDefaultSize() {
+        return validSize(getDefaultWidth()) && validSize(getDefaultHeight());
     }
 
     public boolean hasName() {
@@ -585,5 +622,23 @@ public final class TokenCreationDraft {
         }
 
         return value;
+    }
+
+    private static double parseSize(String value) {
+        if (value == null || value.isBlank()) return Double.NaN;
+        try {
+            return Double.parseDouble(value.replace(',', '.'));
+        } catch (NumberFormatException ignored) {
+            return Double.NaN;
+        }
+    }
+
+    private static boolean validSize(double value) {
+        return Double.isFinite(value) && value >= MIN_TOKEN_SIZE && value <= MAX_TOKEN_SIZE;
+    }
+
+    private static String formatSize(double value) {
+        if (!Double.isFinite(value) || value <= 0.0) value = DEFAULT_TOKEN_WIDTH;
+        return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 }

@@ -25,6 +25,8 @@ public record TokenDefinition(
         String defaultStateId,
         String defaultOwnerId
 ) {
+    public static final double MIN_DEFAULT_SIZE = 1.0;
+    public static final double MAX_DEFAULT_SIZE = 10_000.0;
 
     public TokenDefinition(
             String id, String displayName, Vec2d defaultSize,
@@ -42,8 +44,13 @@ public record TokenDefinition(
             throw new IllegalArgumentException("Token definition display name cannot be null or blank");
         }
 
-        if (defaultSize == null) {
-            throw new IllegalArgumentException("Token definition default size cannot be null");
+        if (defaultSize == null || !Double.isFinite(defaultSize.x())
+                || !Double.isFinite(defaultSize.y())
+                || defaultSize.x() < MIN_DEFAULT_SIZE
+                || defaultSize.y() < MIN_DEFAULT_SIZE
+                || defaultSize.x() > MAX_DEFAULT_SIZE
+                || defaultSize.y() > MAX_DEFAULT_SIZE) {
+            throw new IllegalArgumentException("Token definition default size is invalid");
         }
 
         if (states == null || states.isEmpty()) {

@@ -47,8 +47,6 @@ public final class CreatedTokenStorage {
 
     private static final String USER_TOKEN_ID_PREFIX = "user/tokens/";
 
-    private static final double MAX_DEFAULT_TOKEN_SIZE = 96.0;
-
     private CreatedTokenStorage() {}
 
     public static void saveCreatedToken(
@@ -160,6 +158,7 @@ public final class CreatedTokenStorage {
             draft.setName(data.displayName);
             draft.setPlayer(data.player);
             draft.setNotes(data.notes);
+            draft.setDefaultSize(data.defaultWidth, data.defaultHeight);
 
             draft.replaceStates(
                     createStateDraftsFromSaveData(data),
@@ -605,7 +604,11 @@ public final class CreatedTokenStorage {
             return false;
         }
 
-        if (data.defaultWidth <= 0 || data.defaultHeight <= 0) {
+        if (!Double.isFinite(data.defaultWidth) || !Double.isFinite(data.defaultHeight)
+                || data.defaultWidth < TokenDefinition.MIN_DEFAULT_SIZE
+                || data.defaultHeight < TokenDefinition.MIN_DEFAULT_SIZE
+                || data.defaultWidth > TokenDefinition.MAX_DEFAULT_SIZE
+                || data.defaultHeight > TokenDefinition.MAX_DEFAULT_SIZE) {
             return false;
         }
 
@@ -694,6 +697,9 @@ public final class CreatedTokenStorage {
             CreatedTokenSaveData data,
             TokenCreationDraft draft
     ) {
+        if (!draft.hasValidDefaultSize()) {
+            throw new IllegalArgumentException("Token draft has an invalid default size");
+        }
         data.player = draft.getPlayer();
         data.notes = draft.getNotes();
 
@@ -709,13 +715,8 @@ public final class CreatedTokenStorage {
         data.selectedImageWidth = defaultState.getImageWidth();
         data.selectedImageHeight = defaultState.getImageHeight();
 
-        Vec2d defaultSize = calculateDefaultSize(
-                defaultState.getImageWidth(),
-                defaultState.getImageHeight()
-        );
-
-        data.defaultWidth = defaultSize.x();
-        data.defaultHeight = defaultSize.y();
+        data.defaultWidth = draft.getDefaultWidth();
+        data.defaultHeight = draft.getDefaultHeight();
 
         data.states.clear();
 
@@ -934,31 +935,6 @@ public final class CreatedTokenStorage {
         }
 
         return id;
-    }
-
-    private static Vec2d calculateDefaultSize(
-            int textureWidth,
-            int textureHeight
-    ) {
-        if (textureWidth <= 0 || textureHeight <= 0) {
-            return new Vec2d(MAX_DEFAULT_TOKEN_SIZE, MAX_DEFAULT_TOKEN_SIZE);
-        }
-
-        double width = textureWidth;
-        double height = textureHeight;
-
-        double largestSide = Math.max(width, height);
-
-        if (largestSide <= MAX_DEFAULT_TOKEN_SIZE) {
-            return new Vec2d(width, height);
-        }
-
-        double scale = MAX_DEFAULT_TOKEN_SIZE / largestSide;
-
-        return new Vec2d(
-                width * scale,
-                height * scale
-        );
     }
 
     private static String sanitizeFileName(String value) {

@@ -28,12 +28,14 @@ public final class TokenCreationDialog {
         NAME,
         PLAYER,
         NOTES,
+        SIZE_X,
+        SIZE_Y,
         STATE_NAME
     }
 
     private static final int DIALOG_WIDTH = 430;
 
-    private static final int DIALOG_HEIGHT = 325;
+    private static final int DIALOG_HEIGHT = 355;
 
     private static final int PANEL_BACKGROUND = 0xEE000000;
 
@@ -59,7 +61,7 @@ public final class TokenCreationDialog {
 
     private static final int STATE_PANEL_X_OFFSET = 26;
 
-    private static final int STATE_PANEL_Y_OFFSET = 150;
+    private static final int STATE_PANEL_Y_OFFSET = 180;
 
     private static final int STATE_PANEL_WIDTH = 378;
 
@@ -151,6 +153,8 @@ public final class TokenCreationDialog {
                 Field.NOTES
         );
 
+        renderSizeFields(context, font, draft, x, y);
+
         renderStatesPanel(context, font, draft, x + STATE_PANEL_X_OFFSET, y + STATE_PANEL_Y_OFFSET);
 
         if (activeField == Field.PLAYER) {
@@ -163,7 +167,7 @@ public final class TokenCreationDialog {
                     font,
                     draft.getErrorMessage(),
                     x + DIALOG_WIDTH / 2,
-                    y + 224,
+                    y + 274,
                     0xFFFF5555
             );
         }
@@ -1422,6 +1426,14 @@ public final class TokenCreationDialog {
             return Field.NOTES;
         }
 
+        if (isPointInside(mouseX, mouseY, x + 201, y + 152, 72, INPUT_HEIGHT)) {
+            return Field.SIZE_X;
+        }
+
+        if (isPointInside(mouseX, mouseY, x + 295, y + 152, 72, INPUT_HEIGHT)) {
+            return Field.SIZE_Y;
+        }
+
         return Field.NONE;
     }
 
@@ -1536,6 +1548,18 @@ public final class TokenCreationDialog {
 
         if (activeField == Field.NOTES && draft.getNotes().length() < 64) {
             draft.setNotes(draft.getNotes() + character);
+            return;
+        }
+
+        if (activeField == Field.SIZE_X) {
+            draft.setDefaultWidthText(appendSizeCharacter(
+                    draft.getDefaultWidthText(), character));
+            return;
+        }
+
+        if (activeField == Field.SIZE_Y) {
+            draft.setDefaultHeightText(appendSizeCharacter(
+                    draft.getDefaultHeightText(), character));
         }
     }
 
@@ -1552,6 +1576,16 @@ public final class TokenCreationDialog {
 
         if (activeField == Field.NOTES) {
             draft.setNotes(removeLastCharacter(draft.getNotes()));
+            return;
+        }
+
+        if (activeField == Field.SIZE_X) {
+            draft.setDefaultWidthText(removeLastCharacter(draft.getDefaultWidthText()));
+            return;
+        }
+
+        if (activeField == Field.SIZE_Y) {
+            draft.setDefaultHeightText(removeLastCharacter(draft.getDefaultHeightText()));
         }
     }
 
@@ -1560,9 +1594,47 @@ public final class TokenCreationDialog {
             case NONE -> Field.NAME;
             case NAME -> Field.PLAYER;
             case PLAYER -> Field.NOTES;
-            case NOTES -> Field.STATE_NAME;
+            case NOTES -> Field.SIZE_X;
+            case SIZE_X -> Field.SIZE_Y;
+            case SIZE_Y -> Field.STATE_NAME;
             case STATE_NAME -> Field.NAME;
         };
+    }
+
+    private void renderSizeFields(
+            VRenderContext context, Font font, TokenCreationDraft draft, int x, int y
+    ) {
+        context.graphics().drawString(font, "Size:", x + 145, y + 159,
+                TEXT_COLOR, false);
+        context.graphics().drawString(font, "X", x + 190, y + 159,
+                TEXT_COLOR, false);
+        renderCompactInput(context, font, draft.getDefaultWidthText(),
+                x + 201, y + 152, Field.SIZE_X);
+        context.graphics().drawString(font, "Y", x + 284, y + 159,
+                TEXT_COLOR, false);
+        renderCompactInput(context, font, draft.getDefaultHeightText(),
+                x + 295, y + 152, Field.SIZE_Y);
+        context.graphics().drawString(font, "px", x + 373, y + 159,
+                MUTED_TEXT_COLOR, false);
+    }
+
+    private void renderCompactInput(
+            VRenderContext context, Font font, String value, int x, int y, Field field
+    ) {
+        context.graphics().fill(x, y, x + 72, y + INPUT_HEIGHT, INPUT_BACKGROUND);
+        drawBorder(context, x, y, 72, INPUT_HEIGHT,
+                activeField == field
+                        ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline());
+        String visible = value + (activeField == field ? "_" : "");
+        context.graphics().drawString(font, truncateText(visible, 8),
+                x + 5, y + 7, TEXT_COLOR, false);
+    }
+
+    private String appendSizeCharacter(String current, char character) {
+        if (!Character.isDigit(character) && character != '.' && character != ',') return current;
+        String normalized = character == ',' ? "." : Character.toString(character);
+        if (normalized.equals(".") && current.contains(".")) return current;
+        return current.length() >= 10 ? current : current + normalized;
     }
 
     private String removeLastCharacter(String text) {
