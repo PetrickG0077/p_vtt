@@ -273,6 +273,7 @@ public final class InputController {
     public void selectDoorTool() { toolController.selectDoorTool(); }
 
     public void selectFogTool() { toolController.selectFogTool(); }
+    public void selectLightTool() { toolController.selectLightTool(); }
 
     public void selectMeasureTool() { toolController.selectMeasureTool(); }
 
@@ -295,6 +296,14 @@ public final class InputController {
     public boolean deleteSelectedFogArea() {
         return performSceneChange(toolController::deleteSelectedFogArea);
     }
+
+    public boolean deleteSelectedLight() {
+        return performSceneChange(toolController::deleteSelectedLight);
+    }
+
+    public boolean toolKeyPressed(int keyCode) { return toolController.keyPressed(keyCode); }
+
+    public boolean toolCharTyped(char character) { return toolController.charTyped(character); }
 
     public boolean scaleSelectedFogArea(double factor) {
         return performSceneChange(() -> toolController.scaleSelectedFogArea(factor));

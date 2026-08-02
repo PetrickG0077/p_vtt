@@ -12,6 +12,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttWall;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -33,6 +34,7 @@ public final class VttClientEnvironmentCommandSync {
     private static final Map<String, String> lastHiddenFog = new LinkedHashMap<>();
     private static final Map<String, String> lastRevealedFog = new LinkedHashMap<>();
     private static final Map<String, String> lastVision = new LinkedHashMap<>();
+    private static final Map<String, String> lastLights = new LinkedHashMap<>();
     private static final Map<String, Long> nextSequences = new LinkedHashMap<>();
     private static final Map<String, Long> latestSentSequences = new LinkedHashMap<>();
     private static final Map<String, Long> latestRevisions = new LinkedHashMap<>();
@@ -67,6 +69,8 @@ public final class VttClientEnvironmentCommandSync {
         Map<String, String> revealedFog = jsonById(
                 session.getActiveScene().getFogOfWar().getRevealedAreas(), VttFogArea::getId);
         Map<String, String> vision = visionById(session);
+        Map<String, String> lights = jsonById(
+                session.getActiveScene().getLights(), VttLight::getId);
         String fogConfigJson = fogConfigJson(session);
         String gridConfigJson = GSON.toJson(session.getActiveScene().getGrid());
         String lightingConfigJson = GSON.toJson(new LightingRaycastConfig(
@@ -89,6 +93,7 @@ public final class VttClientEnvironmentCommandSync {
             replace(lastHiddenFog, hiddenFog);
             replace(lastRevealedFog, revealedFog);
             replace(lastVision, vision);
+            replace(lastLights, lights);
             lastFogConfigJson = fogConfigJson;
             lastGridConfigJson = gridConfigJson;
             observedGridConfigJson = gridConfigJson;
@@ -109,6 +114,7 @@ public final class VttClientEnvironmentCommandSync {
         syncMap(VttEnvironmentCommandPayload.FOG_HIDDEN, hiddenFog, lastHiddenFog);
         syncMap(VttEnvironmentCommandPayload.FOG_REVEALED, revealedFog, lastRevealedFog);
         syncMap(VttEnvironmentCommandPayload.VISION, vision, lastVision);
+        syncMap(VttEnvironmentCommandPayload.LIGHT, lights, lastLights);
         if (!Objects.equals(fogConfigJson, lastFogConfigJson)) {
             send(VttEnvironmentCommandPayload.UPSERT, VttEnvironmentCommandPayload.FOG_CONFIG,
                     "fog", fogConfigJson);
@@ -256,6 +262,12 @@ public final class VttClientEnvironmentCommandSync {
                             GSON.fromJson(update.entityJson(), VisionState.class));
                     updateLast(lastVision, update, delete);
                 }
+                case VttEnvironmentCommandPayload.LIGHT -> {
+                    session.getActiveScene().removeLight(update.entityId());
+                    if (!delete) session.getActiveScene().addLight(
+                            GSON.fromJson(update.entityJson(), VttLight.class));
+                    updateLast(lastLights, update, delete);
+                }
                 default -> VTT.LOGGER.warn("Ignored unknown VTT environment entity: {}", update.entityType());
             }
             if (acknowledgement) latestSentSequences.remove(revisionKey);
@@ -276,6 +288,7 @@ public final class VttClientEnvironmentCommandSync {
         lastHiddenFog.clear();
         lastRevealedFog.clear();
         lastVision.clear();
+        lastLights.clear();
         nextSequences.clear();
         latestRevisions.clear();
         latestSentSequences.clear();
@@ -442,6 +455,7 @@ public final class VttClientEnvironmentCommandSync {
                     "Lighting changes confirmed";
             case VttEnvironmentCommandPayload.LIGHTING_COLOR ->
                     "Darkness color applied to players";
+            case VttEnvironmentCommandPayload.LIGHT -> "Light changes confirmed";
             case VttEnvironmentCommandPayload.VISION -> "Token vision changes confirmed";
             case VttEnvironmentCommandPayload.BACKGROUND_CONFIG ->
                     "Scene background changes confirmed";

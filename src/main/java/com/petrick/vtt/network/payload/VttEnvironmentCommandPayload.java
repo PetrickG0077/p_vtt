@@ -25,6 +25,7 @@ public record VttEnvironmentCommandPayload(
     public static final String BACKGROUND_CONFIG = "BACKGROUND_CONFIG";
     public static final String CAMERA_CONFIG = "CAMERA_CONFIG";
     public static final String VISION = "VISION";
+    public static final String LIGHT = "LIGHT";
     public static final int MAX_JSON_LENGTH = 65_536;
 
     public static final Type<VttEnvironmentCommandPayload> TYPE = new Type<>(

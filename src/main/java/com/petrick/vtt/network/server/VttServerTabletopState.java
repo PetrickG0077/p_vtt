@@ -1237,6 +1237,9 @@ public final class VttServerTabletopState {
                         : applyInitialCameraView(command.entityJson());
                 case VttEnvironmentCommandPayload.VISION -> delete
                         || applyVisionState(command.entityId(), command.entityJson());
+                case VttEnvironmentCommandPayload.LIGHT -> delete
+                        ? activeScene.removeLight(command.entityId())
+                        : upsertLight(command.entityId(), command.entityJson());
                 default -> false;
             };
             if (!changed) return null;
@@ -1477,6 +1480,27 @@ public final class VttServerTabletopState {
         return true;
     }
 
+    private boolean upsertLight(String id, String json) {
+        var light = GSON.fromJson(json, com.petrick.vtt.feature.tabletop.VttLight.class);
+        boolean exists = activeScene.getLights().stream().anyMatch(
+                value -> value != null && id.equals(value.getId()));
+        if (light == null || !id.equals(light.getId())
+                || light.getType() != com.petrick.vtt.feature.tabletop.VttLightType.POINT
+                || !Double.isFinite(light.getX()) || !Double.isFinite(light.getY())
+                || !Double.isFinite(light.getInnerRadius())
+                || !Double.isFinite(light.getOuterRadius())
+                || Math.abs(light.getX()) > 10_000_000.0
+                || Math.abs(light.getY()) > 10_000_000.0
+                || light.getInnerRadius() < 0.0
+                || light.getOuterRadius() < 1.0
+                || light.getOuterRadius() > 100_000.0
+                || light.getInnerRadius() > light.getOuterRadius()
+                || !exists && VttSceneLimits.environmentUpsert(
+                activeScene, VttEnvironmentCommandPayload.LIGHT, id) != null) return false;
+        activeScene.addLight(light);
+        return true;
+    }
+
     private String authoritativeEnvironmentJson(String type, String id) {
         return switch (type) {
             case VttEnvironmentCommandPayload.MAP -> GSON.toJson(activeScene.getMaps().stream()
@@ -1516,6 +1540,10 @@ public final class VttServerTabletopState {
                 yield GSON.toJson(new VisionState(id, object.getVisionInnerRadius(),
                         object.getVisionOuterRadius(), object.isVisionEnabled(), object.getCollisionBox()));
             }
+            case VttEnvironmentCommandPayload.LIGHT -> GSON.toJson(
+                    activeScene.getLights().stream()
+                            .filter(value -> value != null && id.equals(value.getId()))
+                            .findFirst().orElseThrow());
             default -> throw new IllegalArgumentException("Unknown environment entity type");
         };
     }

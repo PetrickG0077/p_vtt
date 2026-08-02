@@ -64,6 +64,9 @@ public final class VttScene {
     /** Null is tolerated when loading scene JSON written before lighting settings existed. */
     private VttSceneLighting lighting;
 
+    /** Scene light sources. Null remains tolerated for older scene JSON. */
+    private List<VttLight> lights = new ArrayList<>();
+
     public VttScene() {
         this("default_scene", "Default Scene");
     }
@@ -285,6 +288,25 @@ public final class VttScene {
     public void setLighting(VttSceneLighting lighting) {
         this.lighting = lighting == null ? new VttSceneLighting() : lighting;
         this.lighting.normalize();
+    }
+
+    public List<VttLight> getLights() {
+        if (lights == null) lights = new ArrayList<>();
+        lights.removeIf(java.util.Objects::isNull);
+        lights.forEach(VttLight::normalize);
+        return lights;
+    }
+
+    public void addLight(VttLight light) {
+        if (light == null) return;
+        light.normalize();
+        getLights().removeIf(value -> light.getId().equals(value.getId()));
+        getLights().add(light);
+    }
+
+    public boolean removeLight(String lightId) {
+        return lightId != null && getLights().removeIf(
+                light -> lightId.equals(light.getId()));
     }
 
     private String normalizeId(String value) {

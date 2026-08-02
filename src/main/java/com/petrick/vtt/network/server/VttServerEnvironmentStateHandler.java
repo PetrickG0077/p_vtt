@@ -98,7 +98,8 @@ public final class VttServerEnvironmentStateHandler {
         boolean changesVisionGeometry = VttEnvironmentCommandPayload.WALL.equals(update.entityType())
                 || VttEnvironmentCommandPayload.DOOR.equals(update.entityType())
                 || VttEnvironmentCommandPayload.VISION.equals(update.entityType())
-                || VttEnvironmentCommandPayload.LIGHTING_CONFIG.equals(update.entityType());
+                || VttEnvironmentCommandPayload.LIGHTING_CONFIG.equals(update.entityType())
+                || VttEnvironmentCommandPayload.LIGHT.equals(update.entityType());
         VttServerVisionSourceSync.broadcast(
                 player.getServer(), state, changesVisionGeometry);
         boolean changesAssets = VttEnvironmentCommandPayload.MAP.equals(update.entityType())

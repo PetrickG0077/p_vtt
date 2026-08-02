@@ -18,6 +18,7 @@ public final class ToolController {
     private final WallTool wallTool;
     private final DoorTool doorTool;
     private final FogTool fogTool;
+    private final LightTool lightTool;
     private final MeasureTool measureTool;
     private final Supplier<VttRole> roleSupplier;
 
@@ -35,6 +36,7 @@ public final class ToolController {
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);
+        this.lightTool = new LightTool(sceneSupplier, saveAction);
         this.measureTool = new MeasureTool(sceneSupplier);
 
         this.activeTool = handTool;
@@ -61,6 +63,7 @@ public final class ToolController {
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
+        lightTool.deactivate();
         measureTool.deactivate();
         setActiveTool(handTool);
     }
@@ -69,6 +72,7 @@ public final class ToolController {
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
+        lightTool.deactivate();
         measureTool.deactivate();
         setActiveTool(selectTool);
     }
@@ -90,6 +94,7 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         doorTool.deactivate();
         fogTool.deactivate();
+        lightTool.deactivate();
         measureTool.deactivate();
         setActiveTool(wallTool);
     }
@@ -98,6 +103,7 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         fogTool.deactivate();
+        lightTool.deactivate();
         measureTool.deactivate();
         setActiveTool(doorTool);
     }
@@ -106,9 +112,19 @@ public final class ToolController {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
         doorTool.deactivate();
+        lightTool.deactivate();
         measureTool.deactivate();
         fogTool.activateLocalizedMode();
         setActiveTool(fogTool);
+    }
+
+    public void selectLightTool() {
+        selectTool.closeCollisionBoxEditor();
+        wallTool.deactivate();
+        doorTool.deactivate();
+        fogTool.deactivate();
+        measureTool.deactivate();
+        setActiveTool(lightTool);
     }
 
     public void selectMeasureTool() {
@@ -116,6 +132,7 @@ public final class ToolController {
         wallTool.deactivate();
         doorTool.deactivate();
         fogTool.deactivate();
+        lightTool.deactivate();
         setActiveTool(measureTool);
     }
 
@@ -152,6 +169,14 @@ public final class ToolController {
     public boolean deleteSelectedFogArea() {
         return activeTool == fogTool && fogTool.deleteSelectedArea();
     }
+
+    public boolean deleteSelectedLight() {
+        return activeTool == lightTool && lightTool.deleteSelected();
+    }
+
+    public boolean keyPressed(int keyCode) { return activeTool.keyPressed(keyCode); }
+
+    public boolean charTyped(char character) { return activeTool.charTyped(character); }
 
     public boolean scaleSelectedFogArea(double factor) {
         return activeTool == fogTool && fogTool.scaleSelectedArea(factor);

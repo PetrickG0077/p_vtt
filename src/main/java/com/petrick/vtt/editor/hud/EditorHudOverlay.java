@@ -101,7 +101,7 @@ public final class EditorHudOverlay {
 
         List<Action> tools = new ArrayList<>(List.of(Action.HAND, Action.SELECT));
         if (state.master()) tools.addAll(List.of(
-                Action.FOG, Action.WALL, Action.DOOR, Action.MEASURE));
+                Action.FOG, Action.LIGHT, Action.WALL, Action.DOOR, Action.MEASURE));
         int rightCount = tools.size() + 2;
         int separator = 5;
         int rightHeight = PADDING * 2 + rightCount * size
@@ -162,7 +162,7 @@ public final class EditorHudOverlay {
         renderPanel(context, screenWidth / 2 - size / 2 - PADDING, MARGIN,
                 size + PADDING * 2, size + PADDING * 2);
 
-        int toolCount = state.master() ? 6 : 2;
+        int toolCount = state.master() ? 7 : 2;
         int rightCount = toolCount + 2;
         int rightHeight = PADDING * 2 + rightCount * size + (rightCount - 1) * GAP + 5;
         renderPanel(context, screenWidth - MARGIN - PADDING * 2 - size,
@@ -197,10 +197,22 @@ public final class EditorHudOverlay {
         int iconSize = Math.min(ICON_RENDER_SIZE, button.size() - 4);
         int iconX = button.x() + (button.size() - iconSize) / 2;
         int iconY = button.y() + (button.size() - iconSize) / 2;
-        context.graphics().blit(
-                button.icon(), iconX, iconY, iconSize, iconSize,
-                0.0F, 0.0F, ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE,
-                ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE);
+        if (button.action() == Action.LIGHT) {
+            int centerX = iconX + iconSize / 2;
+            int centerY = iconY + iconSize / 2;
+            context.graphics().fill(centerX - 3, centerY - 3,
+                    centerX + 4, centerY + 4, 0xFFFFFF44);
+            context.graphics().hLine(iconX, iconX + 3, centerY, 0xFFFFFFAA);
+            context.graphics().hLine(iconX + iconSize - 3, iconX + iconSize, centerY, 0xFFFFFFAA);
+            context.graphics().vLine(centerX, iconY, iconY + 3, 0xFFFFFFAA);
+            context.graphics().vLine(centerX, iconY + iconSize - 3,
+                    iconY + iconSize, 0xFFFFFFAA);
+        } else {
+            context.graphics().blit(
+                    button.icon(), iconX, iconY, iconSize, iconSize,
+                    0.0F, 0.0F, ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE,
+                    ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE);
+        }
         if (!button.enabled()) {
             context.graphics().fill(button.x() + 1, button.y() + 1,
                     button.x() + button.size(), button.y() + button.size(), 0x88000000);
@@ -519,6 +531,7 @@ public final class EditorHudOverlay {
             case HAND -> " [H]";
             case SELECT -> " [S]";
             case FOG -> " [F]";
+            case LIGHT -> " [L]";
             case WALL -> " [W]";
             case DOOR -> " [D]";
             case MEASURE -> " [M]";
@@ -533,6 +546,7 @@ public final class EditorHudOverlay {
             case HAND -> "H";
             case SELECT -> "S";
             case FOG -> "F";
+            case LIGHT -> "L";
             case WALL -> "W";
             case DOOR -> "D";
             case MEASURE -> "M";
@@ -545,6 +559,7 @@ public final class EditorHudOverlay {
             case HAND -> "Hand Tool";
             case SELECT -> "Select Tool";
             case FOG -> "Fog Tool";
+            case LIGHT -> "Light Tool";
             case WALL -> "Wall Tool";
             case DOOR -> "Door Tool";
             case MEASURE -> "Measure Tool";
@@ -562,6 +577,7 @@ public final class EditorHudOverlay {
             case HAND -> "hand";
             case SELECT -> "select";
             case FOG -> "fog";
+            case LIGHT -> "light";
             case WALL -> "wall";
             case DOOR -> "door";
             case MEASURE -> "measure";
@@ -582,7 +598,8 @@ public final class EditorHudOverlay {
     }
 
     private ResourceLocation icon(Action action) {
-        String fileName = action.name().toLowerCase(Locale.ROOT) + ".png";
+        String fileName = action == Action.LIGHT
+                ? "fog.png" : action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
     }
@@ -613,6 +630,7 @@ public final class EditorHudOverlay {
         HAND,
         SELECT,
         FOG,
+        LIGHT,
         WALL,
         DOOR,
         MEASURE,

@@ -12,6 +12,7 @@ public final class VttSceneLimits {
     public static final int MAX_DOORS = 2_048;
     public static final int MAX_FOG_AREAS = 4_096;
     public static final int MAX_VISION_SOURCES = 64;
+    public static final int MAX_LIGHTS = 1_024;
     public static final int MAX_POINTS_PER_VISION_REGION = 32_768;
     public static final int MAX_TOTAL_VISION_POINTS = 131_072;
 
@@ -37,6 +38,9 @@ public final class VttSceneLimits {
                     : countViolation("doors", scene.getDoors().size(), MAX_DOORS);
             case "FOG_HIDDEN", "FOG_REVEALED" -> containsFog(scene, entityId) ? null
                     : countViolation("fog areas", fogAreaCount(scene), MAX_FOG_AREAS);
+            case "LIGHT" -> scene.getLights().stream().anyMatch(
+                    light -> light != null && entityId.equals(light.getId())) ? null
+                    : countViolation("lights", scene.getLights().size(), MAX_LIGHTS);
             default -> null;
         };
     }
@@ -63,6 +67,7 @@ public final class VttSceneLimits {
         addExceeded(violations, "walls", scene.getWalls().size(), MAX_WALLS);
         addExceeded(violations, "doors", scene.getDoors().size(), MAX_DOORS);
         addExceeded(violations, "fog areas", fogAreaCount(scene), MAX_FOG_AREAS);
+        addExceeded(violations, "lights", scene.getLights().size(), MAX_LIGHTS);
         addExceeded(violations, "vision sources",
                 scene.getVisionSourceObjectIds().size(), MAX_VISION_SOURCES);
         addExceeded(violations, "enabled vision sources",

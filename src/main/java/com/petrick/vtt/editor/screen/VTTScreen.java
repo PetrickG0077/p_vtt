@@ -2133,6 +2133,13 @@ public final class VTTScreen extends Screen {
                 }
                 closeHudPopups();
             }
+            case LIGHT -> {
+                if (master) {
+                    selectionManager.clearSelection();
+                    inputController.selectLightTool();
+                }
+                closeHudPopups();
+            }
             case WALL -> {
                 if (master) {
                     selectionManager.clearSelection();
@@ -3444,6 +3451,7 @@ public final class VTTScreen extends Screen {
             persistGridSettings();
             return true;
         }
+        if (inputController.toolKeyPressed(keyCode)) return true;
         if (keyCode == GLFW.GLFW_KEY_P
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0
                 && session.isLocalMaster()) {
@@ -3803,6 +3811,9 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_L) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.toggleSelectedDoorLocked()) return true;
+            selectionManager.clearSelection();
+            inputController.selectLightTool();
+            return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
@@ -3861,6 +3872,7 @@ public final class VTTScreen extends Screen {
             if (inputController.deleteSelectedWall()) return true;
             if (inputController.deleteSelectedDoor()) return true;
             if (inputController.deleteSelectedFogArea()) return true;
+            if (inputController.deleteSelectedLight()) return true;
             inputController.deleteSelectedObjects();
             return true;
         }
@@ -4515,6 +4527,7 @@ public final class VTTScreen extends Screen {
             persistGridSettings();
             return true;
         }
+        if (inputController.toolCharTyped(codePoint)) return true;
         if (renamingSceneId != null) {
             if (isAllowedRenameCharacter(codePoint) && sceneRenameBuffer.length() < 48) {
                 sceneRenameBuffer += codePoint;

@@ -47,4 +47,8 @@ public interface Tool {
     ) {
         return false;
     }
+
+    default boolean keyPressed(int keyCode) { return false; }
+
+    default boolean charTyped(char character) { return false; }
 }

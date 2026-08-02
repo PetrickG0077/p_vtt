@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
@@ -144,9 +145,10 @@ public final class VttServerVisionSourceSync {
                     Math.max(0.0, object.getVisionInnerRadius()), outerRadius);
             Vec2d origin = new Vec2d(
                     object.getTransform().getX(), object.getTransform().getY());
-            var nearbySegments = state.queryVisionSegments(origin, outerRadius);
+            double raycastDistance = visibilityReach(scene, origin, outerRadius);
+            var nearbySegments = state.queryVisionSegments(origin, raycastDistance);
             List<Vec2d> polygon = boundedPolygon(
-                    RAYCASTER.buildVisibilityPolygon(origin, outerRadius, nearbySegments,
+                    RAYCASTER.buildVisibilityPolygon(origin, raycastDistance, nearbySegments,
                             scene.getLighting().getVisionRayCount()),
                     Math.min(VttSceneLimits.MAX_POINTS_PER_VISION_REGION, remainingPoints));
             if (polygon.size() < 3) continue;
@@ -191,10 +193,14 @@ public final class VttServerVisionSourceSync {
                         && ownerId.equals(object.getOwnerId()))
                 .forEach(object -> candidates.put(object.getId(), object));
         for (AuthoritativeVisionRegion region : vision.regions()) {
-            double minX = region.origin().x() - region.outerRadius();
-            double minY = region.origin().y() - region.outerRadius();
-            double maxX = region.origin().x() + region.outerRadius();
-            double maxY = region.origin().y() + region.outerRadius();
+            double minX = region.outerPolygon().stream().mapToDouble(Vec2d::x).min()
+                    .orElse(region.origin().x() - region.outerRadius());
+            double minY = region.outerPolygon().stream().mapToDouble(Vec2d::y).min()
+                    .orElse(region.origin().y() - region.outerRadius());
+            double maxX = region.outerPolygon().stream().mapToDouble(Vec2d::x).max()
+                    .orElse(region.origin().x() + region.outerRadius());
+            double maxY = region.outerPolygon().stream().mapToDouble(Vec2d::y).max()
+                    .orElse(region.origin().y() + region.outerRadius());
             for (VttSceneObject object : state.querySceneObjects(minX, minY, maxX, maxY)) {
                 if (object != null && object.getId() != null) candidates.put(object.getId(), object);
             }
@@ -206,7 +212,9 @@ public final class VttServerVisionSourceSync {
                 .filter(object -> ownerId.equals(object.getOwnerId())
                         || vision.regions().stream().anyMatch(region -> pointInsidePolygon(
                                 new Vec2d(object.getTransform().getX(), object.getTransform().getY()),
-                                region.outerPolygon())))
+                                region.outerPolygon()) && illuminatedOrInVisionRadius(
+                                scene, region, new Vec2d(
+                                        object.getTransform().getX(), object.getTransform().getY()))))
                 .sorted(java.util.Comparator.comparingInt(VttSceneObject::getLayerIndex))
                 .toList();
     }
@@ -217,6 +225,30 @@ public final class VttServerVisionSourceSync {
         REPLICATION_REVISIONS.remove(playerId);
         KNOWN_ASSETS.remove(playerId);
         PLAYER_SCOPES.remove(playerId);
+    }
+
+    private static double visibilityReach(VttScene scene, Vec2d origin, double baseRadius) {
+        double reach = baseRadius;
+        for (VttLight light : scene.getLights()) {
+            if (light == null || !light.isEnabled()) continue;
+            reach = Math.max(reach, Math.hypot(
+                    light.getX() - origin.x(), light.getY() - origin.y())
+                    + light.getOuterRadius());
+        }
+        return reach;
+    }
+
+    private static boolean illuminatedOrInVisionRadius(
+            VttScene scene, AuthoritativeVisionRegion region, Vec2d point
+    ) {
+        if (Math.hypot(point.x() - region.origin().x(), point.y() - region.origin().y())
+                <= region.outerRadius()) return true;
+        for (VttLight light : scene.getLights()) {
+            if (light != null && light.isEnabled()
+                    && Math.hypot(point.x() - light.getX(), point.y() - light.getY())
+                    <= light.getOuterRadius()) return true;
+        }
+        return false;
     }
 
     public static void resetPlayerScope(UUID playerId) {
