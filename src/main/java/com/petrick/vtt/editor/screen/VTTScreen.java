@@ -79,7 +79,6 @@ import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
-import com.petrick.vtt.network.VttSceneFingerprint;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
@@ -4470,7 +4469,11 @@ public final class VTTScreen extends Screen {
             VttClientEditorNotice.show("Scene is too large for network undo/redo");
             return;
         }
-        String expectedFingerprint = VttSceneFingerprint.of(session.getActiveScene());
+        // In multiplayer the canvas is updated optimistically while activeScene remains the
+        // latest replicated snapshot. The history's expected state combines that persistent
+        // metadata with the current canvas, so its fingerprint represents the state that the
+        // server actually received from the preceding editor action.
+        String expectedFingerprint = prepared.expectedFingerprint();
         VttClientSceneHistorySync.begin(session.getNetworkSnapshotVersion());
         boolean changed = redo
                 ? inputController.redoEditorAction()
