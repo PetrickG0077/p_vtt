@@ -47,6 +47,8 @@ public final class EditorSettingsOverlay {
     private boolean focusedLightingHexColor;
     private String lightingHexBuffer = "";
     private boolean replaceLightingHexOnType;
+    private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
+    private PickerTarget pickerTarget = PickerTarget.NONE;
 
     public void render(
             VRenderContext context,
@@ -78,29 +80,25 @@ public final class EditorSettingsOverlay {
 
         if (selectedCategory == Category.HUD) {
             renderHudTheme(context, font, panel);
-            return;
-        }
-        if (selectedCategory == Category.LIGHTING) {
+        } else if (selectedCategory == Category.LIGHTING) {
             renderLighting(context, font, panel, scene.getLighting(), editable);
-            return;
-        }
-        if (selectedCategory == Category.SCENE) {
+        } else if (selectedCategory == Category.SCENE) {
             renderScene(context, font, panel, scene, editable);
-            return;
-        }
+        } else {
+            int contentX = panel.x() + CATEGORY_WIDTH + 20;
+            context.graphics().drawString(font, "Grid", contentX, panel.y() + 31, TEXT, false);
+            if (!editable) {
+                context.graphics().drawString(
+                        font, "Read only", panel.right() - 58, panel.y() + 31, MUTED, false);
+            }
 
-        int contentX = panel.x() + CATEGORY_WIDTH + 20;
-        context.graphics().drawString(font, "Grid", contentX, panel.y() + 31, TEXT, false);
-        if (!editable) {
-            context.graphics().drawString(
-                    font, "Read only", panel.right() - 58, panel.y() + 31, MUTED, false);
+            renderColors(context, font, panel, grid, editable);
+            renderOpacity(context, font, panel, grid, editable);
+            renderGridSize(context, font, panel, grid, editable);
+            renderLineWidth(context, font, panel, grid, editable);
+            renderTopLayer(context, font, panel, grid, editable);
         }
-
-        renderColors(context, font, panel, grid, editable);
-        renderOpacity(context, font, panel, grid, editable);
-        renderGridSize(context, font, panel, grid, editable);
-        renderLineWidth(context, font, panel, grid, editable);
-        renderTopLayer(context, font, panel, grid, editable);
+        colorPicker.render(context, font);
     }
 
     public Interaction mouseClicked(
@@ -113,6 +111,14 @@ public final class EditorSettingsOverlay {
             boolean editable
     ) {
         Bounds panel = bounds(screenWidth, screenHeight);
+        if (colorPicker.isOpen()) {
+            colorPicker.mouseClicked(mouseX, mouseY, button, screenWidth, screenHeight);
+            if (colorPicker.consumeAccepted()) {
+                return pickerTarget == PickerTarget.HUD
+                        ? Interaction.HUD_THEME_CHANGED : Interaction.CHANGED;
+            }
+            return Interaction.CONSUMED;
+        }
         if (!panel.contains(mouseX, mouseY)) return Interaction.NONE;
         if (button != 0) return Interaction.CONSUMED;
 
@@ -143,6 +149,13 @@ public final class EditorSettingsOverlay {
         if (selectedCategory == Category.HUD) {
             for (ThemeColor themeColor : ThemeColor.values()) {
                 Bounds row = hudColorRowBounds(panel, themeColor);
+                if (hudPreviewBounds(row).contains(mouseX, mouseY)) {
+                    selectedThemeColor = themeColor;
+                    pickerTarget = PickerTarget.HUD;
+                    colorPicker.open(hudColor(themeColor),
+                            rgb -> applyHudColor(themeColor, rgb));
+                    return Interaction.CONSUMED;
+                }
                 if (hudHexFieldBounds(row).contains(mouseX, mouseY)) {
                     selectedThemeColor = themeColor;
                     focusedHudHexColor = themeColor;
@@ -169,6 +182,11 @@ public final class EditorSettingsOverlay {
         if (selectedCategory == Category.LIGHTING) {
             if (scene == null) return Interaction.CONSUMED;
             VttSceneLighting lighting = scene.getLighting();
+            if (darknessPreviewBounds(panel).contains(mouseX, mouseY)) {
+                pickerTarget = PickerTarget.LIGHTING;
+                colorPicker.open(lighting.getDarknessColorRgb(), lighting::setDarknessColorRgb);
+                return Interaction.CONSUMED;
+            }
             if (darknessHexFieldBounds(panel).contains(mouseX, mouseY)) {
                 focusedLightingHexColor = true;
                 lightingHexBuffer = colorHex(lighting.getDarknessColorRgb());
@@ -229,6 +247,12 @@ public final class EditorSettingsOverlay {
         VttSceneGrid grid = scene.getGrid();
         if (grid == null) return Interaction.CONSUMED;
 
+        if (gridPreviewBounds(panel).contains(mouseX, mouseY)) {
+            pickerTarget = PickerTarget.GRID;
+            colorPicker.open(grid.getColorRgb(), grid::setColorRgb);
+            return Interaction.CONSUMED;
+        }
+
         if (gridHexFieldBounds(panel).contains(mouseX, mouseY)) {
             focusedGridHexColor = true;
             gridHexBuffer = HexColorFormat.format(grid.getColorRgb());
@@ -278,12 +302,17 @@ public final class EditorSettingsOverlay {
 
     public boolean mouseDragged(
             double mouseX,
+            double mouseY,
             int screenWidth,
             int screenHeight,
             VttScene scene,
             boolean editable
     ) {
         if (scene == null) return false;
+        if (colorPicker.isOpen()) {
+            return colorPicker.mouseDragged(
+                    mouseX, mouseY, screenWidth, screenHeight);
+        }
         Bounds panel = bounds(screenWidth, screenHeight);
         if (selectedCategory == Category.GRID && draggingOpacity) {
             updateOpacity(scene.getGrid(), opacitySliderBounds(panel), mouseX);
@@ -308,6 +337,7 @@ public final class EditorSettingsOverlay {
             VttScene scene,
             boolean editable
     ) {
+        if (colorPicker.isOpen()) return colorPicker.mouseReleased();
         if (button != 0 || !draggingOpacity && !draggingVisionQuality
                 && !draggingVisionPixels) return false;
         if (scene != null) {
@@ -334,6 +364,7 @@ public final class EditorSettingsOverlay {
     }
 
     public boolean keyPressed(int keyCode, VttScene scene, boolean editable) {
+        if (colorPicker.isOpen()) return colorPicker.keyPressed(keyCode);
         if (selectedCategory == Category.GRID && focusedGridHexColor) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 focusedGridHexColor = false;
@@ -412,6 +443,7 @@ public final class EditorSettingsOverlay {
     }
 
     public boolean charTyped(char codePoint, VttScene scene, boolean editable) {
+        if (colorPicker.isOpen()) return colorPicker.charTyped(codePoint);
         if (selectedCategory == Category.GRID && focusedGridHexColor) {
             if (!HexColorFormat.accepts(codePoint)) return true;
             if (replaceGridHexOnType) {
@@ -457,6 +489,8 @@ public final class EditorSettingsOverlay {
     }
 
     public void cancelDrag() {
+        colorPicker.cancel();
+        pickerTarget = PickerTarget.NONE;
         draggingOpacity = false;
         draggingVisionQuality = false;
         draggingVisionPixels = false;
@@ -567,7 +601,7 @@ public final class EditorSettingsOverlay {
                     TEXT, false);
 
             int color = hudColor(themeColor);
-            Bounds preview = new Bounds(row.right() - 84, row.y() + 4, 24, 16);
+            Bounds preview = hudPreviewBounds(row);
             context.graphics().fill(
                     preview.x(), preview.y(), preview.right(), preview.bottom(),
                     color);
@@ -617,6 +651,10 @@ public final class EditorSettingsOverlay {
 
         context.graphics().drawString(
                 font, "Darkness Color", contentX, panel.y() + 51, TEXT, false);
+        Bounds preview = darknessPreviewBounds(panel);
+        context.graphics().fill(preview.x(), preview.y(), preview.right(), preview.bottom(),
+                0xFF000000 | lighting.getDarknessColorRgb());
+        border(context, preview, EditorHudTheme.opaqueSelection());
         for (int index = 0; index < DARKNESS_COLOR_PRESETS.length; index++) {
             Bounds swatch = darknessColorBounds(panel, index);
             context.graphics().fill(swatch.x(), swatch.y(), swatch.right(), swatch.bottom(),
@@ -775,6 +813,11 @@ public final class EditorSettingsOverlay {
     ) {
         int contentX = panel.x() + CATEGORY_WIDTH + 20;
         context.graphics().drawString(font, "Color", contentX, panel.y() + 49, TEXT, false);
+        Bounds preview = gridPreviewBounds(panel);
+        context.graphics().fill(preview.x(), preview.y(), preview.right(), preview.bottom(),
+                0xFF000000 | grid.getColorRgb());
+        border(context, preview, editable
+                ? EditorHudTheme.opaqueSelection() : EditorHudTheme.outline());
         for (int index = 0; index < COLOR_PRESETS.length; index++) {
             Bounds swatch = colorBounds(panel, index);
             int color = 0xFF000000 | COLOR_PRESETS[index];
@@ -955,8 +998,14 @@ public final class EditorSettingsOverlay {
 
     private Bounds darknessColorBounds(Bounds panel, int index) {
         return new Bounds(
-                panel.x() + CATEGORY_WIDTH + 20 + index * 20,
+                panel.x() + CATEGORY_WIDTH + 40 + index * 18,
                 panel.y() + 66, 16, 16);
+    }
+
+    private Bounds darknessPreviewBounds(Bounds panel) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 65, 18, 18);
     }
 
     private Bounds visionQualitySliderBounds(Bounds panel) {
@@ -979,7 +1028,7 @@ public final class EditorSettingsOverlay {
 
     private Bounds darknessHexFieldBounds(Bounds panel) {
         return new Bounds(
-                panel.x() + CATEGORY_WIDTH + 178,
+                panel.x() + CATEGORY_WIDTH + 188,
                 panel.y() + 64, 60, 20);
     }
 
@@ -998,6 +1047,10 @@ public final class EditorSettingsOverlay {
 
     private Bounds hudHexFieldBounds(Bounds row) {
         return new Bounds(row.right() - 56, row.y() + 3, 52, 19);
+    }
+
+    private Bounds hudPreviewBounds(Bounds row) {
+        return new Bounds(row.right() - 84, row.y() + 4, 24, 16);
     }
 
     private Bounds chooseBackgroundBounds(Bounds panel) {
@@ -1022,13 +1075,19 @@ public final class EditorSettingsOverlay {
 
     private Bounds colorBounds(Bounds panel, int index) {
         return new Bounds(
-                panel.x() + CATEGORY_WIDTH + 20 + index * 17,
+                panel.x() + CATEGORY_WIDTH + 40 + index * 16,
                 panel.y() + 63, 13, 13);
+    }
+
+    private Bounds gridPreviewBounds(Bounds panel) {
+        return new Bounds(
+                panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 61, 17, 17);
     }
 
     private Bounds gridHexFieldBounds(Bounds panel) {
         return new Bounds(
-                panel.x() + CATEGORY_WIDTH + 162,
+                panel.x() + CATEGORY_WIDTH + 174,
                 panel.y() + 60, 60, 20);
     }
 
@@ -1095,6 +1154,13 @@ public final class EditorSettingsOverlay {
             this.label = label;
             this.alpha = alpha;
         }
+    }
+
+    private enum PickerTarget {
+        NONE,
+        GRID,
+        HUD,
+        LIGHTING
     }
 
     private record Bounds(int x, int y, int width, int height) {

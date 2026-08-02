@@ -4,9 +4,11 @@ import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.editor.hud.HexColorFormat;
+import com.petrick.vtt.editor.hud.EditorColorPickerOverlay;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
@@ -17,7 +19,7 @@ public final class CanvasTokenContextMenuOverlay {
     private static final int MAIN_WIDTH = 112;
     private static final int STATES_WIDTH = 148;
     private static final int COLOR_WIDTH = 82;
-    private static final int COLOR_HEIGHT = 106;
+    private static final int COLOR_HEIGHT = 128;
     private static final int ROW_HEIGHT = 18;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
@@ -40,6 +42,7 @@ public final class CanvasTokenContextMenuOverlay {
     private boolean focusedColorField;
     private String colorBuffer = "";
     private boolean replaceColorOnType;
+    private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
     private boolean masterMenu = true;
 
     public void open(
@@ -58,6 +61,7 @@ public final class CanvasTokenContextMenuOverlay {
     }
 
     public void close() {
+        colorPicker.cancel();
         objectId = null;
         submenu = Submenu.NONE;
         focusedField = null;
@@ -99,6 +103,7 @@ public final class CanvasTokenContextMenuOverlay {
         else if (submenu == Submenu.VISION) renderVision(context, font, childX, sceneObject);
         else if (submenu == Submenu.OWNER) renderOwners(
                 context, font, childX, sceneObject, players);
+        colorPicker.render(context, font);
     }
 
     public Interaction mouseClicked(
@@ -107,6 +112,17 @@ public final class CanvasTokenContextMenuOverlay {
             List<VttPlayerOption> players
     ) {
         if (!isOpen() || token == null || sceneObject == null) return Interaction.none();
+        if (colorPicker.isOpen()) {
+            colorPicker.mouseClicked(mouseX, mouseY, button,
+                    screenWidth, Minecraft.getInstance().getWindow().getGuiScaledHeight());
+            if (colorPicker.consumeAccepted()) {
+                var color = HexColorFormat.parse(colorBuffer);
+                return color.isPresent()
+                        ? new Interaction(Action.SET_COLOR, null, color.getAsInt(), true)
+                        : Interaction.handled();
+            }
+            return Interaction.handled();
+        }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
         int childX = childX(screenWidth);
         Interaction child = switch (submenu) {
@@ -144,6 +160,16 @@ public final class CanvasTokenContextMenuOverlay {
 
     public Interaction keyPressed(int keyCode, VttSceneObject sceneObject) {
         if (!isOpen()) return Interaction.none();
+        if (colorPicker.isOpen()) {
+            colorPicker.keyPressed(keyCode);
+            if (colorPicker.consumeAccepted()) {
+                var color = HexColorFormat.parse(colorBuffer);
+                return color.isPresent()
+                        ? new Interaction(Action.SET_COLOR, null, color.getAsInt(), true)
+                        : Interaction.handled();
+            }
+            return Interaction.handled();
+        }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             close();
             return Interaction.handled();
@@ -184,6 +210,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     public boolean charTyped(char character) {
         if (!isOpen()) return false;
+        if (colorPicker.isOpen()) return colorPicker.charTyped(character);
         if (focusedColorField) {
             if (!HexColorFormat.accepts(character)) return true;
             if (replaceColorOnType) {
@@ -223,6 +250,11 @@ public final class CanvasTokenContextMenuOverlay {
             focusedColorField = true;
             colorBuffer = HexColorFormat.format(object.getState().getTintColorRgb());
             replaceColorOnType = true;
+            return Interaction.handled();
+        }
+        if (inside(mouseX, mouseY, childX + 5, y + 104, 72, 18)) {
+            int initial = object.getState().getTintColorRgb();
+            colorPicker.open(initial, rgb -> colorBuffer = HexColorFormat.format(rgb));
             return Interaction.handled();
         }
         int column = (int) ((mouseX - childX - 5) / 18);
@@ -320,6 +352,11 @@ public final class CanvasTokenContextMenuOverlay {
                 : HexColorFormat.format(selected);
         context.graphics().drawString(font, value, fieldX + 4, fieldY + 6,
                 focusedColorField ? TEXT : MUTED, false);
+        int pickerY = y + 104;
+        context.graphics().fill(fieldX, pickerY, fieldX + 72, pickerY + 18, 0xFF24242C);
+        border(context, fieldX, pickerY, 72, 18, ACCENT);
+        context.graphics().drawCenteredString(font, "Color Picker",
+                fieldX + 36, pickerY + 5, TEXT);
     }
 
     private void renderVision(
@@ -409,6 +446,19 @@ public final class CanvasTokenContextMenuOverlay {
             case NONE -> 0;
         };
         return desired + childWidth <= screenWidth - 4 ? desired : x - childWidth - 4;
+    }
+
+    public boolean isColorPickerOpen() {
+        return colorPicker.isOpen();
+    }
+
+    public boolean mouseDraggedColorPicker(double mouseX, double mouseY,
+                                           int screenWidth, int screenHeight) {
+        return colorPicker.mouseDragged(mouseX, mouseY, screenWidth, screenHeight);
+    }
+
+    public boolean mouseReleasedColorPicker() {
+        return colorPicker.mouseReleased();
     }
 
     private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 8 : 3); }

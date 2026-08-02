@@ -3231,6 +3231,9 @@ public final class VTTScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
+        if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
+            return canvasTokenContextMenuOverlay.mouseReleasedColorPicker();
+        }
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseReleased(
@@ -3316,6 +3319,10 @@ public final class VTTScreen extends Screen {
     ) {
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
+        if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
+            return canvasTokenContextMenuOverlay.mouseDraggedColorPicker(
+                    mouseX, mouseY, this.width, this.height);
+        }
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseDragged(
@@ -3344,7 +3351,7 @@ public final class VTTScreen extends Screen {
         }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && editorSettingsOverlay.mouseDragged(
-                mouseX, this.width, this.height,
+                mouseX, mouseY, this.width, this.height,
                 session.getActiveScene(), session.isLocalMaster())) {
             return true;
         }

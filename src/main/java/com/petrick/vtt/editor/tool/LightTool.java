@@ -5,6 +5,7 @@ import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttLightType;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.editor.hud.HexColorFormat;
+import com.petrick.vtt.editor.hud.EditorColorPickerOverlay;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -48,6 +49,7 @@ public final class LightTool implements Tool {
     private String fieldBuffer = "";
     private boolean replaceFieldOnType;
     private boolean draggingIntensity;
+    private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
 
     public LightTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.sceneSupplier = sceneSupplier;
@@ -60,6 +62,11 @@ public final class LightTool implements Tool {
     public boolean mouseClicked(
             ToolContext context, double mouseX, double mouseY, int button, int modifiers
     ) {
+        if (colorPicker.isOpen()) {
+            return colorPicker.mouseClicked(
+                    mouseX, mouseY, button,
+                    screenWidth(), screenHeight());
+        }
         if (popup != Popup.NONE) return clickPopup(mouseX, mouseY, button);
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         VttLight selected = selectedLight();
@@ -102,6 +109,11 @@ public final class LightTool implements Tool {
             double dragX, double dragY, int modifiers
     ) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
+        if (colorPicker.isOpen()) {
+            return colorPicker.mouseDragged(
+                    mouseX, mouseY,
+                    screenWidth(), screenHeight());
+        }
         if (draggingIntensity && popup == Popup.PROPERTIES) {
             updateIntensity(mouseX);
             return true;
@@ -127,6 +139,7 @@ public final class LightTool implements Tool {
     public boolean mouseReleased(
             ToolContext context, double mouseX, double mouseY, int button, int modifiers
     ) {
+        if (colorPicker.isOpen()) return colorPicker.mouseReleased();
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingIntensity) {
             updateIntensity(mouseX);
             draggingIntensity = false;
@@ -150,6 +163,7 @@ public final class LightTool implements Tool {
         VttLight selected = selectedLight();
         if (selected != null) renderSelection(context, selected);
         if (popup != Popup.NONE) renderPopup(context, Minecraft.getInstance().font);
+        colorPicker.render(context, Minecraft.getInstance().font);
     }
 
     public boolean deleteSelected() {
@@ -162,6 +176,7 @@ public final class LightTool implements Tool {
     }
 
     public boolean keyPressed(int keyCode) {
+        if (colorPicker.isOpen()) return colorPicker.keyPressed(keyCode);
         if (popup == Popup.NONE) return false;
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             closePopup();
@@ -186,6 +201,7 @@ public final class LightTool implements Tool {
     }
 
     public boolean charTyped(char character) {
+        if (colorPicker.isOpen()) return colorPicker.charTyped(character);
         if (popup != Popup.PROPERTIES || focusedField == null) return false;
         if (focusedField == Field.COLOR) {
             if (!HexColorFormat.accepts(character)) return true;
@@ -211,6 +227,7 @@ public final class LightTool implements Tool {
     }
 
     public void deactivate() {
+        colorPicker.cancel();
         moving = false;
         radiusHandle = null;
         selectedId = null;
@@ -279,6 +296,7 @@ public final class LightTool implements Tool {
         renderField(context, font, Field.OUTER, "Outer Radius", 25);
         renderField(context, font, Field.INNER, "Inner Radius", 47);
         renderField(context, font, Field.COLOR, "Color", 69);
+        renderPickerPreview(context);
         for (int i = 0; i < COLORS.length; i++) {
             int x = popupX + 7 + i * 16;
             renderColorSwatch(context, x, popupY + 91, COLORS[i]);
@@ -334,6 +352,19 @@ public final class LightTool implements Tool {
                 replaceFieldOnType = true;
                 return true;
             }
+        }
+        if (mouseX >= popupX + 61 && mouseX <= popupX + 75
+                && mouseY >= popupY + 72 && mouseY <= popupY + 86) {
+            VttLight light = selectedLight();
+            if (light != null) {
+                int initial = light.isTintEnabled() ? light.getColorRgb() : 0xFFFFFF;
+                colorPicker.open(initial, rgb -> {
+                    light.setColorRgb(rgb);
+                    light.setTintEnabled(true);
+                    saveAction.run();
+                });
+            }
+            return true;
         }
         if (mouseX >= popupX + 7 && mouseX <= popupX + 151
                 && mouseY >= popupY + 91 && mouseY <= popupY + 104) {
@@ -444,6 +475,24 @@ public final class LightTool implements Tool {
             context.graphics().fill(x, y, x + 13, y + 13, 0xFF000000 | color);
         }
         border(context, x, y, 13, 13, active ? CYAN : 0xFFAAAAAA);
+    }
+
+    private void renderPickerPreview(VRenderContext context) {
+        VttLight light = selectedLight();
+        if (light == null) return;
+        int left = popupX + 62;
+        int top = popupY + 73;
+        int color = light.isTintEnabled() ? 0xFF000000 | light.getColorRgb() : 0xFFAAAAAA;
+        context.graphics().fill(left, top, left + 12, top + 12, color);
+        border(context, left, top, 12, 12, CYAN);
+    }
+
+    private int screenWidth() {
+        return Minecraft.getInstance().getWindow().getGuiScaledWidth();
+    }
+
+    private int screenHeight() {
+        return Minecraft.getInstance().getWindow().getGuiScaledHeight();
     }
 
     private VttLight lightAt(ToolContext context, double mouseX, double mouseY) {
