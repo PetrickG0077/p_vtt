@@ -89,6 +89,7 @@ import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
 import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
+import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -2434,7 +2435,8 @@ public final class VTTScreen extends Screen {
             if (canvasTokenContextMenuOverlay.isOpen()) {
                 var interaction = canvasTokenContextMenuOverlay.mouseClicked(
                         mouseX, mouseY, button, canvasTokenContextToken(),
-                        canvasTokenContextSceneObject(), this.width);
+                        canvasTokenContextSceneObject(), this.width,
+                        getConnectedPlayerOptions());
                 if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
                     handleCanvasTokenContextMenuAction(interaction);
                 }
@@ -2447,7 +2449,7 @@ public final class VTTScreen extends Screen {
                     selectionManager.selectOnly(clickedToken.id());
                     inputController.selectSelectTool();
                     canvasTokenContextMenuOverlay.open(clickedToken.id(),
-                            (int) mouseX, (int) mouseY, this.width, this.height);
+                            (int) mouseX, (int) mouseY, this.width, this.height, true);
                     return true;
                 }
             }
@@ -2477,6 +2479,38 @@ public final class VTTScreen extends Screen {
         if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
+        if (canvasTokenContextMenuOverlay.isOpen()) {
+            var interaction = canvasTokenContextMenuOverlay.mouseClicked(
+                    mouseX, mouseY, button, canvasTokenContextToken(),
+                    canvasTokenContextSceneObject(), this.width,
+                    getConnectedPlayerOptions());
+            if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
+                handleCanvasTokenContextMenuAction(interaction);
+            }
+            if (interaction.consumed()) return true;
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && renderState != null
+                && !session.isLocalSpectator()) {
+            CanvasObject clickedToken = selectionManager.findTopmostObjectAtPoint(
+                    scene, renderState.screenToWorld(new Vec2d(mouseX, mouseY)), true);
+            var clickedSceneObject = clickedToken == null || session.getActiveScene() == null
+                    ? null : session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && clickedToken.id().equals(object.getId()))
+                    .findFirst().orElse(null);
+            boolean master = session.isLocalMaster();
+            boolean owned = clickedSceneObject != null
+                    && session.getLocalPlayerId().equals(clickedSceneObject.getOwnerId());
+            if (clickedToken != null && clickedToken.hasSourceTokenDefinition()
+                    && (master || owned)) {
+                selectionManager.selectOnly(clickedToken.id());
+                inputController.selectSelectTool();
+                canvasTokenContextMenuOverlay.open(clickedToken.id(),
+                        (int) mouseX, (int) mouseY, this.width, this.height, master);
+                return true;
+            }
+        }
+
         if (blocksFollowedCameraPointer(button)) return true;
         if (!session.getLocalRole().canEditTabletop()) {
             if (renderState != null) {
@@ -2484,17 +2518,6 @@ public final class VTTScreen extends Screen {
                         getKeyboardModifiers(), renderState);
             }
             return true;
-        }
-
-        if (canvasTokenContextMenuOverlay.isOpen()) {
-            CanvasObject token = canvasTokenContextToken();
-            var sceneObject = canvasTokenContextSceneObject();
-            var interaction = canvasTokenContextMenuOverlay.mouseClicked(
-                    mouseX, mouseY, button, token, sceneObject, this.width);
-            if (interaction.action() != CanvasTokenContextMenuOverlay.Action.NONE) {
-                handleCanvasTokenContextMenuAction(interaction);
-            }
-            if (interaction.consumed()) return true;
         }
 
         if (sceneContextMenu.isOpen()) {
@@ -2600,23 +2623,6 @@ public final class VTTScreen extends Screen {
                 sceneContextMenu.close();
                 mapCatalogContextMenu.open(
                         (int) mouseX + 10, (int) mouseY - 45, clickedMap);
-                return true;
-            }
-        }
-
-        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && renderState != null) {
-            Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
-            CanvasObject clickedToken = selectionManager.findTopmostObjectAtPoint(
-                    scene, world, true);
-            if (clickedToken != null && clickedToken.hasSourceTokenDefinition()) {
-                selectionManager.selectOnly(clickedToken.id());
-                inputController.selectSelectTool();
-                tokenCatalogContextMenu.close();
-                mapCatalogContextMenu.close();
-                sceneContextMenu.close();
-                canvasTokenContextMenuOverlay.open(
-                        clickedToken.id(), (int) mouseX, (int) mouseY,
-                        this.width, this.height);
                 return true;
             }
         }
@@ -2954,7 +2960,8 @@ public final class VTTScreen extends Screen {
             canvasTokenContextMenuOverlay.close();
             return;
         }
-        canvasTokenContextMenuOverlay.render(context, this.font, token, sceneObject);
+        canvasTokenContextMenuOverlay.render(
+                context, this.font, token, sceneObject, getConnectedPlayerOptions());
     }
 
     private CanvasObject canvasTokenContextToken() {
@@ -2976,6 +2983,16 @@ public final class VTTScreen extends Screen {
         CanvasObject token = canvasTokenContextToken();
         var sceneObject = canvasTokenContextSceneObject();
         if (token == null || sceneObject == null) {
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        boolean master = session.isLocalMaster();
+        boolean ownedPlayerToken = !master
+                && session.getLocalPlayerId().equals(sceneObject.getOwnerId());
+        if (!master && (!ownedPlayerToken || switch (interaction.action()) {
+            case SET_STATE, SET_COLOR, DELETE, NONE -> false;
+            default -> true;
+        })) {
             canvasTokenContextMenuOverlay.close();
             return;
         }
@@ -3016,13 +3033,24 @@ public final class VTTScreen extends Screen {
                 outer = Math.max(outer, sceneObject.getVisionInnerRadius());
                 sceneObject.setVisionOuterRadius(outer);
             });
+            case SET_OWNER -> {
+                if (master) {
+                    selectionManager.selectOnly(token.id());
+                    setSelectedSceneTokenOwner(interaction.stringValue());
+                }
+            }
             case DUPLICATE -> {
                 selectionManager.selectOnly(token.id());
                 inputController.duplicateSelectedObjects();
             }
             case DELETE -> {
-                selectionManager.selectOnly(token.id());
-                inputController.deleteSelectedObjects();
+                if (!master && session.isNetworkAuthorityActive()) {
+                    PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
+                            "DELETE", token.id(), ""));
+                } else {
+                    selectionManager.selectOnly(token.id());
+                    inputController.deleteSelectedObjects();
+                }
                 canvasTokenContextMenuOverlay.close();
             }
             case NONE -> {

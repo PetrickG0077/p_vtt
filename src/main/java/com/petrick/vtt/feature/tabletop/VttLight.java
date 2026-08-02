@@ -5,6 +5,9 @@ public final class VttLight {
     public static final double DEFAULT_INNER_RADIUS = 192.0;
     public static final double DEFAULT_OUTER_RADIUS = 320.0;
     public static final int DEFAULT_COLOR_RGB = 0xFFF1A8;
+    public static final double MIN_INTENSITY = 0.1;
+    public static final double MAX_INTENSITY = 2.0;
+    public static final double DEFAULT_INTENSITY = 1.0;
 
     private String id;
     private VttLightType type = VttLightType.POINT;
@@ -13,6 +16,7 @@ public final class VttLight {
     private double innerRadius = DEFAULT_INNER_RADIUS;
     private double outerRadius = DEFAULT_OUTER_RADIUS;
     private int colorRgb = DEFAULT_COLOR_RGB;
+    private double intensity = DEFAULT_INTENSITY;
     /** False means reveal-only: the light removes darkness without tinting the scene. */
     private boolean tintEnabled = true;
     private boolean enabled = true;
@@ -44,6 +48,12 @@ public final class VttLight {
     }
     public int getColorRgb() { return colorRgb; }
     public void setColorRgb(int colorRgb) { this.colorRgb = colorRgb & 0x00FFFFFF; }
+    public double getIntensity() { return intensity; }
+    public void setIntensity(double intensity) {
+        if (Double.isFinite(intensity)) {
+            this.intensity = Math.max(MIN_INTENSITY, Math.min(MAX_INTENSITY, intensity));
+        }
+    }
     public boolean isTintEnabled() { return tintEnabled; }
     public void setTintEnabled(boolean tintEnabled) { this.tintEnabled = tintEnabled; }
     public boolean isEnabled() { return enabled; }
@@ -55,6 +65,7 @@ public final class VttLight {
         setOuterRadius(outerRadius);
         setInnerRadius(innerRadius);
         setColorRgb(colorRgb);
+        setIntensity(intensity);
     }
 
     private String normalizeId(String value) {

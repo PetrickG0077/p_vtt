@@ -11,6 +11,7 @@ public record VttTokenTransformUpdatePayload(
         String sceneId, String objectId, double x, double y, double rotationDegrees,
         double scaleX, double scaleY, int layerIndex,
         boolean flippedHorizontally, boolean visible, String displayName, String activeStateId,
+        int tintColorRgb,
         String originPlayerId, boolean accepted
 ) implements CustomPacketPayload {
     public static final Type<VttTokenTransformUpdatePayload> TYPE = new Type<>(
@@ -26,7 +27,7 @@ public record VttTokenTransformUpdatePayload(
                             buffer.readDouble(), buffer.readDouble(),
                             buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(),
                             buffer.readBoolean(), buffer.readBoolean(),
-                            buffer.readUtf(128), buffer.readUtf(128),
+                            buffer.readUtf(128), buffer.readUtf(128), buffer.readVarInt(),
                             buffer.readUtf(64), buffer.readBoolean());
                 }
 
@@ -47,6 +48,7 @@ public record VttTokenTransformUpdatePayload(
                     buffer.writeBoolean(payload.visible());
                     buffer.writeUtf(payload.displayName(), 128);
                     buffer.writeUtf(payload.activeStateId(), 128);
+                    buffer.writeVarInt(payload.tintColorRgb());
                     buffer.writeUtf(payload.originPlayerId(), 64);
                     buffer.writeBoolean(payload.accepted());
                 }

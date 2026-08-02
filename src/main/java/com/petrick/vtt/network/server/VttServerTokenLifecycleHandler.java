@@ -13,12 +13,6 @@ public final class VttServerTokenLifecycleHandler {
         if (!(context.player() instanceof ServerPlayer player)) return;
         if (!VttServerRequestRateLimiter.allow(
                 player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE)) return;
-        if (!VttServerPlayerEvents.isMaster(player)) {
-            VttServerRequestRateLimiter.reject(
-                    player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
-                    "permission denied");
-            return;
-        }
         if (request == null) {
             VttServerRequestRateLimiter.reject(
                     player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
@@ -26,6 +20,13 @@ public final class VttServerTokenLifecycleHandler {
             return;
         }
         var state = VttServerTabletopState.get();
+        boolean master = VttServerPlayerEvents.isMaster(player);
+        if (!master && !"DELETE".equals(request.operation())) {
+            VttServerRequestRateLimiter.reject(
+                    player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
+                    "permission denied");
+            return;
+        }
         if ("CREATE".equals(request.operation())) {
             var violation = VttSceneLimits.tokenCreation(state.activeScene());
             if (violation != null) {
@@ -39,7 +40,7 @@ public final class VttServerTokenLifecycleHandler {
             }
         }
         var update = state.applyTokenLifecycle(
-                request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player));
+                request, player.getUUID().toString(), master);
         if (update == null) {
             VttServerRequestRateLimiter.reject(
                     player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE,
@@ -47,9 +48,7 @@ public final class VttServerTokenLifecycleHandler {
             return;
         }
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
-            if (VttServerPlayerEvents.isMaster(connected)) {
-                PacketDistributor.sendToPlayer(connected, update);
-            }
+            PacketDistributor.sendToPlayer(connected, update);
         }
         VttServerVisionSourceSync.broadcast(player.getServer(), state);
     }

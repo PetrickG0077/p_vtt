@@ -105,7 +105,8 @@ public final class SceneVisionMaskRenderer {
                     return new ScreenLight(
                             context.renderState().worldToScreen(worldOrigin),
                             light.getInnerRadius() * zoom, light.getOuterRadius() * zoom,
-                            light.getColorRgb(), light.isTintEnabled(), visibilityPolygon);
+                            light.getColorRgb(), light.isTintEnabled(), light.getIntensity(),
+                            visibilityPolygon);
                 })
                 .filter(light -> light.visibilityPolygon().size() >= 3)
                 .toList();
@@ -228,7 +229,8 @@ public final class SceneVisionMaskRenderer {
                     light.outerRadiusPixels() - light.innerRadiusPixels());
             double lightDarkness = Math.max(0.0, Math.min(1.0,
                     (distance - light.innerRadiusPixels()) / span));
-            darkness = Math.min(darkness, lightDarkness);
+            double revealStrength = (1.0 - lightDarkness) * light.intensity();
+            darkness = Math.min(darkness, 1.0 - Math.min(1.0, revealStrength));
         }
         double edgeSoftness = Math.max(4.0, pixelSize * 2.0);
         double intervalEdgeDistance = Math.max(0.0,
@@ -283,7 +285,8 @@ public final class SceneVisionMaskRenderer {
                                 : 1.0 - (distance - light.innerRadiusPixels())
                                 / Math.max(1.0, light.outerRadiusPixels()
                                 - light.innerRadiusPixels());
-                        candidate = Math.max(0.0, Math.min(1.0, candidate));
+                        candidate = Math.max(0.0,
+                                Math.min(1.0, candidate * light.intensity()));
                         if (candidate <= 0.0) continue;
                         combinedStrength = 1.0
                                 - (1.0 - combinedStrength) * (1.0 - candidate);
@@ -417,7 +420,8 @@ public final class SceneVisionMaskRenderer {
             boolean ownLightEnabled) {}
     private record ScreenLight(
             Vec2d origin, double innerRadiusPixels, double outerRadiusPixels,
-            int colorRgb, boolean tintEnabled, List<Vec2d> visibilityPolygon) {}
+            int colorRgb, boolean tintEnabled, double intensity,
+            List<Vec2d> visibilityPolygon) {}
     private record ColumnLight(ScreenLight light, List<VisibleInterval> intervals) {
         private boolean containsY(double y) {
             for (VisibleInterval interval : intervals) {

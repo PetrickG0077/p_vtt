@@ -619,6 +619,7 @@ public final class VTTSession {
                         sceneObject.getState().setFlippedHorizontally(update.flippedHorizontally());
                         sceneObject.getState().setVisible(update.visible());
                         sceneObject.getState().setActiveStateId(update.activeStateId());
+                        sceneObject.getState().setTintColorRgb(update.tintColorRgb());
                         sceneObject.setDisplayName(update.displayName());
                     });
             for (var sceneObject : activeScene.getObjects()) {

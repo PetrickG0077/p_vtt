@@ -46,6 +46,7 @@ public final class LightTool implements Tool {
     private Field focusedField;
     private String fieldBuffer = "";
     private boolean replaceFieldOnType;
+    private boolean draggingIntensity;
 
     public LightTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.sceneSupplier = sceneSupplier;
@@ -100,6 +101,10 @@ public final class LightTool implements Tool {
             double dragX, double dragY, int modifiers
     ) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
+        if (draggingIntensity && popup == Popup.PROPERTIES) {
+            updateIntensity(mouseX);
+            return true;
+        }
         VttLight light = selectedLight();
         if (light == null) return false;
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
@@ -121,6 +126,12 @@ public final class LightTool implements Tool {
     public boolean mouseReleased(
             ToolContext context, double mouseX, double mouseY, int button, int modifiers
     ) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingIntensity) {
+            updateIntensity(mouseX);
+            draggingIntensity = false;
+            saveAction.run();
+            return true;
+        }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !moving && radiusHandle == null) return false;
         mouseDragged(context, mouseX, mouseY, button, 0.0, 0.0, modifiers);
         moving = false;
@@ -243,7 +254,7 @@ public final class LightTool implements Tool {
 
     private void renderPopup(VRenderContext context, Font font) {
         int width = popup == Popup.CREATE ? 126 : 154;
-        int height = popup == Popup.CREATE ? 64 : 151;
+        int height = popup == Popup.CREATE ? 64 : 198;
         context.graphics().fill(popupX, popupY, popupX + width, popupY + height, PANEL);
         border(context, popupX, popupY, width, height, CYAN);
         if (popup == Popup.CREATE) {
@@ -260,8 +271,21 @@ public final class LightTool implements Tool {
             int x = popupX + 7 + i * 16;
             renderColorSwatch(context, x, popupY + 91, COLORS[i]);
         }
-        popupRow(context, font, 6, "Duplicate", true);
-        popupRow(context, font, 7, "Delete", true);
+        VttLight light = selectedLight();
+        double intensity = light == null ? VttLight.DEFAULT_INTENSITY : light.getIntensity();
+        context.graphics().drawString(font,
+                String.format(Locale.ROOT, "Intensity  %.2fx", intensity),
+                popupX + 7, popupY + 111, TEXT, false);
+        int trackX = popupX + 7;
+        int trackY = popupY + 126;
+        int trackWidth = 140;
+        context.graphics().fill(trackX, trackY, trackX + trackWidth, trackY + 5, 0xFF55555B);
+        double progress = (intensity - VttLight.MIN_INTENSITY)
+                / (VttLight.MAX_INTENSITY - VttLight.MIN_INTENSITY);
+        int knobX = trackX + (int) Math.round(progress * trackWidth);
+        context.graphics().fill(knobX - 2, trackY - 3, knobX + 3, trackY + 8, CYAN);
+        popupRow(context, font, 8, "Duplicate", true);
+        popupRow(context, font, 9, "Delete", true);
     }
 
     private void popupRow(VRenderContext context, Font font, int row, String label, boolean enabled) {
@@ -314,10 +338,16 @@ public final class LightTool implements Tool {
             }
             return true;
         }
+        if (mouseX >= popupX + 7 && mouseX <= popupX + 147
+                && mouseY >= popupY + 119 && mouseY <= popupY + 137) {
+            draggingIntensity = true;
+            updateIntensity(mouseX);
+            return true;
+        }
         if (mouseX >= popupX && mouseX <= popupX + 154) {
             int row = (int) ((mouseY - popupY - 5) / 19);
-            if (row == 6) duplicateSelected();
-            else if (row == 7) deleteSelected();
+            if (row == 8) duplicateSelected();
+            else if (row == 9) deleteSelected();
         }
         return true;
     }
@@ -331,6 +361,7 @@ public final class LightTool implements Tool {
         copy.setOuterRadius(source.getOuterRadius());
         copy.setInnerRadius(source.getInnerRadius());
         copy.setColorRgb(source.getColorRgb());
+        copy.setIntensity(source.getIntensity());
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         scene.addLight(copy);
@@ -450,8 +481,18 @@ public final class LightTool implements Tool {
         popupX = Math.max(4, Math.min(screenWidth - popupWidth - 4,
                 (int) Math.round(mouseX) + 8));
         popupY = Math.max(4, (int) Math.round(mouseY)
-                - (popup == Popup.CREATE ? 64 : 151));
+                - (popup == Popup.CREATE ? 64 : 198));
         focusedField = null;
+        draggingIntensity = false;
+    }
+
+    private void updateIntensity(double mouseX) {
+        VttLight light = selectedLight();
+        if (light == null) return;
+        double progress = Math.max(0.0, Math.min(1.0,
+                (mouseX - (popupX + 7.0)) / 140.0));
+        light.setIntensity(VttLight.MIN_INTENSITY
+                + progress * (VttLight.MAX_INTENSITY - VttLight.MIN_INTENSITY));
     }
 
     private void closePopup() {
@@ -460,6 +501,7 @@ public final class LightTool implements Tool {
         focusedField = null;
         fieldBuffer = "";
         replaceFieldOnType = false;
+        draggingIntensity = false;
     }
 
     private void border(VRenderContext context, int x, int y, int w, int h, int color) {

@@ -48,7 +48,8 @@ public final class VttClientTokenTransformSync {
             if (!object.hasSourceTokenDefinition()) continue;
             if (INTERPOLATIONS.containsKey(object.id())) continue;
             TokenState current = TokenState.from(object,
-                    session.getCanvasScene().getObjectLayerIndex(object.id()));
+                    session.getCanvasScene().getObjectLayerIndex(object.id()),
+                    tintColor(session, object.id()));
             if (current.equals(LAST_SENT.get(object.id()))) continue;
             if (now - LAST_SENT_AT.getOrDefault(object.id(), 0L) < SEND_INTERVAL_MS) continue;
             LAST_SENT.put(object.id(), current);
@@ -62,7 +63,8 @@ public final class VttClientTokenTransformSync {
                     current.x(), current.y(), current.rotationDegrees(),
                     current.scaleX(), current.scaleY(), current.layerIndex(),
                     current.flippedHorizontally(), current.visible(),
-                    current.displayName(), current.activeStateId(), bypassCollision
+                    current.displayName(), current.activeStateId(), current.tintColorRgb(),
+                    bypassCollision
             ));
         }
     }
@@ -98,7 +100,7 @@ public final class VttClientTokenTransformSync {
         LAST_SENT.put(update.objectId(), new TokenState(update.x(), update.y(), update.rotationDegrees(),
                 update.scaleX(), update.scaleY(), update.layerIndex(),
                 update.flippedHorizontally(), update.visible(),
-                update.displayName(), update.activeStateId()));
+                update.displayName(), update.activeStateId(), update.tintColorRgb()));
         LAST_SENT_AT.put(update.objectId(), System.currentTimeMillis());
 
         CanvasObject object = session.getCanvasScene().findObjectById(update.objectId());
@@ -109,7 +111,8 @@ public final class VttClientTokenTransformSync {
         }
 
         TokenState start = TokenState.from(object,
-                session.getCanvasScene().getObjectLayerIndex(object.id()));
+                session.getCanvasScene().getObjectLayerIndex(object.id()),
+                tintColor(session, object.id()));
         TokenState target = TokenState.from(update);
         if (shouldSnap(start, target) || !hasContinuousDifference(start, target)) {
             INTERPOLATIONS.remove(update.objectId());
@@ -139,7 +142,8 @@ public final class VttClientTokenTransformSync {
         LAST_SENT_AT.clear();
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
             if (object.hasSourceTokenDefinition()) LAST_SENT.put(object.id(), TokenState.from(
-                    object, session.getCanvasScene().getObjectLayerIndex(object.id())));
+                    object, session.getCanvasScene().getObjectLayerIndex(object.id()),
+                    tintColor(session, object.id())));
         }
     }
 
@@ -150,7 +154,8 @@ public final class VttClientTokenTransformSync {
             Interpolation interpolation = entry.getValue();
             CanvasObject object = session.getCanvasScene().findObjectById(entry.getKey());
             TokenState current = TokenState.from(object,
-                    session.getCanvasScene().getObjectLayerIndex(object.id()));
+                    session.getCanvasScene().getObjectLayerIndex(object.id()),
+                    tintColor(session, object.id()));
             if (!current.equals(interpolation.lastDisplayed())) {
                 INTERPOLATIONS.remove(entry.getKey());
                 continue;
@@ -199,7 +204,7 @@ public final class VttClientTokenTransformSync {
                 lerp(start.scaleX(), target.scaleX(), progress),
                 lerp(start.scaleY(), target.scaleY(), progress),
                 target.layerIndex(), target.flippedHorizontally(), target.visible(),
-                target.displayName(), target.activeStateId());
+                target.displayName(), target.activeStateId(), target.tintColorRgb());
     }
 
     private static double lerp(double start, double end, double progress) {
@@ -215,20 +220,20 @@ public final class VttClientTokenTransformSync {
     private record TokenState(double x, double y, double rotationDegrees,
                               double scaleX, double scaleY, int layerIndex,
                               boolean flippedHorizontally, boolean visible,
-                              String displayName, String activeStateId) {
-        private static TokenState from(CanvasObject object, int layerIndex) {
+                              String displayName, String activeStateId, int tintColorRgb) {
+        private static TokenState from(CanvasObject object, int layerIndex, int tintColorRgb) {
             return new TokenState(object.transform().position().x(), object.transform().position().y(),
                     object.transform().rotationDegrees(), object.transform().scale().x(),
                     object.transform().scale().y(), layerIndex,
                     object.flippedHorizontally(), object.visible(),
-                    object.displayName(), object.activeStateId());
+                    object.displayName(), object.activeStateId(), tintColorRgb);
         }
 
         private static TokenState from(VttTokenTransformUpdatePayload update) {
             return new TokenState(update.x(), update.y(), update.rotationDegrees(),
                     update.scaleX(), update.scaleY(), update.layerIndex(),
                     update.flippedHorizontally(), update.visible(),
-                    update.displayName(), update.activeStateId());
+                    update.displayName(), update.activeStateId(), update.tintColorRgb());
         }
 
         private VttTokenTransformUpdatePayload toUpdate(
@@ -238,9 +243,17 @@ public final class VttClientTokenTransformSync {
                     authorityRevision, entityRevision, clientSequence,
                     sceneId, objectId, x, y, rotationDegrees,
                     scaleX, scaleY, layerIndex, flippedHorizontally, visible,
-                    displayName, activeStateId,
+                    displayName, activeStateId, tintColorRgb,
                     originPlayerId, accepted);
         }
+    }
+
+    private static int tintColor(VTTSession session, String objectId) {
+        if (session.getActiveScene() == null) return 0xFFFFFF;
+        return session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().map(object -> object.getState().getTintColorRgb())
+                .orElse(0xFFFFFF);
     }
 
     private record Interpolation(TokenState start, TokenState target,

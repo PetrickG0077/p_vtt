@@ -978,6 +978,7 @@ public final class VttServerTabletopState {
                 || !nearlyEqual(acceptedRotation, object.getTransform().getRotationDegrees())
                 || object.getState().isFlippedHorizontally() != request.flippedHorizontally()
                 || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
+                || object.getState().getTintColorRgb() != (request.tintColorRgb() & 0x00FFFFFF)
                 || master && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
                 || request.layerIndex() != previousLayerIndex
@@ -995,6 +996,7 @@ public final class VttServerTabletopState {
         }
         object.getState().setFlippedHorizontally(request.flippedHorizontally());
         object.getState().setActiveStateId(request.activeStateId());
+        object.getState().setTintColorRgb(request.tintColorRgb());
         objectSpatialIndex.addOrUpdate(object);
         if (contentChanged) markActiveSceneDirty();
 
@@ -1005,6 +1007,7 @@ public final class VttServerTabletopState {
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
                 object.getDisplayName(), object.getState().getActiveStateId(),
+                object.getState().getTintColorRgb(),
                 playerId, movementAccepted && masterFieldsAccepted);
     }
 
@@ -1022,16 +1025,26 @@ public final class VttServerTabletopState {
                 object.getTransform().getY(), object.getTransform().getRotationDegrees(),
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
-                object.getDisplayName(), object.getState().getActiveStateId(), playerId, false);
+                object.getDisplayName(), object.getState().getActiveStateId(),
+                object.getState().getTintColorRgb(), playerId, false);
     }
 
     public synchronized VttTokenLifecycleUpdatePayload applyTokenLifecycle(
             VttTokenLifecycleRequestPayload request, String playerId, boolean master
     ) {
-        if (!master || request == null || playerId == null || request.operation() == null
+        if (request == null || playerId == null || request.operation() == null
                 || request.objectId() == null || request.objectId().isBlank()) return null;
-        if ("CREATE".equals(request.operation())) return createSceneToken(request, playerId);
-        if ("DELETE".equals(request.operation())) return deleteSceneToken(request.objectId(), playerId);
+        if ("CREATE".equals(request.operation())) {
+            return master ? createSceneToken(request, playerId) : null;
+        }
+        if ("DELETE".equals(request.operation())) {
+            VttSceneObject object = activeScene == null ? null : activeScene.getObjects().stream()
+                    .filter(candidate -> candidate != null
+                            && request.objectId().equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            if (object == null || !master && !playerId.equals(object.getOwnerId())) return null;
+            return deleteSceneToken(request.objectId(), playerId);
+        }
         return null;
     }
 
@@ -1493,12 +1506,15 @@ public final class VttServerTabletopState {
                 || !Double.isFinite(light.getX()) || !Double.isFinite(light.getY())
                 || !Double.isFinite(light.getInnerRadius())
                 || !Double.isFinite(light.getOuterRadius())
+                || !Double.isFinite(light.getIntensity())
                 || Math.abs(light.getX()) > 10_000_000.0
                 || Math.abs(light.getY()) > 10_000_000.0
                 || light.getInnerRadius() < 0.0
                 || light.getOuterRadius() < 1.0
                 || light.getOuterRadius() > 100_000.0
                 || light.getInnerRadius() > light.getOuterRadius()
+                || light.getIntensity() < com.petrick.vtt.feature.tabletop.VttLight.MIN_INTENSITY
+                || light.getIntensity() > com.petrick.vtt.feature.tabletop.VttLight.MAX_INTENSITY
                 || !exists && VttSceneLimits.environmentUpsert(
                 activeScene, VttEnvironmentCommandPayload.LIGHT, id) != null) return false;
         activeScene.addLight(light);

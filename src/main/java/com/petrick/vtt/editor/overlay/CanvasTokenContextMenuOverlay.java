@@ -3,11 +3,13 @@ package com.petrick.vtt.editor.overlay;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
+import java.util.List;
 
 /** Context menu for a token instance placed on the canvas. */
 public final class CanvasTokenContextMenuOverlay {
@@ -32,9 +34,14 @@ public final class CanvasTokenContextMenuOverlay {
     private VisionField focusedField;
     private String fieldBuffer = "";
     private boolean replaceFieldOnType;
+    private boolean masterMenu = true;
 
-    public void open(String objectId, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    public void open(
+            String objectId, int mouseX, int mouseY, int screenWidth, int screenHeight,
+            boolean masterMenu
+    ) {
         this.objectId = objectId;
+        this.masterMenu = masterMenu;
         this.x = Math.max(4, Math.min(screenWidth - MAIN_WIDTH - 4, mouseX + 8));
         this.y = Math.max(4, Math.min(screenHeight - mainHeight() - 4, mouseY - 8));
         submenu = Submenu.NONE;
@@ -54,28 +61,39 @@ public final class CanvasTokenContextMenuOverlay {
     public String objectId() { return objectId; }
 
     public void render(
-            VRenderContext context, Font font, CanvasObject token, VttSceneObject sceneObject
+            VRenderContext context, Font font, CanvasObject token, VttSceneObject sceneObject,
+            List<VttPlayerOption> players
     ) {
         if (!isOpen() || token == null || sceneObject == null) return;
         fillPanel(context, x, y, MAIN_WIDTH, mainHeight());
-        row(context, font, 0, "Edit", true);
-        row(context, font, 1, "States  >", true);
-        row(context, font, 2, "Color  >", true);
-        row(context, font, 3, "Visible", true);
-        toggle(context, x + MAIN_WIDTH - 24, y + 7 + 3 * ROW_HEIGHT, token.visible());
-        row(context, font, 4, "Vision  >", true);
-        row(context, font, 5, "Duplicate", true);
-        row(context, font, 6, "Delete", true);
+        if (masterMenu) {
+            row(context, font, 0, "Edit", true);
+            row(context, font, 1, "States  >", true);
+            row(context, font, 2, "Color  >", true);
+            row(context, font, 3, "Visible", true);
+            toggle(context, x + MAIN_WIDTH - 24, y + 7 + 3 * ROW_HEIGHT, token.visible());
+            row(context, font, 4, "Vision  >", true);
+            row(context, font, 5, "Owner  >", true);
+            row(context, font, 6, "Duplicate", true);
+            row(context, font, 7, "Delete", true);
+        } else {
+            row(context, font, 0, "States  >", true);
+            row(context, font, 1, "Color  >", true);
+            row(context, font, 2, "Delete", true);
+        }
 
         int childX = childX(context.screenWidth());
         if (submenu == Submenu.STATES) renderStates(context, font, token, childX);
         else if (submenu == Submenu.COLOR) renderColors(context, childX, sceneObject);
         else if (submenu == Submenu.VISION) renderVision(context, font, childX, sceneObject);
+        else if (submenu == Submenu.OWNER) renderOwners(
+                context, font, childX, sceneObject, players);
     }
 
     public Interaction mouseClicked(
             double mouseX, double mouseY, int button,
-            CanvasObject token, VttSceneObject sceneObject, int screenWidth
+            CanvasObject token, VttSceneObject sceneObject, int screenWidth,
+            List<VttPlayerOption> players
     ) {
         if (!isOpen() || token == null || sceneObject == null) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
@@ -84,20 +102,28 @@ public final class CanvasTokenContextMenuOverlay {
             case STATES -> clickStates(mouseX, mouseY, token, childX);
             case COLOR -> clickColors(mouseX, mouseY, childX);
             case VISION -> clickVision(mouseX, mouseY, sceneObject, childX);
+            case OWNER -> clickOwners(mouseX, mouseY, childX, players);
             case NONE -> Interaction.none();
         };
         if (child.action() != Action.NONE || child.consumed()) return child;
 
         if (inside(mouseX, mouseY, x, y, MAIN_WIDTH, mainHeight())) {
             int row = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+            if (!masterMenu) return switch (row) {
+                case 0 -> openSubmenu(Submenu.STATES);
+                case 1 -> openSubmenu(Submenu.COLOR);
+                case 2 -> new Interaction(Action.DELETE, null, 0, true);
+                default -> Interaction.handled();
+            };
             return switch (row) {
                 case 0 -> new Interaction(Action.EDIT, null, 0, true);
                 case 1 -> openSubmenu(Submenu.STATES);
                 case 2 -> openSubmenu(Submenu.COLOR);
                 case 3 -> new Interaction(Action.TOGGLE_VISIBLE, null, 0, true);
                 case 4 -> openSubmenu(Submenu.VISION);
-                case 5 -> new Interaction(Action.DUPLICATE, null, 0, true);
-                case 6 -> new Interaction(Action.DELETE, null, 0, true);
+                case 5 -> openSubmenu(Submenu.OWNER);
+                case 6 -> new Interaction(Action.DUPLICATE, null, 0, true);
+                case 7 -> new Interaction(Action.DELETE, null, 0, true);
                 default -> Interaction.handled();
             };
         }
@@ -184,6 +210,18 @@ public final class CanvasTokenContextMenuOverlay {
         return Interaction.handled();
     }
 
+    private Interaction clickOwners(
+            double mouseX, double mouseY, int childX, List<VttPlayerOption> players
+    ) {
+        int count = 1 + (players == null ? 0 : players.size());
+        int height = Math.max(24, 10 + count * ROW_HEIGHT);
+        if (!inside(mouseX, mouseY, childX, y, 180, height)) return Interaction.none();
+        int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+        if (index == 0) return new Interaction(Action.SET_OWNER, "", 0, true);
+        if (players == null || index < 1 || index > players.size()) return Interaction.handled();
+        return new Interaction(Action.SET_OWNER, players.get(index - 1).id(), 0, true);
+    }
+
     private Interaction commitField(VttSceneObject object) {
         try {
             double value = Double.parseDouble(fieldBuffer);
@@ -239,6 +277,30 @@ public final class CanvasTokenContextMenuOverlay {
         renderVisionField(context, font, childX, y + 81, "Outer Radius", VisionField.OUTER, outer);
     }
 
+    private void renderOwners(
+            VRenderContext context, Font font, int childX, VttSceneObject object,
+            List<VttPlayerOption> players
+    ) {
+        List<VttPlayerOption> safePlayers = players == null ? List.of() : players;
+        int height = Math.max(24, 10 + (safePlayers.size() + 1) * ROW_HEIGHT);
+        fillPanel(context, childX, y, 180, height);
+        boolean unowned = object.getOwnerId() == null || object.getOwnerId().isBlank();
+        context.graphics().drawString(font, "Unassigned", childX + 7, y + 7,
+                unowned ? ACCENT : TEXT, false);
+        for (int index = 0; index < safePlayers.size(); index++) {
+            VttPlayerOption player = safePlayers.get(index);
+            boolean owner = player.id().equals(object.getOwnerId());
+            int rowY = y + 7 + (index + 1) * ROW_HEIGHT;
+            context.graphics().drawString(font, player.displayName(), childX + 7, rowY,
+                    owner ? ACCENT : TEXT, false);
+            if (owner) {
+                String marker = "Owner";
+                context.graphics().drawString(font, marker,
+                        childX + 173 - font.width(marker), rowY, ACCENT, false);
+            }
+        }
+    }
+
     private void renderVisionField(
             VRenderContext context, Font font, int childX, int fieldY,
             String label, VisionField field, double value
@@ -280,12 +342,13 @@ public final class CanvasTokenContextMenuOverlay {
             case VISION -> 190;
             case COLOR -> 82;
             case STATES -> STATES_WIDTH;
+            case OWNER -> 180;
             case NONE -> 0;
         };
         return desired + childWidth <= screenWidth - 4 ? desired : x - childWidth - 4;
     }
 
-    private int mainHeight() { return 10 + ROW_HEIGHT * 7; }
+    private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 8 : 3); }
 
     private void fillPanel(VRenderContext context, int px, int py, int width, int height) {
         context.graphics().fill(px, py, px + width, py + height, PANEL);
@@ -307,7 +370,8 @@ public final class CanvasTokenContextMenuOverlay {
 
     public enum Action {
         NONE, EDIT, SET_STATE, SET_COLOR, TOGGLE_VISIBLE, TOGGLE_VISION,
-        TOGGLE_OWN_LIGHT, SET_VISION_INNER, SET_VISION_OUTER, DUPLICATE, DELETE
+        TOGGLE_OWN_LIGHT, SET_VISION_INNER, SET_VISION_OUTER, SET_OWNER,
+        DUPLICATE, DELETE
     }
 
     public record Interaction(Action action, String stringValue, int intValue, boolean consumed) {
@@ -315,6 +379,6 @@ public final class CanvasTokenContextMenuOverlay {
         public static Interaction handled() { return new Interaction(Action.NONE, null, 0, true); }
     }
 
-    private enum Submenu { NONE, STATES, COLOR, VISION }
+    private enum Submenu { NONE, STATES, COLOR, VISION, OWNER }
     private enum VisionField { INNER, OUTER }
 }

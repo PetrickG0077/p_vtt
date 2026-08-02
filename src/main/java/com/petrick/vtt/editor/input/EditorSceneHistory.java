@@ -770,6 +770,8 @@ public final class EditorSceneHistory {
             double visionOuterRadius,
             double visionInnerRadius,
             boolean visionEnabled,
+            boolean visionOwnLightEnabled,
+            int tintColorRgb,
             String ownerId,
             boolean visionSource
     ) {
@@ -786,7 +788,8 @@ public final class EditorSceneHistory {
                     object.getState().getActiveStateId(), object.getState().isVisible(),
                     object.getState().isFlippedHorizontally(), boxCopy, object.getLayerIndex(),
                     object.getVisionOuterRadius(), object.getVisionInnerRadius(),
-                    object.isVisionEnabled(), object.getOwnerId(), visionSource);
+                    object.isVisionEnabled(), object.isVisionOwnLightEnabled(),
+                    object.getState().getTintColorRgb(), object.getOwnerId(), visionSource);
         }
 
         private VttSceneObject toSceneObject() {
@@ -799,6 +802,8 @@ public final class EditorSceneHistory {
             object.setVisionOuterRadius(visionOuterRadius);
             object.setVisionInnerRadius(visionInnerRadius);
             object.setVisionEnabled(visionEnabled);
+            object.setVisionOwnLightEnabled(visionOwnLightEnabled);
+            object.getState().setTintColorRgb(tintColorRgb);
             object.setOwnerId(ownerId);
             if (collisionBox != null) {
                 object.setCollisionBox(new VttSceneCollisionBox(
