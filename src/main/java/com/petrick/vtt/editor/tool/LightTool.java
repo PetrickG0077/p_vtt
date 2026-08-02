@@ -210,8 +210,8 @@ public final class LightTool implements Tool {
                 origin, light.getOuterRadius(), segments), 0xAA66CCFF);
         renderPolygon(context, raycaster.buildVisibilityPolygon(
                 origin, light.getInnerRadius(), segments), 0xAA2299BB);
-        renderHandle(context, origin.add(new Vec2d(light.getInnerRadius(), 0.0)), "Hi");
-        renderHandle(context, origin.add(new Vec2d(light.getOuterRadius(), 0.0)), "Ho");
+        renderHandle(context, origin.add(new Vec2d(light.getInnerRadius(), 0.0)));
+        renderHandle(context, origin.add(new Vec2d(light.getOuterRadius(), 0.0)));
     }
 
     private void renderPolygon(VRenderContext context, List<Vec2d> polygon, int color) {
@@ -222,13 +222,12 @@ public final class LightTool implements Tool {
         }
     }
 
-    private void renderHandle(VRenderContext context, Vec2d world, String label) {
+    private void renderHandle(VRenderContext context, Vec2d world) {
         Vec2d p = context.renderState().worldToScreen(world);
         int x = (int) Math.round(p.x());
         int y = (int) Math.round(p.y());
         context.graphics().fill(x - 3, y - 3, x + 4, y + 4, HANDLE);
         border(context, x - 4, y - 4, 8, 8, CYAN);
-        context.graphics().drawString(Minecraft.getInstance().font, label, x + 6, y - 4, CYAN, false);
     }
 
     private void renderLine(VRenderContext context, Vec2d a, Vec2d b, int color) {

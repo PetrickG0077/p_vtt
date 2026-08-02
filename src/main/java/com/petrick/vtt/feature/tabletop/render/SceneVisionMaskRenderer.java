@@ -40,6 +40,7 @@ public final class SceneVisionMaskRenderer {
             }
             return;
         }
+        var sceneSegments = geometry.build(tabletopScene);
 
         List<VisionRegion> regions = new ArrayList<>();
         if (authoritativeRegions != null) {
@@ -63,13 +64,12 @@ public final class SceneVisionMaskRenderer {
                 }
                 return;
             }
-            var segments = geometry.build(tabletopScene);
             for (CanvasObject source : sources) {
                 VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
                 double raycastDistance = visibilityReach(
                         tabletopScene, source.transform().position(), radii.outerRadius());
                 List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
-                        source.transform().position(), raycastDistance, segments,
+                        source.transform().position(), raycastDistance, sceneSegments,
                         tabletopScene.getLighting().getVisionRayCount());
                 if (outerWorldPolygon.size() < 3) continue;
                 double zoom = context.renderState().getCamera().getZoom();
@@ -96,11 +96,18 @@ public final class SceneVisionMaskRenderer {
         double zoom = context.renderState().getCamera().getZoom();
         List<ScreenLight> screenLights = tabletopScene.getLights().stream()
                 .filter(light -> light != null && light.isEnabled())
-                .map(light -> new ScreenLight(
-                        context.renderState().worldToScreen(
-                                new Vec2d(light.getX(), light.getY())),
-                        light.getInnerRadius() * zoom, light.getOuterRadius() * zoom,
-                        light.getColorRgb(), light.isTintEnabled()))
+                .map(light -> {
+                    Vec2d worldOrigin = new Vec2d(light.getX(), light.getY());
+                    List<Vec2d> visibilityPolygon = raycaster.buildVisibilityPolygon(
+                            worldOrigin, light.getOuterRadius(), sceneSegments,
+                            tabletopScene.getLighting().getVisionRayCount()).stream()
+                            .map(context.renderState()::worldToScreen).toList();
+                    return new ScreenLight(
+                            context.renderState().worldToScreen(worldOrigin),
+                            light.getInnerRadius() * zoom, light.getOuterRadius() * zoom,
+                            light.getColorRgb(), light.isTintEnabled(), visibilityPolygon);
+                })
+                .filter(light -> light.visibilityPolygon().size() >= 3)
                 .toList();
         renderRadialGradient(context, regions, outerPolygons,
                 screenLights, darknessRgb, pixelSize);
@@ -146,16 +153,18 @@ public final class SceneVisionMaskRenderer {
             int right = Math.min(context.screenWidth(), left + pixelSize);
             double sampleX = left + (right - left) / 2.0;
             List<VisibleInterval> outer = visibleIntervalsAtX(outerPolygons, sampleX, context.screenHeight());
+            List<ColumnLight> columnLights = columnLightsAtX(
+                    lights, sampleX, context.screenHeight());
             for (VisibleInterval outerInterval : outer) {
                 renderGradientInterval(context, left, right, sampleX, outerInterval, regions,
-                        lights, darknessRgb, pixelSize);
+                        columnLights, darknessRgb, pixelSize);
             }
         }
     }
 
     private void renderGradientInterval(
             VRenderContext context, int left, int right, double x,
-            VisibleInterval interval, List<VisionRegion> regions, List<ScreenLight> lights,
+            VisibleInterval interval, List<VisionRegion> regions, List<ColumnLight> lights,
             int darknessRgb, int pixelSize
     ) {
         int top = Math.max(0, alignDown(interval.start(), pixelSize));
@@ -197,7 +206,7 @@ public final class SceneVisionMaskRenderer {
     }
 
     private int gradientAlpha(
-            double x, double y, List<VisionRegion> regions, List<ScreenLight> lights,
+            double x, double y, List<VisionRegion> regions, List<ColumnLight> lights,
             VisibleInterval interval, int pixelSize
     ) {
         double darkness = 1.0;
@@ -210,7 +219,9 @@ public final class SceneVisionMaskRenderer {
                     Math.min(1.0, (distance - region.innerRadiusPixels()) / span));
             darkness = Math.min(darkness, radialDarkness);
         }
-        for (ScreenLight light : lights) {
+        for (ColumnLight columnLight : lights) {
+            if (!columnLight.containsY(y)) continue;
+            ScreenLight light = columnLight.light();
             double distance = Math.hypot(x - light.origin().x(), y - light.origin().y());
             if (distance > light.outerRadiusPixels()) continue;
             double span = Math.max(1.0,
@@ -247,6 +258,8 @@ public final class SceneVisionMaskRenderer {
         for (int left = 0; left < context.screenWidth(); left += pixelSize) {
             int right = Math.min(context.screenWidth(), left + pixelSize);
             double x = left + (right - left) / 2.0;
+            List<ColumnLight> columnLights = columnLightsAtX(
+                    lights, x, context.screenHeight());
             for (VisibleInterval interval : visibleIntervalsAtX(
                     visiblePolygons, x, context.screenHeight())) {
                 int top = Math.max(0, alignDown(interval.start(), pixelSize));
@@ -259,7 +272,9 @@ public final class SceneVisionMaskRenderer {
                     double red = 0.0;
                     double green = 0.0;
                     double blue = 0.0;
-                    for (ScreenLight light : lights) {
+                    for (ColumnLight columnLight : columnLights) {
+                        if (!columnLight.containsY(sampleY)) continue;
+                        ScreenLight light = columnLight.light();
                         if (!light.tintEnabled()) continue;
                         double distance = Math.hypot(
                                 x - light.origin().x(), sampleY - light.origin().y());
@@ -380,6 +395,19 @@ public final class SceneVisionMaskRenderer {
         return Math.max(0.0, Math.min(screenHeight, value));
     }
 
+    private List<ColumnLight> columnLightsAtX(
+            List<ScreenLight> lights, double x, int screenHeight
+    ) {
+        List<ColumnLight> result = new ArrayList<>();
+        for (ScreenLight light : lights) {
+            if (Math.abs(x - light.origin().x()) > light.outerRadiusPixels()) continue;
+            List<VisibleInterval> intervals = visibleIntervalsAtX(
+                    List.of(light.visibilityPolygon()), x, screenHeight);
+            if (!intervals.isEmpty()) result.add(new ColumnLight(light, intervals));
+        }
+        return result;
+    }
+
     private record VisibleInterval(double start, double end) {}
     private record VisionRadii(
             double innerRadius, double outerRadius, boolean ownLightEnabled) {}
@@ -389,5 +417,13 @@ public final class SceneVisionMaskRenderer {
             boolean ownLightEnabled) {}
     private record ScreenLight(
             Vec2d origin, double innerRadiusPixels, double outerRadiusPixels,
-            int colorRgb, boolean tintEnabled) {}
+            int colorRgb, boolean tintEnabled, List<Vec2d> visibilityPolygon) {}
+    private record ColumnLight(ScreenLight light, List<VisibleInterval> intervals) {
+        private boolean containsY(double y) {
+            for (VisibleInterval interval : intervals) {
+                if (y >= interval.start() && y <= interval.end()) return true;
+            }
+            return false;
+        }
+    }
 }

@@ -206,6 +206,7 @@ public final class VttServerVisionSourceSync {
                 if (object != null && object.getId() != null) candidates.put(object.getId(), object);
             }
         }
+        List<LightVisibilityRegion> lightRegions = resolveLightRegions(state);
 
         return candidates.values().stream()
                 .filter(object -> object != null && object.getId() != null
@@ -214,8 +215,9 @@ public final class VttServerVisionSourceSync {
                         || vision.regions().stream().anyMatch(region -> pointInsidePolygon(
                                 new Vec2d(object.getTransform().getX(), object.getTransform().getY()),
                                 region.outerPolygon()) && illuminatedOrInVisionRadius(
-                                scene, region, new Vec2d(
-                                        object.getTransform().getX(), object.getTransform().getY()))))
+                                region, new Vec2d(
+                                        object.getTransform().getX(), object.getTransform().getY()),
+                                lightRegions)))
                 .sorted(java.util.Comparator.comparingInt(VttSceneObject::getLayerIndex))
                 .toList();
     }
@@ -240,17 +242,33 @@ public final class VttServerVisionSourceSync {
     }
 
     private static boolean illuminatedOrInVisionRadius(
-            VttScene scene, AuthoritativeVisionRegion region, Vec2d point
+            AuthoritativeVisionRegion region, Vec2d point,
+            List<LightVisibilityRegion> lightRegions
     ) {
         if (region.ownLightEnabled()
                 && Math.hypot(point.x() - region.origin().x(), point.y() - region.origin().y())
                 <= region.outerRadius()) return true;
-        for (VttLight light : scene.getLights()) {
-            if (light != null && light.isEnabled()
-                    && Math.hypot(point.x() - light.getX(), point.y() - light.getY())
-                    <= light.getOuterRadius()) return true;
+        for (LightVisibilityRegion light : lightRegions) {
+            if (pointInsidePolygon(point, light.polygon())) return true;
         }
         return false;
+    }
+
+    private static List<LightVisibilityRegion> resolveLightRegions(
+            VttServerTabletopState state
+    ) {
+        VttScene scene = state.activeScene();
+        List<LightVisibilityRegion> result = new ArrayList<>();
+        for (VttLight light : scene.getLights()) {
+            if (light == null || !light.isEnabled()) continue;
+            Vec2d origin = new Vec2d(light.getX(), light.getY());
+            List<Vec2d> polygon = RAYCASTER.buildVisibilityPolygon(
+                    origin, light.getOuterRadius(),
+                    state.queryVisionSegments(origin, light.getOuterRadius()),
+                    scene.getLighting().getVisionRayCount());
+            if (polygon.size() >= 3) result.add(new LightVisibilityRegion(polygon));
+        }
+        return List.copyOf(result);
     }
 
     public static void resetPlayerScope(UUID playerId) {
@@ -345,4 +363,5 @@ public final class VttServerVisionSourceSync {
             long authorityRevision, String sceneId, VisionState vision, Set<String> objectIds
     ) {}
     private record KnownAssets(long authorityRevision, String sceneId, Set<String> definitionIds) {}
+    private record LightVisibilityRegion(List<Vec2d> polygon) {}
 }
