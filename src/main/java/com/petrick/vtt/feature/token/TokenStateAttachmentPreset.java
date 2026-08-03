@@ -22,6 +22,12 @@ public record TokenStateAttachmentPreset(
         double rotationOffsetDegrees,
         double scaleMultiplierX,
         double scaleMultiplierY,
+        Boolean inheritScaleX,
+        Boolean inheritScaleY,
+        boolean lockOffsetX,
+        boolean lockOffsetY,
+        double minimumScale,
+        double maximumScale,
         List<VttLight> lights,
         String templateId,
         String parentTemplateId

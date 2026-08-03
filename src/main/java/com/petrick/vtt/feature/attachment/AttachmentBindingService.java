@@ -215,18 +215,22 @@ public final class AttachmentBindingService {
         Vec2d residual = offset.subtract(anchor);
         if (binding.isFollowScale()) {
             residual = new Vec2d(
-                    residual.x() / safeScale(parent.transform().scale().x()),
-                    residual.y() / safeScale(parent.transform().scale().y()));
+                    binding.isInheritScaleX()
+                            ? residual.x() / safeScale(parent.transform().scale().x()) : residual.x(),
+                    binding.isInheritScaleY()
+                            ? residual.y() / safeScale(parent.transform().scale().y()) : residual.y());
         }
-        binding.setOffsetX(residual.x());
-        binding.setOffsetY(residual.y());
+        if (!binding.isLockOffsetX()) binding.setOffsetX(residual.x());
+        if (!binding.isLockOffsetY()) binding.setOffsetY(residual.y());
         binding.setFlipOffset(child.flippedHorizontally() ^ parent.flippedHorizontally());
         binding.setRotationOffsetDegrees(child.transform().rotationDegrees()
                 - parent.transform().rotationDegrees());
-        binding.setScaleMultiplierX(child.transform().scale().x()
-                / safeScale(parent.transform().scale().x()));
-        binding.setScaleMultiplierY(child.transform().scale().y()
-                / safeScale(parent.transform().scale().y()));
+        binding.setScaleMultiplierX(binding.isInheritScaleX()
+                ? child.transform().scale().x() / safeScale(parent.transform().scale().x())
+                : child.transform().scale().x());
+        binding.setScaleMultiplierY(binding.isInheritScaleY()
+                ? child.transform().scale().y() / safeScale(parent.transform().scale().y())
+                : child.transform().scale().y());
     }
 
     private static void captureLightTransform(VttLight light, CanvasObject attachment) {
@@ -249,8 +253,9 @@ public final class AttachmentBindingService {
             Vec2d anchor = scaledAnchorOffset(binding.getAnchor(), parent);
             Vec2d residual = new Vec2d(binding.getOffsetX(), binding.getOffsetY());
             if (binding.isFollowScale()) {
-                residual = new Vec2d(residual.x() * parent.scale().x(),
-                        residual.y() * parent.scale().y());
+                residual = new Vec2d(
+                        binding.isInheritScaleX() ? residual.x() * parent.scale().x() : residual.x(),
+                        binding.isInheritScaleY() ? residual.y() * parent.scale().y() : residual.y());
             }
             Vec2d offset = anchor.add(residual);
             if (parentFlippedHorizontally) offset = new Vec2d(-offset.x(), offset.y());
@@ -263,9 +268,15 @@ public final class AttachmentBindingService {
                 ? parent.rotationDegrees() + binding.getRotationOffsetDegrees()
                 : child.rotationDegrees();
         Vec2d scale = binding.isFollowScale()
-                ? new Vec2d(parent.scale().x() * binding.getScaleMultiplierX(),
-                parent.scale().y() * binding.getScaleMultiplierY())
+                ? new Vec2d(binding.isInheritScaleX()
+                ? parent.scale().x() * binding.getScaleMultiplierX()
+                : binding.getScaleMultiplierX(),
+                binding.isInheritScaleY()
+                        ? parent.scale().y() * binding.getScaleMultiplierY()
+                        : binding.getScaleMultiplierY())
                 : child.scale();
+        scale = new Vec2d(binding.constrainScale(scale.x()),
+                binding.constrainScale(scale.y()));
         return new Transform2D(position, rotation, scale);
     }
 

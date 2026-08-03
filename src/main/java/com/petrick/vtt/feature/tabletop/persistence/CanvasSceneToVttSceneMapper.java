@@ -199,6 +199,12 @@ public final class CanvasSceneToVttSceneMapper {
         copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());
         copy.setScaleMultiplierX(source.getScaleMultiplierX());
         copy.setScaleMultiplierY(source.getScaleMultiplierY());
+        copy.setInheritScaleX(source.isInheritScaleX());
+        copy.setInheritScaleY(source.isInheritScaleY());
+        copy.setLockOffsetX(source.isLockOffsetX());
+        copy.setLockOffsetY(source.isLockOffsetY());
+        copy.setMinimumScale(source.getMinimumScale());
+        copy.setMaximumScale(source.getMaximumScale());
         return copy;
     }
 }

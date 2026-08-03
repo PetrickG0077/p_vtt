@@ -15,7 +15,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 14;
+    private static final int ROWS = 15;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -25,6 +25,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private int y;
     private boolean targetsOpen;
     private boolean anchorsOpen;
+    private boolean constraintsOpen;
     private boolean confirmDeleteSubtree;
 
     public void open(String objectId, int mouseX, int mouseY,
@@ -35,6 +36,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         this.y = Math.max(4, Math.min(screenHeight - height - 4, mouseY - height - 8));
         this.targetsOpen = false;
         this.anchorsOpen = false;
+        this.constraintsOpen = false;
         this.confirmDeleteSubtree = false;
     }
 
@@ -42,6 +44,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         objectId = null;
         targetsOpen = false;
         anchorsOpen = false;
+        constraintsOpen = false;
         confirmDeleteSubtree = false;
     }
 
@@ -69,19 +72,21 @@ public final class CanvasAttachmentContextMenuOverlay {
         row(context, font, 6, stateSpecific ? "Scope: Active state" : "Scope: Global", bound);
         row(context, font, 7, "Anchor: " + (bound
                 ? binding.getAnchor().displayName() : "Custom") + "  >", bound);
-        row(context, font, 8, "Detach", bound);
-        row(context, font, 9, "Duplicate", true);
-        row(context, font, 10, "Duplicate subtree (" + subtreeObjects + "/"
+        row(context, font, 8, "Transform constraints  >", bound);
+        row(context, font, 9, "Detach", bound);
+        row(context, font, 10, "Duplicate", true);
+        row(context, font, 11, "Duplicate subtree (" + subtreeObjects + "/"
                 + subtreeLights + ")", true);
-        row(context, font, 11, "Detach children (" + directChildren + ")",
+        row(context, font, 12, "Detach children (" + directChildren + ")",
                 directChildren > 0);
-        row(context, font, 12, "Delete", true);
-        row(context, font, 13, confirmDeleteSubtree
+        row(context, font, 13, "Delete", true);
+        row(context, font, 14, confirmDeleteSubtree
                 ? "Confirm delete subtree" : "Delete subtree (" + subtreeObjects + "/"
                 + subtreeLights + ")", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
+        if (constraintsOpen) renderConstraints(context, font, binding);
     }
 
     public Interaction mouseClicked(double mouseX, double mouseY, int button,
@@ -90,6 +95,10 @@ public final class CanvasAttachmentContextMenuOverlay {
         if (!isOpen()) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
         int targetX = targetX(screenWidth);
+        if (constraintsOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
+                constraintsHeight())) {
+            return clickConstraints(mouseX, mouseY, targetX, binding);
+        }
         if (anchorsOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
                 anchorHeight())) {
             int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
@@ -113,6 +122,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                 case 0 -> {
                     targetsOpen = !targetsOpen;
                     anchorsOpen = false;
+                    constraintsOpen = false;
                     yield Interaction.handled();
                 }
                 case 1 -> bound ? new Interaction(Action.TOGGLE_POSITION, null, true)
@@ -131,15 +141,23 @@ public final class CanvasAttachmentContextMenuOverlay {
                     if (!bound) yield Interaction.handled();
                     anchorsOpen = !anchorsOpen;
                     targetsOpen = false;
+                    constraintsOpen = false;
                     yield Interaction.handled();
                 }
-                case 8 -> bound ? new Interaction(Action.DETACH, null, true)
+                case 8 -> {
+                    if (!bound) yield Interaction.handled();
+                    constraintsOpen = !constraintsOpen;
+                    targetsOpen = false;
+                    anchorsOpen = false;
+                    yield Interaction.handled();
+                }
+                case 9 -> bound ? new Interaction(Action.DETACH, null, true)
                         : Interaction.handled();
-                case 9 -> new Interaction(Action.DUPLICATE, null, true);
-                case 10 -> new Interaction(Action.DUPLICATE_SUBTREE, null, true);
-                case 11 -> new Interaction(Action.DETACH_CHILDREN, null, true);
-                case 12 -> new Interaction(Action.DELETE, null, true);
-                case 13 -> {
+                case 10 -> new Interaction(Action.DUPLICATE, null, true);
+                case 11 -> new Interaction(Action.DUPLICATE_SUBTREE, null, true);
+                case 12 -> new Interaction(Action.DETACH_CHILDREN, null, true);
+                case 13 -> new Interaction(Action.DELETE, null, true);
+                case 14 -> {
                     if (!confirmDeleteSubtree) {
                         confirmDeleteSubtree = true;
                         targetsOpen = false;
@@ -203,6 +221,78 @@ public final class CanvasAttachmentContextMenuOverlay {
         }
     }
 
+    private void renderConstraints(VRenderContext context, Font font,
+                                   VttAttachmentBinding binding) {
+        int left = targetX(context.screenWidth());
+        panel(context, left, y, TARGET_WIDTH, constraintsHeight());
+        constraintValue(context, font, left, 0, "Offset X", binding.getOffsetX());
+        constraintValue(context, font, left, 1, "Offset Y", binding.getOffsetY());
+        constraintValue(context, font, left, 2, "Rotation", binding.getRotationOffsetDegrees());
+        constraintValue(context, font, left, 3, "Min scale", binding.getMinimumScale());
+        constraintValue(context, font, left, 4, "Max scale", binding.getMaximumScale());
+        constraintToggle(context, font, left, 5, "Inherit scale X", binding.isInheritScaleX());
+        constraintToggle(context, font, left, 6, "Inherit scale Y", binding.isInheritScaleY());
+        constraintToggle(context, font, left, 7, "Lock offset X", binding.isLockOffsetX());
+        constraintToggle(context, font, left, 8, "Lock offset Y", binding.isLockOffsetY());
+        context.graphics().drawString(font, "Reset offset", left + 7,
+                y + 7 + 9 * ROW_HEIGHT, TEXT, false);
+    }
+
+    private Interaction clickConstraints(double mouseX, double mouseY, int left,
+                                         VttAttachmentBinding binding) {
+        int row = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+        if (row >= 0 && row <= 4) {
+            if (mouseX < left + TARGET_WIDTH - 38) return Interaction.handled();
+            boolean decrease = mouseX < left + TARGET_WIDTH - 18;
+            String direction = decrease ? "-1" : "1";
+            Action action = switch (row) {
+                case 0 -> Action.ADJUST_OFFSET_X;
+                case 1 -> Action.ADJUST_OFFSET_Y;
+                case 2 -> Action.ADJUST_ROTATION_OFFSET;
+                case 3 -> Action.ADJUST_MIN_SCALE;
+                default -> Action.ADJUST_MAX_SCALE;
+            };
+            return new Interaction(action, direction, true);
+        }
+        return switch (row) {
+            case 5 -> new Interaction(Action.TOGGLE_INHERIT_SCALE_X, null, true);
+            case 6 -> new Interaction(Action.TOGGLE_INHERIT_SCALE_Y, null, true);
+            case 7 -> new Interaction(Action.TOGGLE_LOCK_OFFSET_X, null, true);
+            case 8 -> new Interaction(Action.TOGGLE_LOCK_OFFSET_Y, null, true);
+            case 9 -> new Interaction(Action.RESET_OFFSET, null, true);
+            default -> Interaction.handled();
+        };
+    }
+
+    private void constraintValue(VRenderContext context, Font font, int left,
+                                 int row, String label, double value) {
+        int top = y + 7 + row * ROW_HEIGHT;
+        context.graphics().drawString(font, label, left + 7, top, TEXT, false);
+        context.graphics().drawString(font, format(value),
+                left + TARGET_WIDTH - 70, top, TEXT, false);
+        context.graphics().drawString(font, "-", left + TARGET_WIDTH - 34,
+                top, EditorHudTheme.selection(), false);
+        context.graphics().drawString(font, "+", left + TARGET_WIDTH - 15,
+                top, EditorHudTheme.selection(), false);
+    }
+
+    private void constraintToggle(VRenderContext context, Font font, int left,
+                                  int row, String label, boolean value) {
+        int top = y + 7 + row * ROW_HEIGHT;
+        context.graphics().drawString(font, label, left + 7, top, TEXT, false);
+        context.graphics().drawString(font, value ? "ON" : "OFF",
+                left + TARGET_WIDTH - 28, top,
+                value ? EditorHudTheme.selection() : MUTED, false);
+    }
+
+    private String format(double value) {
+        return Math.abs(value - Math.rint(value)) < 0.001
+                ? Long.toString(Math.round(value))
+                : String.format(java.util.Locale.ROOT, "%.2f", value);
+    }
+
+    private int constraintsHeight() { return 10 + 10 * ROW_HEIGHT; }
+
     private int anchorHeight() {
         return 10 + VttAttachmentAnchor.values().length * ROW_HEIGHT;
     }
@@ -256,6 +346,10 @@ public final class CanvasAttachmentContextMenuOverlay {
     public enum Action {
         NONE, BIND, TOGGLE_POSITION, TOGGLE_ROTATION, TOGGLE_SCALE, TOGGLE_FLIP, CAPTURE_OFFSET,
         TOGGLE_STATE_SCOPE, SET_ANCHOR,
+        TOGGLE_INHERIT_SCALE_X, TOGGLE_INHERIT_SCALE_Y,
+        TOGGLE_LOCK_OFFSET_X, TOGGLE_LOCK_OFFSET_Y,
+        ADJUST_OFFSET_X, ADJUST_OFFSET_Y, ADJUST_ROTATION_OFFSET,
+        ADJUST_MIN_SCALE, ADJUST_MAX_SCALE, RESET_OFFSET,
         DETACH, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 

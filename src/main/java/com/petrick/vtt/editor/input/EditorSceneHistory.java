@@ -896,7 +896,13 @@ public final class EditorSceneHistory {
             double offsetY,
             double rotationOffsetDegrees,
             double scaleMultiplierX,
-            double scaleMultiplierY
+            double scaleMultiplierY,
+            boolean inheritScaleX,
+            boolean inheritScaleY,
+            boolean lockOffsetX,
+            boolean lockOffsetY,
+            double minimumScale,
+            double maximumScale
     ) {
         private static AttachmentBinding capture(
                 com.petrick.vtt.feature.tabletop.VttAttachmentBinding binding
@@ -908,7 +914,10 @@ public final class EditorSceneHistory {
                     binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(),
                     binding.getRotationOffsetDegrees(), binding.getScaleMultiplierX(),
-                    binding.getScaleMultiplierY());
+                    binding.getScaleMultiplierY(), binding.isInheritScaleX(),
+                    binding.isInheritScaleY(), binding.isLockOffsetX(),
+                    binding.isLockOffsetY(), binding.getMinimumScale(),
+                    binding.getMaximumScale());
         }
 
         private com.petrick.vtt.feature.tabletop.VttAttachmentBinding restore() {
@@ -925,6 +934,12 @@ public final class EditorSceneHistory {
             binding.setRotationOffsetDegrees(rotationOffsetDegrees);
             binding.setScaleMultiplierX(scaleMultiplierX);
             binding.setScaleMultiplierY(scaleMultiplierY);
+            binding.setInheritScaleX(inheritScaleX);
+            binding.setInheritScaleY(inheritScaleY);
+            binding.setLockOffsetX(lockOffsetX);
+            binding.setLockOffsetY(lockOffsetY);
+            binding.setMinimumScale(minimumScale);
+            binding.setMaximumScale(maximumScale);
             return binding;
         }
     }

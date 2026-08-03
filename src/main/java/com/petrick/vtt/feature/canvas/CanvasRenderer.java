@@ -155,10 +155,63 @@ public final class CanvasRenderer {
             }
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
+                if (attachmentMarkersVisible && object.hasSourceAttachmentDefinition()
+                        && tabletopScene != null) {
+                    tabletopScene.getObjects().stream()
+                            .filter(metadata -> metadata != null
+                                    && object.id().equals(metadata.getId()))
+                            .map(metadata -> metadata.getAttachmentBinding())
+                            .filter(binding -> binding != null && binding.isBound())
+                            .findFirst().ifPresent(binding ->
+                                    renderAttachmentConstraintGuide(
+                                            context, scene, object, binding));
+                }
                 renderSelectionBorder(context, object);
                 if (resizeHandlesVisible) renderSelectionHandles(context, object);
                 renderRotationHandle(context, object);
             }
+        }
+    }
+
+    private void renderAttachmentConstraintGuide(
+            VRenderContext context, CanvasScene scene, CanvasObject attachment,
+            com.petrick.vtt.feature.tabletop.VttAttachmentBinding binding
+    ) {
+        CanvasObject parent = scene.findObjectById(binding.getTargetObjectId());
+        if (parent == null) return;
+        double localAnchorX = parent.size().x() * parent.transform().scale().x()
+                * 0.5 * binding.getAnchor().horizontal();
+        double localAnchorY = parent.size().y() * parent.transform().scale().y()
+                * 0.5 * binding.getAnchor().vertical();
+        if (parent.flippedHorizontally()) localAnchorX = -localAnchorX;
+        double radians = Math.toRadians(parent.transform().rotationDegrees());
+        Vec2d anchorWorld = parent.transform().position().add(new Vec2d(
+                localAnchorX * Math.cos(radians) - localAnchorY * Math.sin(radians),
+                localAnchorX * Math.sin(radians) + localAnchorY * Math.cos(radians)));
+        Vec2d parentScreen = context.renderState().worldToScreen(anchorWorld);
+        Vec2d childScreen = context.renderState().worldToScreen(attachment.transform().position());
+        int px = (int) Math.round(parentScreen.x());
+        int py = (int) Math.round(parentScreen.y());
+        int cx = (int) Math.round(childScreen.x());
+        int cy = (int) Math.round(childScreen.y());
+        drawGuideLine(context, px, py, cx, cy, 0xAAFFD34E);
+        context.graphics().fill(px - 2, py - 2, px + 3, py + 3, 0xFFFFD34E);
+        int axis = 18;
+        int xEnd = cx + (int) Math.round(Math.cos(radians) * axis);
+        int xEndY = cy + (int) Math.round(Math.sin(radians) * axis);
+        int yEnd = cx + (int) Math.round(-Math.sin(radians) * axis);
+        int yEndY = cy + (int) Math.round(Math.cos(radians) * axis);
+        drawGuideLine(context, cx, cy, xEnd, xEndY, 0xDDFF5555);
+        drawGuideLine(context, cx, cy, yEnd, yEndY, 0xDD55FF77);
+    }
+
+    private void drawGuideLine(VRenderContext context, int x1, int y1,
+                               int x2, int y2, int color) {
+        int steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        for (int step = 0; step <= steps; step++) {
+            int x = x1 + (x2 - x1) * step / Math.max(1, steps);
+            int y = y1 + (y2 - y1) * step / Math.max(1, steps);
+            context.graphics().fill(x, y, x + 1, y + 1, color);
         }
     }
 

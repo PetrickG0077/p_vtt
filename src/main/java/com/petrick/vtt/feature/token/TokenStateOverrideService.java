@@ -100,7 +100,10 @@ public final class TokenStateOverrideService {
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
                     binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
-                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights,
+                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(),
+                    binding.isInheritScaleX(), binding.isInheritScaleY(),
+                    binding.isLockOffsetX(), binding.isLockOffsetY(),
+                    binding.getMinimumScale(), binding.getMaximumScale(), lights,
                     attachment.getId(), find(scene, binding.getTargetObjectId()) != null
                             && find(scene, binding.getTargetObjectId()).isAttachment()
                             ? binding.getTargetObjectId() : null));
@@ -184,7 +187,10 @@ public final class TokenStateOverrideService {
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
                     binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
-                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights,
+                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(),
+                    binding.isInheritScaleX(), binding.isInheritScaleY(),
+                    binding.isLockOffsetX(), binding.isLockOffsetY(),
+                    binding.getMinimumScale(), binding.getMaximumScale(), lights,
                     attachment.getId(), find(scene, binding.getTargetObjectId()) != null
                             && find(scene, binding.getTargetObjectId()).isAttachment()
                             ? binding.getTargetObjectId() : null));

@@ -17,6 +17,14 @@ public final class VttAttachmentBinding {
     private double rotationOffsetDegrees;
     private double scaleMultiplierX = 1.0;
     private double scaleMultiplierY = 1.0;
+    /** Per-axis scale inheritance; legacy JSON defaults to both enabled. */
+    private Boolean inheritScaleX;
+    private Boolean inheritScaleY;
+    /** Prevent recapturing the corresponding local offset while editing. */
+    private boolean lockOffsetX;
+    private boolean lockOffsetY;
+    private double minimumScale = 0.05;
+    private double maximumScale = 16.0;
 
     public VttAttachmentBinding() {}
 
@@ -59,6 +67,34 @@ public final class VttAttachmentBinding {
     public void setScaleMultiplierY(double value) {
         this.scaleMultiplierY = nonZero(value);
     }
+    public boolean isInheritScaleX() { return inheritScaleX == null || inheritScaleX; }
+    public void setInheritScaleX(boolean value) { inheritScaleX = value; }
+    public boolean isInheritScaleY() { return inheritScaleY == null || inheritScaleY; }
+    public void setInheritScaleY(boolean value) { inheritScaleY = value; }
+    public boolean isLockOffsetX() { return lockOffsetX; }
+    public void setLockOffsetX(boolean value) { lockOffsetX = value; }
+    public boolean isLockOffsetY() { return lockOffsetY; }
+    public void setLockOffsetY(boolean value) { lockOffsetY = value; }
+    public double getMinimumScale() {
+        return validPositive(minimumScale, 0.05);
+    }
+    public void setMinimumScale(double value) {
+        double normalized = Double.isFinite(value) ? Math.max(0.01, value) : 0.05;
+        minimumScale = Math.min(normalized, getMaximumScale());
+    }
+    public double getMaximumScale() {
+        return Math.max(getMinimumScaleRaw(), validPositive(maximumScale, 16.0));
+    }
+    public void setMaximumScale(double value) {
+        double normalized = Double.isFinite(value) ? Math.max(0.01, value) : 16.0;
+        maximumScale = Math.max(getMinimumScale(), normalized);
+    }
+
+    public double constrainScale(double value) {
+        double sign = value < 0.0 ? -1.0 : 1.0;
+        double magnitude = Math.max(getMinimumScale(), Math.min(getMaximumScale(), Math.abs(value)));
+        return sign * magnitude;
+    }
 
     public boolean isBound() { return targetObjectId != null; }
 
@@ -68,5 +104,13 @@ public final class VttAttachmentBinding {
 
     private static double nonZero(double value) {
         return Double.isFinite(value) && Math.abs(value) > 0.0001 ? value : 1.0;
+    }
+
+    private double getMinimumScaleRaw() {
+        return validPositive(minimumScale, 0.05);
+    }
+
+    private static double validPositive(double value, double fallback) {
+        return Double.isFinite(value) && value > 0.0 ? value : fallback;
     }
 }

@@ -1214,8 +1214,8 @@ public final class VttServerTabletopState {
             double residualX = binding.getOffsetX();
             double residualY = binding.getOffsetY();
             if (binding.isFollowScale()) {
-                residualX *= parentTransform.getScaleX();
-                residualY *= parentTransform.getScaleY();
+                if (binding.isInheritScaleX()) residualX *= parentTransform.getScaleX();
+                if (binding.isInheritScaleY()) residualY *= parentTransform.getScaleY();
             }
             double localX = anchorX + residualX;
             double localY = anchorY + residualY;
@@ -1235,11 +1235,17 @@ public final class VttServerTabletopState {
                 ? normalizeRotation(parentTransform.getRotationDegrees()
                 + binding.getRotationOffsetDegrees()) : childTransform.getRotationDegrees();
         double scaleX = binding.isFollowScale()
+                ? (binding.isInheritScaleX()
                 ? parentTransform.getScaleX() * binding.getScaleMultiplierX()
+                : binding.getScaleMultiplierX())
                 : childTransform.getScaleX();
         double scaleY = binding.isFollowScale()
+                ? (binding.isInheritScaleY()
                 ? parentTransform.getScaleY() * binding.getScaleMultiplierY()
+                : binding.getScaleMultiplierY())
                 : childTransform.getScaleY();
+        scaleX = binding.constrainScale(scaleX);
+        scaleY = binding.constrainScale(scaleY);
         boolean flipped = parent.getState().isFlippedHorizontally() ^ binding.isFlipOffset();
         boolean changed = !nearlyEqual(x, childTransform.getX()) || !nearlyEqual(y, childTransform.getY())
                 || !nearlyEqual(rotation, childTransform.getRotationDegrees())
@@ -1278,17 +1284,19 @@ public final class VttServerTabletopState {
         offsetY -= parent.getSize().getHeight() * 0.5
                 * binding.getAnchor().vertical() * parentTransform.getScaleY();
         if (binding.isFollowScale()) {
-            offsetX /= nonZeroScale(parentTransform.getScaleX());
-            offsetY /= nonZeroScale(parentTransform.getScaleY());
+            if (binding.isInheritScaleX()) offsetX /= nonZeroScale(parentTransform.getScaleX());
+            if (binding.isInheritScaleY()) offsetY /= nonZeroScale(parentTransform.getScaleY());
         }
-        binding.setOffsetX(offsetX);
-        binding.setOffsetY(offsetY);
+        if (!binding.isLockOffsetX()) binding.setOffsetX(offsetX);
+        if (!binding.isLockOffsetY()) binding.setOffsetY(offsetY);
         binding.setRotationOffsetDegrees(childTransform.getRotationDegrees()
                 - parentTransform.getRotationDegrees());
-        binding.setScaleMultiplierX(childTransform.getScaleX()
-                / nonZeroScale(parentTransform.getScaleX()));
-        binding.setScaleMultiplierY(childTransform.getScaleY()
-                / nonZeroScale(parentTransform.getScaleY()));
+        binding.setScaleMultiplierX(binding.isInheritScaleX()
+                ? childTransform.getScaleX() / nonZeroScale(parentTransform.getScaleX())
+                : childTransform.getScaleX());
+        binding.setScaleMultiplierY(binding.isInheritScaleY()
+                ? childTransform.getScaleY() / nonZeroScale(parentTransform.getScaleY())
+                : childTransform.getScaleY());
         binding.setFlipOffset(attachment.getState().isFlippedHorizontally()
                 ^ parent.getState().isFlippedHorizontally());
     }

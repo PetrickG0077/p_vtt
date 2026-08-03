@@ -3591,6 +3591,66 @@ public final class VTTScreen extends Screen {
                         VttClientEditorNotice.show("Invalid attachment anchor");
                     }
                 }
+                case TOGGLE_INHERIT_SCALE_X -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) {
+                        binding.setInheritScaleX(!binding.isInheritScaleX());
+                        AttachmentBindingService.recapture(
+                                session.getActiveScene(), scene, attachmentId);
+                    }
+                }
+                case TOGGLE_INHERIT_SCALE_Y -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) {
+                        binding.setInheritScaleY(!binding.isInheritScaleY());
+                        AttachmentBindingService.recapture(
+                                session.getActiveScene(), scene, attachmentId);
+                    }
+                }
+                case TOGGLE_LOCK_OFFSET_X -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setLockOffsetX(!binding.isLockOffsetX());
+                }
+                case TOGGLE_LOCK_OFFSET_Y -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setLockOffsetY(!binding.isLockOffsetY());
+                }
+                case ADJUST_OFFSET_X -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setOffsetX(binding.getOffsetX()
+                            + interactionDirection(interaction));
+                }
+                case ADJUST_OFFSET_Y -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setOffsetY(binding.getOffsetY()
+                            + interactionDirection(interaction));
+                }
+                case ADJUST_ROTATION_OFFSET -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setRotationOffsetDegrees(
+                            binding.getRotationOffsetDegrees()
+                                    + interactionDirection(interaction) * 5.0);
+                }
+                case ADJUST_MIN_SCALE -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setMinimumScale(
+                            binding.getMinimumScale()
+                                    + interactionDirection(interaction) * 0.05);
+                }
+                case ADJUST_MAX_SCALE -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) binding.setMaximumScale(
+                            binding.getMaximumScale()
+                                    + interactionDirection(interaction));
+                }
+                case RESET_OFFSET -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) {
+                        binding.setOffsetX(0.0);
+                        binding.setOffsetY(0.0);
+                        binding.setRotationOffsetDegrees(0.0);
+                    }
+                }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE -> {
@@ -3609,6 +3669,12 @@ public final class VTTScreen extends Screen {
         } else {
             saveCanvasSceneWithAttachmentBindings();
         }
+    }
+
+    private double interactionDirection(
+            CanvasAttachmentContextMenuOverlay.Interaction interaction
+    ) {
+        return "-1".equals(interaction.targetObjectId()) ? -1.0 : 1.0;
     }
 
     private CanvasObject attachmentRootToken(String objectId) {
@@ -3787,6 +3853,12 @@ public final class VTTScreen extends Screen {
         copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());
         copy.setScaleMultiplierX(source.getScaleMultiplierX());
         copy.setScaleMultiplierY(source.getScaleMultiplierY());
+        copy.setInheritScaleX(source.isInheritScaleX());
+        copy.setInheritScaleY(source.isInheritScaleY());
+        copy.setLockOffsetX(source.isLockOffsetX());
+        copy.setLockOffsetY(source.isLockOffsetY());
+        copy.setMinimumScale(source.getMinimumScale());
+        copy.setMaximumScale(source.getMaximumScale());
         return copy;
     }
 
@@ -6146,6 +6218,12 @@ public final class VTTScreen extends Screen {
         binding.setRotationOffsetDegrees(preset.rotationOffsetDegrees());
         binding.setScaleMultiplierX(preset.scaleMultiplierX());
         binding.setScaleMultiplierY(preset.scaleMultiplierY());
+        binding.setInheritScaleX(preset.inheritScaleX() == null || preset.inheritScaleX());
+        binding.setInheritScaleY(preset.inheritScaleY() == null || preset.inheritScaleY());
+        binding.setLockOffsetX(preset.lockOffsetX());
+        binding.setLockOffsetY(preset.lockOffsetY());
+        binding.setMinimumScale(preset.minimumScale());
+        binding.setMaximumScale(preset.maximumScale());
         return binding;
     }
 
