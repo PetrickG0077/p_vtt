@@ -165,18 +165,29 @@ public final class  SelectionInspectorOverlay {
         );
         y += LINE_HEIGHT;
 
-        drawLine(
-                context,
-                font,
-                "Source Token: "
-                        + (object.hasSourceTokenDefinition()
-                        ? object.sourceTokenDefinitionId()
-                        : "None"),
-                x,
-                y,
-                TEXT_COLOR
-        );
+        String sourceLabel = object.hasSourceAttachmentDefinition()
+                ? "Source Attachment: " + object.sourceAttachmentDefinitionId()
+                : "Source Token: " + (object.hasSourceTokenDefinition()
+                ? object.sourceTokenDefinitionId() : "None");
+        drawLine(context, font, sourceLabel, x, y, TEXT_COLOR);
         y += LINE_HEIGHT;
+
+        if (tabletopScene != null && object.hasSourceAttachmentDefinition()) {
+            var sceneAttachment = tabletopScene.getObjects().stream()
+                    .filter(candidate -> candidate != null
+                            && object.id().equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            var binding = sceneAttachment == null ? null
+                    : sceneAttachment.getAttachmentBinding();
+            drawLine(context, font, binding == null
+                            ? "Attached to: None"
+                            : "Attached to: " + binding.getTargetObjectId()
+                            + "  P" + flag(binding.isFollowPosition())
+                            + " R" + flag(binding.isFollowRotation())
+                            + " S" + flag(binding.isFollowScale()),
+                    x, y, binding == null ? MUTED_TEXT_COLOR : TEXT_COLOR);
+            y += LINE_HEIGHT;
+        }
 
         drawLine(
                 context,
@@ -507,6 +518,10 @@ public final class  SelectionInspectorOverlay {
         }
 
         return Math.min(selectedObjects.size(), 8) + 5;
+    }
+
+    private String flag(boolean enabled) {
+        return enabled ? "+" : "-";
     }
 
     private String ownerLabel(String ownerId, String localPlayerId) {

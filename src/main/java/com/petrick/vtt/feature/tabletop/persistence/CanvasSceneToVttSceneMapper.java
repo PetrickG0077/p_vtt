@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -45,6 +46,7 @@ public final class CanvasSceneToVttSceneMapper {
         Map<String, String> existingOwnerIds = new HashMap<>();
         Map<String, VttSceneCollisionBox> existingCollisionBoxes = new HashMap<>();
         Map<String, String> existingAttachmentDefinitionIds = new HashMap<>();
+        Map<String, VttAttachmentBinding> existingAttachmentBindings = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
             if (existingObject != null && existingObject.getId() != null) {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
@@ -64,6 +66,10 @@ public final class CanvasSceneToVttSceneMapper {
                     existingAttachmentDefinitionIds.put(
                             existingObject.getId(),
                             existingObject.getSourceAttachmentDefinitionId());
+                }
+                if (existingObject.getAttachmentBinding() != null) {
+                    existingAttachmentBindings.put(
+                            existingObject.getId(), existingObject.getAttachmentBinding());
                 }
             }
         }
@@ -94,6 +100,10 @@ public final class CanvasSceneToVttSceneMapper {
                     canvasObject.sourceAttachmentDefinitionId() != null
                             ? canvasObject.sourceAttachmentDefinitionId()
                             : existingAttachmentDefinitionIds.get(metadataSourceId));
+            VttAttachmentBinding binding = existingAttachmentBindings.get(metadataSourceId);
+            if (binding != null && canvasScene.findObjectById(binding.getTargetObjectId()) != null) {
+                sceneObject.setAttachmentBinding(copyBinding(binding));
+            }
 
             targetScene.addObject(sceneObject);
 
@@ -158,5 +168,19 @@ public final class CanvasSceneToVttSceneMapper {
         sceneObject.setState(state);
 
         return sceneObject;
+    }
+
+    private static VttAttachmentBinding copyBinding(VttAttachmentBinding source) {
+        VttAttachmentBinding copy = new VttAttachmentBinding();
+        copy.setTargetObjectId(source.getTargetObjectId());
+        copy.setFollowPosition(source.isFollowPosition());
+        copy.setFollowRotation(source.isFollowRotation());
+        copy.setFollowScale(source.isFollowScale());
+        copy.setOffsetX(source.getOffsetX());
+        copy.setOffsetY(source.getOffsetY());
+        copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());
+        copy.setScaleMultiplierX(source.getScaleMultiplierX());
+        copy.setScaleMultiplierY(source.getScaleMultiplierY());
+        return copy;
     }
 }

@@ -798,6 +798,7 @@ public final class EditorSceneHistory {
             String displayName,
             String sourceTokenDefinitionId,
             String sourceAttachmentDefinitionId,
+            AttachmentBinding attachmentBinding,
             double x,
             double y,
             double scaleX,
@@ -825,6 +826,7 @@ public final class EditorSceneHistory {
             return new PersistentObject(
                     object.getId(), object.getDisplayName(), object.getSourceTokenDefinitionId(),
                     object.getSourceAttachmentDefinitionId(),
+                    AttachmentBinding.capture(object.getAttachmentBinding()),
                     object.getTransform().getX(), object.getTransform().getY(),
                     object.getTransform().getScaleX(), object.getTransform().getScaleY(),
                     object.getTransform().getRotationDegrees(),
@@ -839,6 +841,8 @@ public final class EditorSceneHistory {
         private VttSceneObject toSceneObject() {
             VttSceneObject object = new VttSceneObject(id, displayName, sourceTokenDefinitionId);
             object.setSourceAttachmentDefinitionId(sourceAttachmentDefinitionId);
+            object.setAttachmentBinding(attachmentBinding == null
+                    ? null : attachmentBinding.restore());
             object.setTransform(new VttSceneTransform(
                     x, y, scaleX, scaleY, rotationDegrees));
             object.setSize(new VttSceneSize(width, height));
@@ -856,6 +860,43 @@ public final class EditorSceneHistory {
                         collisionBox.width(), collisionBox.height()));
             }
             return object;
+        }
+    }
+
+    private record AttachmentBinding(
+            String targetObjectId,
+            boolean followPosition,
+            boolean followRotation,
+            boolean followScale,
+            double offsetX,
+            double offsetY,
+            double rotationOffsetDegrees,
+            double scaleMultiplierX,
+            double scaleMultiplierY
+    ) {
+        private static AttachmentBinding capture(
+                com.petrick.vtt.feature.tabletop.VttAttachmentBinding binding
+        ) {
+            if (binding == null) return null;
+            return new AttachmentBinding(binding.getTargetObjectId(),
+                    binding.isFollowPosition(), binding.isFollowRotation(),
+                    binding.isFollowScale(), binding.getOffsetX(), binding.getOffsetY(),
+                    binding.getRotationOffsetDegrees(), binding.getScaleMultiplierX(),
+                    binding.getScaleMultiplierY());
+        }
+
+        private com.petrick.vtt.feature.tabletop.VttAttachmentBinding restore() {
+            var binding = new com.petrick.vtt.feature.tabletop.VttAttachmentBinding();
+            binding.setTargetObjectId(targetObjectId);
+            binding.setFollowPosition(followPosition);
+            binding.setFollowRotation(followRotation);
+            binding.setFollowScale(followScale);
+            binding.setOffsetX(offsetX);
+            binding.setOffsetY(offsetY);
+            binding.setRotationOffsetDegrees(rotationOffsetDegrees);
+            binding.setScaleMultiplierX(scaleMultiplierX);
+            binding.setScaleMultiplierY(scaleMultiplierY);
+            return binding;
         }
     }
 

@@ -27,6 +27,9 @@ public final class VttSceneObject {
     /** AttachmentDefinition origin. Mutually exclusive with sourceTokenDefinitionId. */
     private String sourceAttachmentDefinitionId;
 
+    /** Present only on a placed attachment that follows another scene object. */
+    private VttAttachmentBinding attachmentBinding;
+
     private VttSceneTransform transform = new VttSceneTransform();
 
     private VttSceneSize size = new VttSceneSize();
@@ -105,6 +108,15 @@ public final class VttSceneObject {
 
     public boolean isAttachment() {
         return sourceAttachmentDefinitionId != null;
+    }
+
+    public VttAttachmentBinding getAttachmentBinding() {
+        return attachmentBinding;
+    }
+
+    public void setAttachmentBinding(VttAttachmentBinding attachmentBinding) {
+        this.attachmentBinding = attachmentBinding != null && attachmentBinding.isBound()
+                ? attachmentBinding : null;
     }
 
     public VttSceneTransform getTransform() {
