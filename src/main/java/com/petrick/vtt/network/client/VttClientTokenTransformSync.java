@@ -45,7 +45,7 @@ public final class VttClientTokenTransformSync {
         advanceInterpolations(session, now);
 
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
-            if (!object.hasSourceTokenDefinition()) continue;
+            if (!isSynchronizableObject(object)) continue;
             if (INTERPOLATIONS.containsKey(object.id())) continue;
             TokenState current = TokenState.from(object,
                     session.getCanvasScene().getObjectLayerIndex(object.id()),
@@ -141,7 +141,7 @@ public final class VttClientTokenTransformSync {
         LAST_SENT.clear();
         LAST_SENT_AT.clear();
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
-            if (object.hasSourceTokenDefinition()) LAST_SENT.put(object.id(), TokenState.from(
+            if (isSynchronizableObject(object)) LAST_SENT.put(object.id(), TokenState.from(
                     object, session.getCanvasScene().getObjectLayerIndex(object.id()),
                     tintColor(session, object.id())));
         }
@@ -254,6 +254,11 @@ public final class VttClientTokenTransformSync {
                 .filter(object -> object != null && objectId.equals(object.getId()))
                 .findFirst().map(object -> object.getState().getTintColorRgb())
                 .orElse(0xFFFFFF);
+    }
+
+    private static boolean isSynchronizableObject(CanvasObject object) {
+        return object != null && (object.hasSourceTokenDefinition()
+                || object.hasSourceAttachmentDefinition());
     }
 
     private record Interpolation(TokenState start, TokenState target,

@@ -1001,9 +1001,15 @@ public final class VttServerTabletopState {
         if (object == null || (!master && !playerId.equals(object.getOwnerId()))) return null;
         lastTokenTransformSequences.put(sequenceKey, request.clientSequence());
 
+        boolean attachment = object.isAttachment();
+        VttAttachmentBinding binding = attachment ? object.getAttachmentBinding() : null;
+        boolean followsPosition = binding != null && binding.isBound() && binding.isFollowPosition();
+        boolean followsRotation = binding != null && binding.isBound() && binding.isFollowRotation();
+        boolean followsScale = binding != null && binding.isBound() && binding.isFollowScale();
         Vec2d currentPosition = new Vec2d(object.getTransform().getX(), object.getTransform().getY());
-        Vec2d requestedDelta = new Vec2d(request.x(), request.y()).subtract(currentPosition);
-        boolean bypassCollision = master && request.bypassCollision();
+        Vec2d requestedDelta = followsPosition ? Vec2d.ZERO
+                : new Vec2d(request.x(), request.y()).subtract(currentPosition);
+        boolean bypassCollision = attachment || master && request.bypassCollision();
         Vec2d allowedDelta;
         if (!bypassCollision && requestedDelta.lengthSquared() > 4096.0 * 4096.0) {
             allowedDelta = Vec2d.ZERO;
@@ -1020,15 +1026,18 @@ public final class VttServerTabletopState {
                 && request.visible() == object.getState().isVisible()
                 && Objects.equals(request.displayName(), object.getDisplayName()));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
-        double acceptedRotation = normalizeRotation(request.rotationDegrees());
+        double acceptedRotation = followsRotation ? object.getTransform().getRotationDegrees()
+                : normalizeRotation(request.rotationDegrees());
         boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
                 || !nearlyEqual(acceptedPosition.y(), object.getTransform().getY())
                 || !nearlyEqual(acceptedRotation, object.getTransform().getRotationDegrees())
-                || object.getState().isFlippedHorizontally() != request.flippedHorizontally()
+                || !followsPosition && (object.getState().isFlippedHorizontally()
+                != request.flippedHorizontally())
                 || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
                 || object.getState().getTintColorRgb() != (request.tintColorRgb() & 0x00FFFFFF)
-                || master && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
-                || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
+                || master && (
+                !followsScale && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
+                || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY()))
                 || request.layerIndex() != previousLayerIndex
                 || request.visible() != object.getState().isVisible()
                 || !Objects.equals(request.displayName(), object.getDisplayName()));
@@ -1036,13 +1045,17 @@ public final class VttServerTabletopState {
         object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(acceptedRotation);
         if (master) {
-            object.getTransform().setScaleX(request.scaleX());
-            object.getTransform().setScaleY(request.scaleY());
+            if (!followsScale) {
+                object.getTransform().setScaleX(request.scaleX());
+                object.getTransform().setScaleY(request.scaleY());
+            }
             moveObjectToLayer(object, request.layerIndex());
             object.getState().setVisible(request.visible());
             object.setDisplayName(request.displayName());
         }
-        object.getState().setFlippedHorizontally(request.flippedHorizontally());
+        if (!followsPosition) {
+            object.getState().setFlippedHorizontally(request.flippedHorizontally());
+        }
         object.getState().setActiveStateId(request.activeStateId());
         object.getState().setTintColorRgb(request.tintColorRgb());
         objectSpatialIndex.addOrUpdate(object);
