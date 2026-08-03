@@ -10,6 +10,7 @@ public final class VttLight {
     public static final double DEFAULT_INTENSITY = 1.0;
     public static final double DEFAULT_DIRECTION_DEGREES = 0.0;
     public static final double DEFAULT_CONE_ANGLE_DEGREES = 60.0;
+    public static final double DEFAULT_INNER_CONE_ANGLE_DEGREES = 40.0;
     public static final double MIN_CONE_ANGLE_DEGREES = 5.0;
     public static final double MAX_CONE_ANGLE_DEGREES = 179.0;
 
@@ -24,6 +25,8 @@ public final class VttLight {
     /** Local/world direction for SPOT lights; ready to become attachment-local later. */
     private double directionDegrees = DEFAULT_DIRECTION_DEGREES;
     private double coneAngleDegrees = DEFAULT_CONE_ANGLE_DEGREES;
+    /** Full-strength angle; the light fades toward the outer cone after this boundary. */
+    private double innerConeAngleDegrees = DEFAULT_INNER_CONE_ANGLE_DEGREES;
     /** False means reveal-only: the light removes darkness without tinting the scene. */
     private boolean tintEnabled = true;
     private boolean enabled = true;
@@ -75,6 +78,14 @@ public final class VttLight {
         if (Double.isFinite(coneAngleDegrees)) {
             this.coneAngleDegrees = Math.max(MIN_CONE_ANGLE_DEGREES,
                     Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDegrees));
+            innerConeAngleDegrees = Math.min(innerConeAngleDegrees, this.coneAngleDegrees);
+        }
+    }
+    public double getInnerConeAngleDegrees() { return innerConeAngleDegrees; }
+    public void setInnerConeAngleDegrees(double innerConeAngleDegrees) {
+        if (Double.isFinite(innerConeAngleDegrees)) {
+            this.innerConeAngleDegrees = Math.max(0.1,
+                    Math.min(getConeAngleDegrees(), innerConeAngleDegrees));
         }
     }
 
@@ -87,6 +98,11 @@ public final class VttLight {
         setIntensity(intensity);
         setDirectionDegrees(directionDegrees);
         setConeAngleDegrees(coneAngleDegrees);
+        if (innerConeAngleDegrees <= 0.0) {
+            innerConeAngleDegrees = Math.min(DEFAULT_INNER_CONE_ANGLE_DEGREES,
+                    coneAngleDegrees);
+        }
+        setInnerConeAngleDegrees(innerConeAngleDegrees);
     }
 
     private String normalizeId(String value) {

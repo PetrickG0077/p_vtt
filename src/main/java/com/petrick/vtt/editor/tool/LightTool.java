@@ -28,6 +28,7 @@ public final class LightTool implements Tool {
     private static final int MUTED = 0xFF88888E;
     private static final double DIRECTION_HANDLE_OFFSET = 44.0;
     private static final double CONE_HANDLE_OFFSET = 24.0;
+    private static final double INNER_CONE_HANDLE_OFFSET = 8.0;
     private static final int REVEAL_ONLY = -1;
     private static final int[] COLORS = {
             REVEAL_ONLY,
@@ -137,12 +138,18 @@ public final class LightTool implements Tool {
             } else if (editHandle == LightHandle.DIRECTION) {
                 light.setDirectionDegrees(Math.toDegrees(Math.atan2(
                         world.y() - light.getY(), world.x() - light.getX())));
-            } else if (editHandle == LightHandle.CONE) {
+            } else if (editHandle == LightHandle.OUTER_CONE) {
                 double pointer = Math.toDegrees(Math.atan2(
                         world.y() - light.getY(), world.x() - light.getX()));
                 double difference = Math.abs(shortestAngleDegrees(
                         pointer - light.getDirectionDegrees()));
                 light.setConeAngleDegrees(difference * 2.0);
+            } else if (editHandle == LightHandle.INNER_CONE) {
+                double pointer = Math.toDegrees(Math.atan2(
+                        world.y() - light.getY(), world.x() - light.getX()));
+                double difference = Math.abs(shortestAngleDegrees(
+                        pointer - light.getDirectionDegrees()));
+                light.setInnerConeAngleDegrees(difference * 2.0);
             }
             return true;
         }
@@ -277,6 +284,11 @@ public final class LightTool implements Tool {
                     origin, light.getInnerRadius(), segments,
                     Math.toRadians(direction), Math.toRadians(light.getConeAngleDegrees()), 256),
                     0xAA2299BB);
+            renderPolygon(context, raycaster.buildVisibilityCone(
+                    origin, light.getOuterRadius(), segments,
+                    Math.toRadians(direction),
+                    Math.toRadians(light.getInnerConeAngleDegrees()), 256),
+                    0xAAFFD84A);
             Vec2d directionEnd = pointAt(
                     origin, light.getOuterRadius() + DIRECTION_HANDLE_OFFSET, direction);
             renderLine(context, context.renderState().worldToScreen(origin),
@@ -285,6 +297,9 @@ public final class LightTool implements Tool {
             renderHandle(context, pointAt(
                     origin, light.getOuterRadius() + CONE_HANDLE_OFFSET,
                     direction + light.getConeAngleDegrees() / 2.0));
+            renderHandle(context, pointAt(
+                    origin, light.getOuterRadius() + INNER_CONE_HANDLE_OFFSET,
+                    direction + light.getInnerConeAngleDegrees() / 2.0));
         } else {
             renderPolygon(context, raycaster.buildVisibilityPolygon(
                     origin, light.getOuterRadius(), segments), 0xAA66CCFF);
@@ -341,7 +356,8 @@ public final class LightTool implements Tool {
         renderField(context, font, Field.INNER, "Inner Radius", 47);
         if (spot) {
             renderField(context, font, Field.DIRECTION, "Direction", 69);
-            renderField(context, font, Field.CONE, "Cone Angle", 91);
+            renderField(context, font, Field.OUTER_CONE, "Outer Cone", 91);
+            renderField(context, font, Field.INNER_CONE, "Inner Cone", 113);
         }
         renderField(context, font, Field.COLOR, "Color", fieldOffset(Field.COLOR));
         renderPickerPreview(context);
@@ -461,6 +477,7 @@ public final class LightTool implements Tool {
         copy.setIntensity(source.getIntensity());
         copy.setDirectionDegrees(source.getDirectionDegrees());
         copy.setConeAngleDegrees(source.getConeAngleDegrees());
+        copy.setInnerConeAngleDegrees(source.getInnerConeAngleDegrees());
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         scene.addLight(copy);
@@ -507,8 +524,10 @@ public final class LightTool implements Tool {
                     light.setInnerRadius(Math.min(value, light.getOuterRadius()));
                 } else if (focusedField == Field.DIRECTION) {
                     light.setDirectionDegrees(value);
-                } else if (focusedField == Field.CONE) {
+                } else if (focusedField == Field.OUTER_CONE) {
                     light.setConeAngleDegrees(value);
+                } else if (focusedField == Field.INNER_CONE) {
+                    light.setInnerConeAngleDegrees(value);
                 }
             }
             saveAction.run();
@@ -522,7 +541,9 @@ public final class LightTool implements Tool {
             case OUTER -> String.format(Locale.ROOT, "%.0f", light.getOuterRadius());
             case INNER -> String.format(Locale.ROOT, "%.0f", light.getInnerRadius());
             case DIRECTION -> String.format(Locale.ROOT, "%.0f", light.getDirectionDegrees());
-            case CONE -> String.format(Locale.ROOT, "%.0f", light.getConeAngleDegrees());
+            case OUTER_CONE -> String.format(Locale.ROOT, "%.0f", light.getConeAngleDegrees());
+            case INNER_CONE -> String.format(Locale.ROOT, "%.0f",
+                    light.getInnerConeAngleDegrees());
             case COLOR -> light.isTintEnabled()
                     ? HexColorFormat.format(light.getColorRgb()) : "None";
         };
@@ -602,7 +623,13 @@ public final class LightTool implements Tool {
                     origin, light.getOuterRadius() + CONE_HANDLE_OFFSET,
                     direction + light.getConeAngleDegrees() / 2.0));
             if (Math.hypot(mouseX - coneHandle.x(), mouseY - coneHandle.y()) <= 9) {
-                return LightHandle.CONE;
+                return LightHandle.OUTER_CONE;
+            }
+            Vec2d innerConeHandle = context.renderState().worldToScreen(pointAt(
+                    origin, light.getOuterRadius() + INNER_CONE_HANDLE_OFFSET,
+                    direction + light.getInnerConeAngleDegrees() / 2.0));
+            if (Math.hypot(mouseX - innerConeHandle.x(), mouseY - innerConeHandle.y()) <= 9) {
+                return LightHandle.INNER_CONE;
             }
         }
         return null;
@@ -659,7 +686,9 @@ public final class LightTool implements Tool {
     }
 
     private boolean fieldVisible(Field field) {
-        return field != Field.DIRECTION && field != Field.CONE || isSpot();
+        return field != Field.DIRECTION
+                && field != Field.OUTER_CONE
+                && field != Field.INNER_CONE || isSpot();
     }
 
     private int fieldOffset(Field field) {
@@ -667,19 +696,20 @@ public final class LightTool implements Tool {
             case OUTER -> 25;
             case INNER -> 47;
             case DIRECTION -> 69;
-            case CONE -> 91;
-            case COLOR -> isSpot() ? 113 : 69;
+            case OUTER_CONE -> 91;
+            case INNER_CONE -> 113;
+            case COLOR -> isSpot() ? 135 : 69;
         };
     }
 
-    private int paletteY() { return popupY + (isSpot() ? 135 : 91); }
-    private int intensityLabelY() { return popupY + (isSpot() ? 155 : 111); }
-    private int intensityTrackY() { return popupY + (isSpot() ? 170 : 126); }
-    private int duplicateRow() { return isSpot() ? 10 : 8; }
-    private int deleteRow() { return isSpot() ? 11 : 9; }
+    private int paletteY() { return popupY + (isSpot() ? 157 : 91); }
+    private int intensityLabelY() { return popupY + (isSpot() ? 177 : 111); }
+    private int intensityTrackY() { return popupY + (isSpot() ? 192 : 126); }
+    private int duplicateRow() { return isSpot() ? 11 : 8; }
+    private int deleteRow() { return isSpot() ? 12 : 9; }
     private int popupHeight() {
         if (popup == Popup.CREATE) return 64;
-        return isSpot() ? 242 : 198;
+        return isSpot() ? 261 : 198;
     }
 
     private void closePopup() {
@@ -699,6 +729,6 @@ public final class LightTool implements Tool {
     }
 
     private enum Popup { NONE, CREATE, PROPERTIES }
-    private enum LightHandle { INNER, OUTER, DIRECTION, CONE }
-    private enum Field { OUTER, INNER, DIRECTION, CONE, COLOR }
+    private enum LightHandle { INNER, OUTER, DIRECTION, OUTER_CONE, INNER_CONE }
+    private enum Field { OUTER, INNER, DIRECTION, OUTER_CONE, INNER_CONE, COLOR }
 }

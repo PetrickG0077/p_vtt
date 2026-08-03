@@ -114,6 +114,10 @@ public final class SceneVisionMaskRenderer {
                             context.renderState().worldToScreen(worldOrigin),
                             light.getInnerRadius() * zoom, light.getOuterRadius() * zoom,
                             light.getColorRgb(), light.isTintEnabled(), light.getIntensity(),
+                            light.getType() == VttLightType.SPOT,
+                            Math.toRadians(light.getDirectionDegrees()),
+                            Math.toRadians(light.getInnerConeAngleDegrees() / 2.0),
+                            Math.toRadians(light.getConeAngleDegrees() / 2.0),
                             visibilityPolygon);
                 })
                 .filter(light -> light.visibilityPolygon().size() >= 3)
@@ -237,7 +241,8 @@ public final class SceneVisionMaskRenderer {
                     light.outerRadiusPixels() - light.innerRadiusPixels());
             double lightDarkness = Math.max(0.0, Math.min(1.0,
                     (distance - light.innerRadiusPixels()) / span));
-            double revealStrength = (1.0 - lightDarkness) * light.intensity();
+            double revealStrength = (1.0 - lightDarkness) * light.intensity()
+                    * angularStrength(light, x, y);
             darkness = Math.min(darkness, 1.0 - Math.min(1.0, revealStrength));
         }
         double edgeSoftness = Math.max(4.0, pixelSize * 2.0);
@@ -293,8 +298,9 @@ public final class SceneVisionMaskRenderer {
                                 : 1.0 - (distance - light.innerRadiusPixels())
                                 / Math.max(1.0, light.outerRadiusPixels()
                                 - light.innerRadiusPixels());
-                        candidate = Math.max(0.0,
-                                Math.min(1.0, candidate * light.intensity()));
+                        candidate = Math.max(0.0, Math.min(1.0,
+                                candidate * light.intensity()
+                                        * angularStrength(light, x, sampleY)));
                         if (candidate <= 0.0) continue;
                         combinedStrength = 1.0
                                 - (1.0 - combinedStrength) * (1.0 - candidate);
@@ -322,6 +328,21 @@ public final class SceneVisionMaskRenderer {
     private int maskColor(int alpha, int darknessRgb) {
         return (Math.max(0, Math.min(255, alpha)) << 24)
                 | (darknessRgb & 0x00FFFFFF);
+    }
+
+    private double angularStrength(ScreenLight light, double x, double y) {
+        if (!light.spot()) return 1.0;
+        double angle = Math.atan2(y - light.origin().y(), x - light.origin().x());
+        double difference = Math.abs(shortestAngle(angle - light.directionRadians()));
+        if (difference <= light.innerConeHalfRadians()) return 1.0;
+        if (difference >= light.outerConeHalfRadians()) return 0.0;
+        double feather = Math.max(0.0001,
+                light.outerConeHalfRadians() - light.innerConeHalfRadians());
+        return 1.0 - (difference - light.innerConeHalfRadians()) / feather;
+    }
+
+    private double shortestAngle(double angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
     }
 
     private void fillOutsidePolygons(
@@ -429,6 +450,8 @@ public final class SceneVisionMaskRenderer {
     private record ScreenLight(
             Vec2d origin, double innerRadiusPixels, double outerRadiusPixels,
             int colorRgb, boolean tintEnabled, double intensity,
+            boolean spot, double directionRadians,
+            double innerConeHalfRadians, double outerConeHalfRadians,
             List<Vec2d> visibilityPolygon) {}
     private record ColumnLight(ScreenLight light, List<VisibleInterval> intervals) {
         private boolean containsY(double y) {

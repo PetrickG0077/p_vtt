@@ -1513,6 +1513,7 @@ public final class VttServerTabletopState {
                 || !Double.isFinite(light.getIntensity())
                 || !Double.isFinite(light.getDirectionDegrees())
                 || !Double.isFinite(light.getConeAngleDegrees())
+                || !Double.isFinite(light.getInnerConeAngleDegrees())
                 || Math.abs(light.getX()) > 10_000_000.0
                 || Math.abs(light.getY()) > 10_000_000.0
                 || light.getInnerRadius() < 0.0
@@ -1525,6 +1526,8 @@ public final class VttServerTabletopState {
                 < com.petrick.vtt.feature.tabletop.VttLight.MIN_CONE_ANGLE_DEGREES
                 || light.getConeAngleDegrees()
                 > com.petrick.vtt.feature.tabletop.VttLight.MAX_CONE_ANGLE_DEGREES
+                || light.getInnerConeAngleDegrees() <= 0.0
+                || light.getInnerConeAngleDegrees() > light.getConeAngleDegrees()
                 || !exists && VttSceneLimits.environmentUpsert(
                 activeScene, VttEnvironmentCommandPayload.LIGHT, id) != null) return false;
         activeScene.addLight(light);
