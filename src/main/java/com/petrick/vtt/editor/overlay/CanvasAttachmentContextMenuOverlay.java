@@ -12,10 +12,10 @@ import java.util.List;
 
 /** Context menu for a placed attachment instance. */
 public final class CanvasAttachmentContextMenuOverlay {
-    private static final int WIDTH = 154;
+    private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 11;
+    private static final int ROWS = 14;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -25,6 +25,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private int y;
     private boolean targetsOpen;
     private boolean anchorsOpen;
+    private boolean confirmDeleteSubtree;
 
     public void open(String objectId, int mouseX, int mouseY,
                      int screenWidth, int screenHeight) {
@@ -34,19 +35,22 @@ public final class CanvasAttachmentContextMenuOverlay {
         this.y = Math.max(4, Math.min(screenHeight - height - 4, mouseY - height - 8));
         this.targetsOpen = false;
         this.anchorsOpen = false;
+        this.confirmDeleteSubtree = false;
     }
 
     public void close() {
         objectId = null;
         targetsOpen = false;
         anchorsOpen = false;
+        confirmDeleteSubtree = false;
     }
 
     public boolean isOpen() { return objectId != null; }
     public String objectId() { return objectId; }
 
     public void render(VRenderContext context, Font font, VttAttachmentBinding binding,
-                       List<CanvasObject> targets) {
+                       List<CanvasObject> targets, int subtreeObjects, int subtreeLights,
+                       int directChildren) {
         if (!isOpen()) return;
         panel(context, x, y, WIDTH, height());
         boolean bound = binding != null && binding.isBound();
@@ -67,7 +71,14 @@ public final class CanvasAttachmentContextMenuOverlay {
                 ? binding.getAnchor().displayName() : "Custom") + "  >", bound);
         row(context, font, 8, "Detach", bound);
         row(context, font, 9, "Duplicate", true);
-        row(context, font, 10, "Delete", true);
+        row(context, font, 10, "Duplicate subtree (" + subtreeObjects + "/"
+                + subtreeLights + ")", true);
+        row(context, font, 11, "Detach children (" + directChildren + ")",
+                directChildren > 0);
+        row(context, font, 12, "Delete", true);
+        row(context, font, 13, confirmDeleteSubtree
+                ? "Confirm delete subtree" : "Delete subtree (" + subtreeObjects + "/"
+                + subtreeLights + ")", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
@@ -125,7 +136,18 @@ public final class CanvasAttachmentContextMenuOverlay {
                 case 8 -> bound ? new Interaction(Action.DETACH, null, true)
                         : Interaction.handled();
                 case 9 -> new Interaction(Action.DUPLICATE, null, true);
-                case 10 -> new Interaction(Action.DELETE, null, true);
+                case 10 -> new Interaction(Action.DUPLICATE_SUBTREE, null, true);
+                case 11 -> new Interaction(Action.DETACH_CHILDREN, null, true);
+                case 12 -> new Interaction(Action.DELETE, null, true);
+                case 13 -> {
+                    if (!confirmDeleteSubtree) {
+                        confirmDeleteSubtree = true;
+                        targetsOpen = false;
+                        anchorsOpen = false;
+                        yield Interaction.handled();
+                    }
+                    yield new Interaction(Action.DELETE_SUBTREE, null, true);
+                }
                 default -> Interaction.handled();
             };
         }
@@ -234,7 +256,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     public enum Action {
         NONE, BIND, TOGGLE_POSITION, TOGGLE_ROTATION, TOGGLE_SCALE, TOGGLE_FLIP, CAPTURE_OFFSET,
         TOGGLE_STATE_SCOPE, SET_ANCHOR,
-        DETACH, DUPLICATE, DELETE
+        DETACH, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 
     public record Interaction(Action action, String targetObjectId, boolean consumed) {

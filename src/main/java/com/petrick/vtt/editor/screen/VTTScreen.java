@@ -123,6 +123,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -3319,8 +3320,11 @@ public final class VTTScreen extends Screen {
             canvasAttachmentContextMenuOverlay.close();
             return;
         }
+        AttachmentSubtree subtree = attachmentSubtree(sceneObject.getId());
         canvasAttachmentContextMenuOverlay.render(context, this.font,
-                sceneObject.getAttachmentBinding(), attachmentTargets());
+                sceneObject.getAttachmentBinding(), attachmentTargets(),
+                subtree.objectIds().size(), subtree.lightIds().size(),
+                attachmentDirectChildren(sceneObject.getId()).size());
     }
 
     private void beginPlacedAttachmentDragCandidate(double mouseX, double mouseY, int button) {
@@ -3499,9 +3503,26 @@ public final class VTTScreen extends Screen {
             saveCanvasSceneWithAttachmentBindings();
             return;
         }
+        if (interaction.action()
+                == CanvasAttachmentContextMenuOverlay.Action.DUPLICATE_SUBTREE) {
+            duplicateAttachmentSubtree(attachmentId);
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
+        if (interaction.action()
+                == CanvasAttachmentContextMenuOverlay.Action.DETACH_CHILDREN) {
+            detachAttachmentChildren(attachmentId);
+            return;
+        }
         if (interaction.action() == CanvasAttachmentContextMenuOverlay.Action.DELETE) {
             selectionManager.selectOnly(attachmentId);
             inputController.deleteSelectedObjects();
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
+        if (interaction.action()
+                == CanvasAttachmentContextMenuOverlay.Action.DELETE_SUBTREE) {
+            deleteAttachmentSubtree(attachmentId);
             canvasAttachmentContextMenuOverlay.close();
             return;
         }
@@ -3572,7 +3593,7 @@ public final class VTTScreen extends Screen {
                 }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
-                case DUPLICATE, DELETE -> {
+                case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE -> {
                 }
                 case NONE -> {
                 }
@@ -3605,6 +3626,203 @@ public final class VTTScreen extends Screen {
         }
         return null;
     }
+
+    private AttachmentSubtree attachmentSubtree(String rootId) {
+        LinkedHashSet<String> objectIds = new LinkedHashSet<>();
+        if (rootId == null || session.getActiveScene() == null) {
+            return new AttachmentSubtree(objectIds, new LinkedHashSet<>());
+        }
+        objectIds.add(rootId);
+        boolean changed;
+        do {
+            changed = false;
+            for (VttSceneObject object : session.getActiveScene().getObjects()) {
+                VttAttachmentBinding binding = object == null
+                        ? null : object.getAttachmentBinding();
+                if (object != null && object.isAttachment() && binding != null
+                        && binding.isBound() && objectIds.contains(binding.getTargetObjectId())
+                        && objectIds.add(object.getId())) {
+                    changed = true;
+                }
+            }
+        } while (changed);
+        LinkedHashSet<String> lightIds = new LinkedHashSet<>();
+        for (VttLight light : session.getActiveScene().getLights()) {
+            if (light != null && objectIds.contains(light.getAttachedToObjectId())) {
+                lightIds.add(light.getId());
+            }
+        }
+        return new AttachmentSubtree(objectIds, lightIds);
+    }
+
+    private List<String> attachmentDirectChildren(String parentId) {
+        if (parentId == null || session.getActiveScene() == null) return List.of();
+        return session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && object.isAttachment())
+                .filter(object -> object.getAttachmentBinding() != null
+                        && parentId.equals(object.getAttachmentBinding().getTargetObjectId()))
+                .map(VttSceneObject::getId).toList();
+    }
+
+    private void detachAttachmentChildren(String parentId) {
+        List<String> childIds = attachmentDirectChildren(parentId);
+        if (childIds.isEmpty()) {
+            VttClientEditorNotice.show("Attachment has no direct children");
+            return;
+        }
+        inputController.beginEditorAction();
+        try {
+            for (String childId : childIds) {
+                AttachmentBindingService.detach(session.getActiveScene(), childId);
+            }
+            AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (session.isNetworkAuthorityActive()) {
+            for (String childId : childIds) {
+                VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                        session, childId, null);
+            }
+        }
+        VttClientEditorNotice.show("Detached " + childIds.size() + " direct children");
+    }
+
+    private void deleteAttachmentSubtree(String rootId) {
+        AttachmentSubtree subtree = attachmentSubtree(rootId);
+        if (subtree.objectIds().isEmpty()) return;
+        inputController.beginEditorAction();
+        try {
+            for (String lightId : subtree.lightIds()) {
+                session.getActiveScene().removeLight(lightId);
+            }
+            scene.removeObjects(subtree.objectIds());
+            session.getActiveScene().getVisionSourceObjectIds().removeIf(
+                    subtree.objectIds()::contains);
+            selectionManager.clearSelection();
+        } finally {
+            inputController.endEditorAction();
+        }
+        VttClientEditorNotice.show("Deleted subtree: " + subtree.objectIds().size()
+                + " objects, " + subtree.lightIds().size() + " lights");
+    }
+
+    private void duplicateAttachmentSubtree(String rootId) {
+        AttachmentSubtree subtree = attachmentSubtree(rootId);
+        if (subtree.objectIds().isEmpty()) return;
+        Map<String, VttAttachmentBinding> originalBindings = new LinkedHashMap<>();
+        for (String objectId : subtree.objectIds()) {
+            VttSceneObject object = AttachmentBindingService.find(
+                    session.getActiveScene(), objectId);
+            if (object != null) {
+                originalBindings.put(objectId, copyAttachmentBinding(
+                        object.getAttachmentBinding()));
+            }
+        }
+        List<VttLight> originalLights = session.getActiveScene().getLights().stream()
+                .filter(light -> subtree.lightIds().contains(light.getId()))
+                .map(this::copySubtreeLight).toList();
+
+        inputController.beginEditorAction();
+        try {
+            Set<String> duplicated = scene.duplicateObjects(
+                    subtree.objectIds(), new Vec2d(32.0, 32.0));
+            if (duplicated.size() != subtree.objectIds().size()) return;
+            Map<String, String> remappedIds = new LinkedHashMap<>();
+            var originalIterator = subtree.objectIds().iterator();
+            var duplicateIterator = duplicated.iterator();
+            while (originalIterator.hasNext() && duplicateIterator.hasNext()) {
+                remappedIds.put(originalIterator.next(), duplicateIterator.next());
+            }
+
+            // Materialize scene metadata for the new canvas objects before replacing
+            // their inherited parent IDs with the duplicated hierarchy.
+            session.saveCanvasSceneToActiveScene();
+            for (Map.Entry<String, String> remap : remappedIds.entrySet()) {
+                VttSceneObject duplicate = AttachmentBindingService.find(
+                        session.getActiveScene(), remap.getValue());
+                VttAttachmentBinding binding = copyAttachmentBinding(
+                        originalBindings.get(remap.getKey()));
+                if (duplicate == null || binding == null) continue;
+                String remappedParent = remappedIds.get(binding.getTargetObjectId());
+                if (remappedParent != null) binding.setTargetObjectId(remappedParent);
+                duplicate.setAttachmentBinding(binding);
+            }
+            for (VttLight source : originalLights) {
+                String newId = uniqueSubtreeLightId(source.getId() + "_copy");
+                VttLight duplicate = copySubtreeLight(source);
+                duplicate.setId(newId);
+                duplicate.setX(source.getX() + 32.0);
+                duplicate.setY(source.getY() + 32.0);
+                duplicate.setAttachedToObjectId(remappedIds.get(
+                        source.getAttachedToObjectId()));
+                session.getActiveScene().addLight(duplicate);
+            }
+            AttachmentBindingService.synchronize(
+                    session.getActiveScene(), scene, Set.of());
+            AttachmentBindingService.synchronizeLights(
+                    session.getActiveScene(), scene, null);
+            selectionManager.clearSelection();
+            String duplicateRoot = remappedIds.get(rootId);
+            if (duplicateRoot != null) selectionManager.selectOnly(duplicateRoot);
+        } finally {
+            inputController.endEditorAction();
+        }
+        VttClientEditorNotice.show("Duplicated subtree: " + subtree.objectIds().size()
+                + " objects, " + subtree.lightIds().size() + " lights");
+    }
+
+    private VttAttachmentBinding copyAttachmentBinding(VttAttachmentBinding source) {
+        if (source == null || !source.isBound()) return null;
+        VttAttachmentBinding copy = new VttAttachmentBinding();
+        copy.setTargetObjectId(source.getTargetObjectId());
+        copy.setFollowPosition(source.isFollowPosition());
+        copy.setFollowRotation(source.isFollowRotation());
+        copy.setFollowScale(source.isFollowScale());
+        copy.setFlipOffset(source.isFlipOffset());
+        copy.setParentStateId(source.getParentStateId());
+        copy.setAnchor(source.getAnchor());
+        copy.setOffsetX(source.getOffsetX());
+        copy.setOffsetY(source.getOffsetY());
+        copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());
+        copy.setScaleMultiplierX(source.getScaleMultiplierX());
+        copy.setScaleMultiplierY(source.getScaleMultiplierY());
+        return copy;
+    }
+
+    private VttLight copySubtreeLight(VttLight source) {
+        VttLight copy = new VttLight(source.getId(), source.getX(), source.getY());
+        copy.setType(source.getType());
+        copy.setOuterRadius(source.getOuterRadius());
+        copy.setInnerRadius(source.getInnerRadius());
+        copy.setColorRgb(source.getColorRgb());
+        copy.setIntensity(source.getIntensity());
+        copy.setDirectionDegrees(source.getDirectionDegrees());
+        copy.setConeAngleDegrees(source.getConeAngleDegrees());
+        copy.setInnerConeAngleDegrees(source.getInnerConeAngleDegrees());
+        copy.setTintEnabled(source.isTintEnabled());
+        copy.setEnabled(source.isEnabled());
+        copy.setAttachedToObjectId(source.getAttachedToObjectId());
+        copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
+        copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
+        copy.setAttachmentDirectionOffsetDegrees(
+                source.getAttachmentDirectionOffsetDegrees());
+        return copy;
+    }
+
+    private String uniqueSubtreeLightId(String prefix) {
+        String base = prefix == null || prefix.isBlank() ? "light_copy" : prefix;
+        String candidate = base;
+        int index = 2;
+        Set<String> existing = session.getActiveScene().getLights().stream()
+                .map(VttLight::getId).collect(java.util.stream.Collectors.toSet());
+        while (existing.contains(candidate)) candidate = base + "_" + index++;
+        return candidate;
+    }
+
+    private record AttachmentSubtree(
+            LinkedHashSet<String> objectIds, LinkedHashSet<String> lightIds
+    ) {}
 
     private CanvasObject canvasTokenContextToken() {
         return canvasTokenContextMenuOverlay.isOpen()
