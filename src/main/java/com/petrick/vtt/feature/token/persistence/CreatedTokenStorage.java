@@ -215,6 +215,21 @@ public final class CreatedTokenStorage {
         return GSON.toJson(data);
     }
 
+    public static String serializeTokenStatePresets(
+            TokenDefinition definition, Path folder,
+            Map<String, com.petrick.vtt.feature.token.TokenStatePreset> presets
+    ) {
+        CreatedTokenSaveData data = readTokenData(definition, folder);
+        if (data == null || presets == null) return null;
+        data.statePresets = new LinkedHashMap<>();
+        presets.forEach((stateId, preset) -> {
+            if (stateId != null && definition.states().containsKey(stateId) && preset != null) {
+                data.statePresets.put(stateId, preset);
+            }
+        });
+        return GSON.toJson(data);
+    }
+
     public static TokenDefinition saveTokenStatePreset(
             TokenDefinition definition, String stateId,
             com.petrick.vtt.feature.token.TokenStatePreset preset,
@@ -237,6 +252,36 @@ public final class CreatedTokenStorage {
         } catch (IOException exception) {
             VTT.LOGGER.error("Failed to save token state preset: {} / {}",
                     definition.id(), stateId, exception);
+            return null;
+        }
+    }
+
+    public static TokenDefinition saveTokenStatePresets(
+            TokenDefinition definition,
+            Map<String, com.petrick.vtt.feature.token.TokenStatePreset> presets,
+            TokenDefinitionRegistry registry, AssetRegistry assetRegistry
+    ) {
+        if (definition == null || presets == null || registry == null || assetRegistry == null) {
+            return null;
+        }
+        Path file = findTokenFile(getTokensFolder(), definition);
+        CreatedTokenSaveData data = readTokenData(definition, getTokensFolder());
+        if (file == null || data == null) return null;
+        data.statePresets = new LinkedHashMap<>();
+        presets.forEach((stateId, preset) -> {
+            if (stateId != null && definition.states().containsKey(stateId) && preset != null) {
+                data.statePresets.put(stateId, preset);
+            }
+        });
+        try {
+            saveCreatedTokenData(data, file.getParent());
+            TokenDefinition updated = createTokenDefinitionFromSaveData(data, assetRegistry);
+            String folder = registry.folderOf(definition.id());
+            registry.removeById(definition.id());
+            registry.register(updated, folder);
+            return updated;
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to save token state presets: {}", definition.id(), exception);
             return null;
         }
     }

@@ -13,6 +13,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 import java.util.List;
+import java.util.Set;
 
 /** Context menu for a token instance placed on the canvas. */
 public final class CanvasTokenContextMenuOverlay {
@@ -77,7 +78,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     public void render(
             VRenderContext context, Font font, CanvasObject token, VttSceneObject sceneObject,
-            List<VttPlayerOption> players
+            List<VttPlayerOption> players, Set<String> definitionPresetIds
     ) {
         if (!isOpen() || token == null || sceneObject == null) return;
         fillPanel(context, x, y, MAIN_WIDTH, mainHeight());
@@ -98,9 +99,14 @@ public final class CanvasTokenContextMenuOverlay {
         }
 
         int childX = childX(context.screenWidth());
-        if (submenu == Submenu.STATES) renderStates(context, font, token, childX);
+        if (submenu == Submenu.STATES) renderStates(
+                context, font, token, childX, definitionPresetIds);
         else if (submenu == Submenu.SAVE_STATE_CONFIRM) renderSaveStateConfirmation(context, font, childX);
         else if (submenu == Submenu.SAVE_STATE_TO_TOKEN_CONFIRM) renderSaveStateToTokenConfirmation(context, font, childX);
+        else if (submenu == Submenu.SAVE_ALL_STATES_TO_TOKEN_CONFIRM) {
+            renderSaveAllStatesToTokenConfirmation(
+                    context, font, childX, sceneObject.getStateAppearances().size());
+        }
         else if (submenu == Submenu.COLOR) renderColors(context, font, childX, sceneObject);
         else if (submenu == Submenu.VISION) renderVision(context, font, childX, sceneObject);
         else if (submenu == Submenu.OWNER) renderOwners(
@@ -131,6 +137,8 @@ public final class CanvasTokenContextMenuOverlay {
             case STATES -> clickStates(mouseX, mouseY, token, childX);
             case SAVE_STATE_CONFIRM -> clickSaveStateConfirmation(mouseX, mouseY, childX);
             case SAVE_STATE_TO_TOKEN_CONFIRM -> clickSaveStateToTokenConfirmation(mouseX, mouseY, childX);
+            case SAVE_ALL_STATES_TO_TOKEN_CONFIRM -> clickSaveAllStatesToTokenConfirmation(
+                    mouseX, mouseY, childX);
             case COLOR -> clickColors(mouseX, mouseY, childX, sceneObject);
             case VISION -> clickVision(mouseX, mouseY, sceneObject, childX);
             case OWNER -> clickOwners(mouseX, mouseY, childX, players);
@@ -236,7 +244,7 @@ public final class CanvasTokenContextMenuOverlay {
 
     private Interaction clickStates(double mouseX, double mouseY, CanvasObject token, int childX) {
         int leadingRows = masterMenu ? 1 : 0;
-        int trailingRows = masterMenu ? 1 : 0;
+        int trailingRows = masterMenu ? 4 : 0;
         int height = Math.max(24,
                 10 + (token.states().size() + leadingRows + trailingRows) * ROW_HEIGHT);
         if (!inside(mouseX, mouseY, childX, y, STATES_WIDTH, height)) return Interaction.none();
@@ -246,9 +254,14 @@ public final class CanvasTokenContextMenuOverlay {
             return Interaction.handled();
         }
         int stateIndex = index - leadingRows;
-        if (masterMenu && stateIndex == token.states().size()) {
-            submenu = Submenu.SAVE_STATE_TO_TOKEN_CONFIRM;
-            return Interaction.handled();
+        if (masterMenu && stateIndex >= token.states().size()) {
+            return switch (stateIndex - token.states().size()) {
+                case 0 -> { submenu = Submenu.SAVE_STATE_TO_TOKEN_CONFIRM; yield Interaction.handled(); }
+                case 1 -> { submenu = Submenu.SAVE_ALL_STATES_TO_TOKEN_CONFIRM; yield Interaction.handled(); }
+                case 2 -> new Interaction(Action.REMOVE_STATE_FROM_TOKEN, null, 0, true);
+                case 3 -> new Interaction(Action.RESET_INSTANCE_STATE, null, 0, true);
+                default -> Interaction.handled();
+            };
         }
         if (stateIndex < 0 || stateIndex >= token.states().size()) return Interaction.handled();
         CanvasObjectState state = token.states().values().stream()
@@ -274,6 +287,17 @@ public final class CanvasTokenContextMenuOverlay {
         if (!inside(mouseX, mouseY, childX, y, 198, 76)) return Interaction.none();
         if (mouseY >= y + 38 && mouseY <= y + 56) {
             return new Interaction(Action.SAVE_STATE_TO_TOKEN, null, 0, true);
+        }
+        if (mouseY >= y + 58 && mouseY <= y + 74) submenu = Submenu.STATES;
+        return Interaction.handled();
+    }
+
+    private Interaction clickSaveAllStatesToTokenConfirmation(
+            double mouseX, double mouseY, int childX
+    ) {
+        if (!inside(mouseX, mouseY, childX, y, 210, 76)) return Interaction.none();
+        if (mouseY >= y + 38 && mouseY <= y + 56) {
+            return new Interaction(Action.SAVE_ALL_STATES_TO_TOKEN, null, 0, true);
         }
         if (mouseY >= y + 58 && mouseY <= y + 74) submenu = Submenu.STATES;
         return Interaction.handled();
@@ -358,9 +382,10 @@ public final class CanvasTokenContextMenuOverlay {
         }
     }
 
-    private void renderStates(VRenderContext context, Font font, CanvasObject token, int childX) {
+    private void renderStates(VRenderContext context, Font font, CanvasObject token, int childX,
+                              Set<String> definitionPresetIds) {
         int leadingRows = masterMenu ? 1 : 0;
-        int trailingRows = masterMenu ? 1 : 0;
+        int trailingRows = masterMenu ? 4 : 0;
         int height = Math.max(24,
                 10 + (token.states().size() + leadingRows + trailingRows) * ROW_HEIGHT);
         fillPanel(context, childX, y, STATES_WIDTH, height);
@@ -372,13 +397,22 @@ public final class CanvasTokenContextMenuOverlay {
         }
         for (CanvasObjectState state : token.states().values()) {
             boolean active = state.id().equals(token.activeStateId());
-            context.graphics().drawString(font, (active ? "* " : "  ") + state.displayName(),
+            boolean preset = definitionPresetIds != null
+                    && definitionPresetIds.contains(state.id());
+            context.graphics().drawString(font,
+                    (active ? "* " : "  ") + state.displayName() + (preset ? "  [P]" : ""),
                     childX + 7, y + 7 + index++ * ROW_HEIGHT,
                     active ? ACCENT : TEXT, false);
         }
         if (masterMenu) {
             context.graphics().drawString(font, "Save state edits to Token",
                     childX + 7, y + 7 + index * ROW_HEIGHT, ACCENT, false);
+            context.graphics().drawString(font, "Save all instance states",
+                    childX + 7, y + 7 + ++index * ROW_HEIGHT, ACCENT, false);
+            context.graphics().drawString(font, "Remove current Token preset",
+                    childX + 7, y + 7 + ++index * ROW_HEIGHT, TEXT, false);
+            context.graphics().drawString(font, "Reset current instance state",
+                    childX + 7, y + 7 + ++index * ROW_HEIGHT, TEXT, false);
         }
     }
 
@@ -404,6 +438,20 @@ public final class CanvasTokenContextMenuOverlay {
                 childX + 99, y + 42, ACCENT);
         context.graphics().drawCenteredString(font, "Cancel",
                 childX + 99, y + 61, MUTED);
+    }
+
+    private void renderSaveAllStatesToTokenConfirmation(
+            VRenderContext context, Font font, int childX, int count
+    ) {
+        fillPanel(context, childX, y, 210, 76);
+        context.graphics().drawString(font, "Save " + count + " customized state(s)?",
+                childX + 7, y + 8, TEXT, false);
+        context.graphics().drawString(font, "Existing Token presets are replaced.",
+                childX + 7, y + 20, MUTED, false);
+        context.graphics().drawCenteredString(font, "Confirm",
+                childX + 105, y + 42, ACCENT);
+        context.graphics().drawCenteredString(font, "Cancel",
+                childX + 105, y + 61, MUTED);
     }
 
     private void renderColors(
@@ -519,6 +567,7 @@ public final class CanvasTokenContextMenuOverlay {
             case STATES -> STATES_WIDTH;
             case SAVE_STATE_CONFIRM -> 176;
             case SAVE_STATE_TO_TOKEN_CONFIRM -> 198;
+            case SAVE_ALL_STATES_TO_TOKEN_CONFIRM -> 210;
             case OWNER -> 180;
             case NONE -> 0;
         };
@@ -559,7 +608,8 @@ public final class CanvasTokenContextMenuOverlay {
     private String format(double value) { return String.format(Locale.ROOT, "%.0f", value); }
 
     public enum Action {
-        NONE, EDIT, SET_STATE, SAVE_STATE, SAVE_STATE_TO_TOKEN, SET_COLOR,
+        NONE, EDIT, SET_STATE, SAVE_STATE, SAVE_STATE_TO_TOKEN,
+        SAVE_ALL_STATES_TO_TOKEN, REMOVE_STATE_FROM_TOKEN, RESET_INSTANCE_STATE, SET_COLOR,
         TOGGLE_VISIBLE, TOGGLE_VISION,
         TOGGLE_OWN_LIGHT, SET_VISION_INNER, SET_VISION_OUTER, SET_OWNER,
         DUPLICATE, DELETE
@@ -571,6 +621,7 @@ public final class CanvasTokenContextMenuOverlay {
     }
 
     private enum Submenu { NONE, STATES, SAVE_STATE_CONFIRM,
-        SAVE_STATE_TO_TOKEN_CONFIRM, COLOR, VISION, OWNER }
+        SAVE_STATE_TO_TOKEN_CONFIRM, SAVE_ALL_STATES_TO_TOKEN_CONFIRM,
+        COLOR, VISION, OWNER }
     private enum VisionField { INNER, OUTER }
 }

@@ -3258,7 +3258,10 @@ public final class VTTScreen extends Screen {
             return;
         }
         canvasTokenContextMenuOverlay.render(
-                context, this.font, token, sceneObject, getConnectedPlayerOptions());
+                context, this.font, token, sceneObject, getConnectedPlayerOptions(),
+                tokenDefinitionRegistry.findById(token.sourceTokenDefinitionId())
+                        .map(definition -> definition.statePresets().keySet())
+                        .orElse(Set.of()));
     }
 
     private void renderCanvasAttachmentContextMenu(VRenderContext context) {
@@ -3509,6 +3512,9 @@ public final class VTTScreen extends Screen {
             case SET_STATE -> setSelectedTokensActiveState(interaction.stringValue());
             case SAVE_STATE -> saveSelectedTokenState(token.id());
             case SAVE_STATE_TO_TOKEN -> saveSelectedTokenStateToDefinition(token.id());
+            case SAVE_ALL_STATES_TO_TOKEN -> saveAllSelectedTokenStatesToDefinition(token.id());
+            case REMOVE_STATE_FROM_TOKEN -> removeSelectedTokenStateFromDefinition(token.id());
+            case RESET_INSTANCE_STATE -> resetSelectedTokenInstanceState(token.id());
             case SET_COLOR -> {
                 mutateCanvasTokenMetadata(() -> sceneObject.getState()
                         .setTintColorRgb(interaction.intValue()));
@@ -3651,6 +3657,85 @@ public final class VTTScreen extends Screen {
             VttClientEditorNotice.show(updated == null
                     ? "Could not save the token state preset"
                     : "Token state preset saved");
+        }
+        canvasTokenContextMenuOverlay.close();
+    }
+
+    private void saveAllSelectedTokenStatesToDefinition(String tokenId) {
+        CanvasObject token = scene.findObjectById(tokenId);
+        TokenDefinition definition = token == null ? null : tokenDefinitionRegistry
+                .findById(token.sourceTokenDefinitionId()).orElse(null);
+        if (definition == null || !session.isLocalMaster()
+                || !CreatedTokenStorage.isUserCreatedToken(definition)) {
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        Map<String, TokenStatePreset> captured = tokenStateOverrideService
+                .captureAllDefinitionPresets(session.getActiveScene(), scene, tokenId);
+        if (captured.isEmpty()) {
+            VttClientEditorNotice.show("This token instance has no customized states");
+            return;
+        }
+        Map<String, TokenStatePreset> merged = new LinkedHashMap<>(definition.statePresets());
+        merged.putAll(captured);
+        saveTokenDefinitionPresets(definition, merged,
+                captured.size() + " token state preset(s) saved");
+    }
+
+    private void removeSelectedTokenStateFromDefinition(String tokenId) {
+        CanvasObject token = scene.findObjectById(tokenId);
+        TokenDefinition definition = token == null ? null : tokenDefinitionRegistry
+                .findById(token.sourceTokenDefinitionId()).orElse(null);
+        if (definition == null || !session.isLocalMaster()
+                || !definition.statePresets().containsKey(token.activeStateId())) {
+            VttClientEditorNotice.show("The current state has no Token preset");
+            return;
+        }
+        Map<String, TokenStatePreset> presets = new LinkedHashMap<>(definition.statePresets());
+        presets.remove(token.activeStateId());
+        saveTokenDefinitionPresets(definition, presets, "Token state preset removed");
+    }
+
+    private void resetSelectedTokenInstanceState(String tokenId) {
+        inputController.beginEditorAction();
+        boolean reset;
+        try {
+            reset = tokenStateOverrideService.removeCurrentStateOverride(
+                    session.getActiveScene(), scene, tokenId);
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (reset) {
+            synchronizeTokenStateOverrides(tokenId, true);
+            VttClientEditorNotice.show("Current instance state reset to global appearance");
+        }
+        canvasTokenContextMenuOverlay.close();
+    }
+
+    private void saveTokenDefinitionPresets(
+            TokenDefinition definition, Map<String, TokenStatePreset> presets,
+            String successMessage
+    ) {
+        if (session.isNetworkAuthorityActive()) {
+            if (hasPendingAssetManagerOperation()) {
+                VttClientEditorNotice.show("Wait for the current Asset Manager operation");
+                return;
+            }
+            String json = CreatedTokenStorage.serializeTokenStatePresets(
+                    definition, session.getSyncedServerTokensFolder(), presets);
+            String requestId = beginPendingTokenDefinitionRequest(
+                    "saving token state presets", successMessage,
+                    definition.id(), definition.id(), null);
+            if (json == null || requestId == null || !VttClientTokenDefinitionSync.sendUpsert(
+                    requestId, session.getNetworkAuthorityRevision(), json)) {
+                clearPendingTokenDefinitionRequest();
+                VttClientEditorNotice.show("Could not send token state presets to server");
+            }
+        } else {
+            TokenDefinition updated = CreatedTokenStorage.saveTokenStatePresets(
+                    definition, presets, tokenDefinitionRegistry, assetRegistry);
+            VttClientEditorNotice.show(updated == null
+                    ? "Could not save token state presets" : successMessage);
         }
         canvasTokenContextMenuOverlay.close();
     }
