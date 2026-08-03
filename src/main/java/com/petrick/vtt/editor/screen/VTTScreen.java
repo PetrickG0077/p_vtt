@@ -3271,7 +3271,20 @@ public final class VTTScreen extends Screen {
                 context, this.font, token, sceneObject, getConnectedPlayerOptions(),
                 tokenDefinitionRegistry.findById(token.sourceTokenDefinitionId())
                         .map(definition -> definition.statePresets().keySet())
-                        .orElse(Set.of()));
+                        .orElse(Set.of()), tokenStateAttachmentCounts(token.id()));
+    }
+
+    private Map<String, Integer> tokenStateAttachmentCounts(String tokenId) {
+        Map<String, Integer> counts = new HashMap<>();
+        if (session.getActiveScene() == null || tokenId == null) return counts;
+        for (VttSceneObject object : session.getActiveScene().getObjects()) {
+            VttAttachmentBinding binding = object == null ? null : object.getAttachmentBinding();
+            if (object == null || !object.isAttachment() || binding == null
+                    || !tokenId.equals(binding.getTargetObjectId())
+                    || binding.getParentStateId() == null) continue;
+            counts.merge(binding.getParentStateId(), 1, Integer::sum);
+        }
+        return counts;
     }
 
     private void renderCanvasAttachmentContextMenu(VRenderContext context) {
@@ -3460,6 +3473,22 @@ public final class VTTScreen extends Screen {
                 }
                 case CAPTURE_OFFSET -> AttachmentBindingService.recapture(
                         session.getActiveScene(), scene, attachmentId);
+                case TOGGLE_STATE_SCOPE -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null && binding.isBound()) {
+                        if (binding.getParentStateId() != null) {
+                            binding.setParentStateId(null);
+                            VttClientEditorNotice.show("Attachment is now global");
+                        } else {
+                            CanvasObject parent = scene.findObjectById(binding.getTargetObjectId());
+                            if (parent != null && parent.hasSourceTokenDefinition()) {
+                                binding.setParentStateId(parent.activeStateId());
+                                VttClientEditorNotice.show(
+                                        "Attachment assigned to state " + parent.activeStateId());
+                            }
+                        }
+                    }
+                }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DELETE -> {

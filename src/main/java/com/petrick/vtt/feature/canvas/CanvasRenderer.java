@@ -132,6 +132,9 @@ public final class CanvasRenderer {
             }
         });
         for (CanvasObject object : scene.getObjects()) {
+            if (attachmentMarkersVisible
+                    && AttachmentVisibilityResolver.isInactiveForParentState(
+                    tabletopScene, scene, object)) continue;
             boolean effectivelyVisible = AttachmentVisibilityResolver.isObjectEffectivelyVisible(
                     tabletopScene, scene, object);
             if (!effectivelyVisible && !masterView) continue;
@@ -140,10 +143,15 @@ public final class CanvasRenderer {
             renderObject(context, object, effectivelyVisible ? 1.0F : 0.5F,
                     tintColors.getOrDefault(object.id(), 0xFFFFFF));
 
-            if (attachmentMarkersVisible && object.hasSourceAttachmentDefinition()
-                    && object.currentVisual() instanceof
-                    com.petrick.vtt.feature.canvas.visual.ColorVisual) {
-                renderAttachmentMarker(context, object);
+            if (attachmentMarkersVisible && object.hasSourceAttachmentDefinition()) {
+                boolean stateSpecific = tabletopScene != null
+                        && tabletopScene.getObjects().stream()
+                        .filter(metadata -> metadata != null
+                                && object.id().equals(metadata.getId()))
+                        .map(metadata -> metadata.getAttachmentBinding() != null
+                                && metadata.getAttachmentBinding().getParentStateId() != null)
+                        .findFirst().orElse(false);
+                renderAttachmentMarker(context, object, stateSpecific);
             }
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
@@ -154,18 +162,22 @@ public final class CanvasRenderer {
         }
     }
 
-    private void renderAttachmentMarker(VRenderContext context, CanvasObject object) {
+    private void renderAttachmentMarker(
+            VRenderContext context, CanvasObject object, boolean stateSpecific
+    ) {
         Vec2d center = context.renderState().worldToScreen(object.transform().position());
         PoseStack pose = context.graphics().pose();
         pose.pushPose();
         pose.translate(center.x(), center.y(), 0.0);
         pose.mulPose(Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees()));
         int half = 6;
-        context.graphics().fill(-half, -half, half, half, 0xDD278CFF);
-        context.graphics().hLine(-half, half, -half, 0xFF66CCFF);
-        context.graphics().hLine(-half, half, half, 0xFF66CCFF);
-        context.graphics().vLine(-half, -half, half, 0xFF66CCFF);
-        context.graphics().vLine(half, -half, half, 0xFF66CCFF);
+        int fill = stateSpecific ? 0xDDB455FF : 0xDD278CFF;
+        int outline = stateSpecific ? 0xFFFF88FF : 0xFF66CCFF;
+        context.graphics().fill(-half, -half, half, half, fill);
+        context.graphics().hLine(-half, half, -half, outline);
+        context.graphics().hLine(-half, half, half, outline);
+        context.graphics().vLine(-half, -half, half, outline);
+        context.graphics().vLine(half, -half, half, outline);
         pose.popPose();
     }
 

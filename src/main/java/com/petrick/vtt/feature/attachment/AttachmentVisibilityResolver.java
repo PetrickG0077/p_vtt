@@ -51,4 +51,22 @@ public final class AttachmentVisibilityResolver {
                 : canvasScene.findObjectById(light.getAttachedToObjectId());
         return isObjectEffectivelyVisible(tabletopScene, canvasScene, attachment);
     }
+
+    /** True only when an attachment belongs to a different state of its direct parent. */
+    public static boolean isInactiveForParentState(
+            VttScene tabletopScene, CanvasScene canvasScene, CanvasObject object
+    ) {
+        if (tabletopScene == null || canvasScene == null || object == null
+                || !object.hasSourceAttachmentDefinition()) return false;
+        VttSceneObject metadata = tabletopScene.getObjects().stream()
+                .filter(candidate -> candidate != null && object.id().equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (metadata == null || metadata.getAttachmentBinding() == null
+                || !metadata.getAttachmentBinding().isBound()
+                || metadata.getAttachmentBinding().getParentStateId() == null) return false;
+        CanvasObject parent = canvasScene.findObjectById(
+                metadata.getAttachmentBinding().getTargetObjectId());
+        return parent == null || !metadata.getAttachmentBinding().getParentStateId()
+                .equals(parent.activeStateId());
+    }
 }

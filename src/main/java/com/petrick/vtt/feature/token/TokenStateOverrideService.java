@@ -58,16 +58,9 @@ public final class TokenStateOverrideService {
         String stateId = canvasToken.activeStateId();
         token.getStateAppearances().put(stateId, capture(canvasToken, token));
 
-        Set<String> baseline = attachmentBaselines.getOrDefault(key(tokenId, stateId), Set.of());
-        for (VttSceneObject attachment : scene.getObjects()) {
-            if (attachment == null || !attachment.isAttachment()) continue;
-            VttAttachmentBinding binding = attachment.getAttachmentBinding();
-            if (binding == null || !binding.isBound()
-                    || !tokenId.equals(binding.getTargetObjectId())) continue;
-            if (binding.getParentStateId() == null && !baseline.contains(attachment.getId())) {
-                binding.setParentStateId(stateId);
-            }
-        }
+        // Attachment scope is explicit in the attachment context menu. Saving
+        // an appearance must never silently turn a newly added global
+        // attachment into a state-specific one.
         attachmentBaselines.put(key(tokenId, stateId),
                 effectiveAttachedIds(scene, tokenId, stateId));
         return true;

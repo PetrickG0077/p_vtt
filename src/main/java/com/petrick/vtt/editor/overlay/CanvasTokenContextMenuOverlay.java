@@ -14,6 +14,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Locale;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
 
 /** Context menu for a token instance placed on the canvas. */
 public final class CanvasTokenContextMenuOverlay {
@@ -78,7 +79,8 @@ public final class CanvasTokenContextMenuOverlay {
 
     public void render(
             VRenderContext context, Font font, CanvasObject token, VttSceneObject sceneObject,
-            List<VttPlayerOption> players, Set<String> definitionPresetIds
+            List<VttPlayerOption> players, Set<String> definitionPresetIds,
+            Map<String, Integer> stateAttachmentCounts
     ) {
         if (!isOpen() || token == null || sceneObject == null) return;
         fillPanel(context, x, y, MAIN_WIDTH, mainHeight());
@@ -100,7 +102,7 @@ public final class CanvasTokenContextMenuOverlay {
 
         int childX = childX(context.screenWidth());
         if (submenu == Submenu.STATES) renderStates(
-                context, font, token, childX, definitionPresetIds);
+                context, font, token, childX, definitionPresetIds, stateAttachmentCounts);
         else if (submenu == Submenu.SAVE_STATE_CONFIRM) renderSaveStateConfirmation(context, font, childX);
         else if (submenu == Submenu.SAVE_STATE_TO_TOKEN_CONFIRM) renderSaveStateToTokenConfirmation(context, font, childX);
         else if (submenu == Submenu.SAVE_ALL_STATES_TO_TOKEN_CONFIRM) {
@@ -383,7 +385,8 @@ public final class CanvasTokenContextMenuOverlay {
     }
 
     private void renderStates(VRenderContext context, Font font, CanvasObject token, int childX,
-                              Set<String> definitionPresetIds) {
+                              Set<String> definitionPresetIds,
+                              Map<String, Integer> stateAttachmentCounts) {
         int leadingRows = masterMenu ? 1 : 0;
         int trailingRows = masterMenu ? 4 : 0;
         int height = Math.max(24,
@@ -399,8 +402,12 @@ public final class CanvasTokenContextMenuOverlay {
             boolean active = state.id().equals(token.activeStateId());
             boolean preset = definitionPresetIds != null
                     && definitionPresetIds.contains(state.id());
+            int attachmentCount = stateAttachmentCounts == null ? 0
+                    : stateAttachmentCounts.getOrDefault(state.id(), 0);
             context.graphics().drawString(font,
-                    (active ? "* " : "  ") + state.displayName() + (preset ? "  [P]" : ""),
+                    (active ? "* " : "  ") + state.displayName()
+                            + (preset ? " [P]" : "")
+                            + (attachmentCount > 0 ? " [A:" + attachmentCount + "]" : ""),
                     childX + 7, y + 7 + index++ * ROW_HEIGHT,
                     active ? ACCENT : TEXT, false);
         }
