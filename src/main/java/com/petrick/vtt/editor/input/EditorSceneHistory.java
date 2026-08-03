@@ -7,6 +7,8 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.feature.tabletop.VttFogOfWar;
+import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttLightType;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneBackgroundTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
@@ -257,6 +259,9 @@ public final class EditorSceneHistory {
             if (wall != null) return wall;
             String door = describeDoorChange(oldEnvironment.doors(), newEnvironment.doors());
             if (door != null) return door;
+            String light = describeCollectionChange(oldEnvironment.lights(),
+                    newEnvironment.lights(), Light::id, "light");
+            if (light != null) return light;
             String fog = describeFogChange(oldEnvironment, newEnvironment);
             if (fog != null) return fog;
             if (!java.util.Objects.equals(oldEnvironment.backgroundAssetId(),
@@ -532,6 +537,7 @@ public final class EditorSceneHistory {
             String backgroundAssetId,
             BackgroundTransform backgroundTransform,
             List<SceneMap> maps,
+            List<Light> lights,
             InitialCameraView initialCameraView,
             Grid grid,
             boolean fogEnabled,
@@ -543,6 +549,7 @@ public final class EditorSceneHistory {
             walls = List.copyOf(walls);
             doors = List.copyOf(doors);
             maps = List.copyOf(maps);
+            lights = List.copyOf(lights);
             revealedFog = List.copyOf(revealedFog);
             hiddenFog = List.copyOf(hiddenFog);
         }
@@ -550,7 +557,7 @@ public final class EditorSceneHistory {
         private static Environment capture(VttScene scene) {
             if (scene == null) {
                 return new Environment(List.of(), List.of(), null,
-                        BackgroundTransform.defaults(), List.of(), null, Grid.defaults(),
+                        BackgroundTransform.defaults(), List.of(), List.of(), null, Grid.defaults(),
                         false, false, List.of(), List.of());
             }
             VttFogOfWar fog = scene.getFogOfWar();
@@ -563,6 +570,8 @@ public final class EditorSceneHistory {
                     BackgroundTransform.capture(scene.getBackgroundTransform()),
                     scene.getMaps().stream().filter(java.util.Objects::nonNull)
                             .map(SceneMap::capture).toList(),
+                    scene.getLights().stream().filter(java.util.Objects::nonNull)
+                            .map(Light::capture).toList(),
                     InitialCameraView.capture(scene.getInitialCameraView()),
                     Grid.capture(scene),
                     fog.isEnabled(), fog.isDefaultHidden(),
@@ -582,6 +591,8 @@ public final class EditorSceneHistory {
             scene.setBackgroundTransform(backgroundTransform.restore());
             scene.getMaps().clear();
             maps.stream().map(SceneMap::restore).forEach(scene::addMap);
+            scene.getLights().clear();
+            lights.stream().map(Light::restore).forEach(scene::addLight);
             scene.setInitialCameraView(initialCameraView == null
                     ? null : initialCameraView.restore());
             scene.setGrid(grid.restore());
@@ -592,6 +603,37 @@ public final class EditorSceneHistory {
             fog.clearAreas();
             revealedFog.stream().map(FogArea::restore).forEach(fog::addRevealedArea);
             hiddenFog.stream().map(FogArea::restore).forEach(fog::addHiddenArea);
+        }
+    }
+
+    private record Light(
+            String id, VttLightType type, double x, double y,
+            double innerRadius, double outerRadius,
+            int colorRgb, double intensity, boolean tintEnabled, boolean enabled,
+            double directionDegrees, double outerConeAngleDegrees,
+            double innerConeAngleDegrees
+    ) {
+        private static Light capture(VttLight light) {
+            return new Light(light.getId(), light.getType(), light.getX(), light.getY(),
+                    light.getInnerRadius(), light.getOuterRadius(), light.getColorRgb(),
+                    light.getIntensity(), light.isTintEnabled(), light.isEnabled(),
+                    light.getDirectionDegrees(), light.getConeAngleDegrees(),
+                    light.getInnerConeAngleDegrees());
+        }
+
+        private VttLight restore() {
+            VttLight light = new VttLight(id, x, y);
+            light.setType(type);
+            light.setOuterRadius(outerRadius);
+            light.setInnerRadius(innerRadius);
+            light.setColorRgb(colorRgb);
+            light.setIntensity(intensity);
+            light.setTintEnabled(tintEnabled);
+            light.setEnabled(enabled);
+            light.setDirectionDegrees(directionDegrees);
+            light.setConeAngleDegrees(outerConeAngleDegrees);
+            light.setInnerConeAngleDegrees(innerConeAngleDegrees);
+            return light;
         }
     }
 

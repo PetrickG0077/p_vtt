@@ -274,6 +274,8 @@ public final class InputController {
 
     public void selectFogTool() { toolController.selectFogTool(); }
     public void selectLightTool() { toolController.selectLightTool(); }
+    public boolean selectLight(String lightId) { return toolController.selectLight(lightId); }
+    public String getSelectedLightId() { return toolController.getSelectedLightId(); }
 
     public void selectMeasureTool() { toolController.selectMeasureTool(); }
 

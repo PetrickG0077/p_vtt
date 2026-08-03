@@ -127,6 +127,15 @@ public final class ToolController {
         setActiveTool(lightTool);
     }
 
+    public boolean selectLight(String lightId) {
+        selectLightTool();
+        return lightTool.selectLight(lightId);
+    }
+
+    public String getSelectedLightId() {
+        return activeTool == lightTool ? lightTool.getSelectedLightId() : null;
+    }
+
     public void selectMeasureTool() {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();

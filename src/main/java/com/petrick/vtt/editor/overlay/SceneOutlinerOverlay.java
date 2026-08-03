@@ -4,6 +4,7 @@ import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -13,7 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-/** Lists scene maps and regular canvas objects in separate selectable sections. */
+/** Lists scene maps, canvas objects and lights in separate selectable sections. */
 public final class SceneOutlinerOverlay {
     private static final int PANEL_WIDTH = 220;
     private static final int PADDING = 8;
@@ -22,6 +23,7 @@ public final class SceneOutlinerOverlay {
     private static final int PANEL_Y = 105;
     private static final int MAX_VISIBLE_MAPS = 5;
     private static final int MAX_VISIBLE_OBJECTS = 10;
+    private static final int MAX_VISIBLE_LIGHTS = 8;
     private static final int PANEL_BACKGROUND = 0xAA000000;
     private static final int TITLE_COLOR = 0xFFFFFFFF;
     private static final int TEXT_COLOR = 0xFFDDDDDD;
@@ -29,6 +31,7 @@ public final class SceneOutlinerOverlay {
 
     private int mapScrollOffset;
     private int objectScrollOffset;
+    private int lightScrollOffset;
     private ScrollSection draggingScrollbar = ScrollSection.NONE;
 
     public void render(
@@ -37,11 +40,13 @@ public final class SceneOutlinerOverlay {
             CanvasScene canvasScene,
             VttScene vttScene,
             SelectionManager selectionManager,
-            String selectedMapId
+            String selectedMapId,
+            String selectedLightId
     ) {
         List<VttSceneMap> maps = sortedMaps(vttScene);
         List<CanvasObject> objects = canvasScene.getObjects();
-        Layout layout = layout(maps.size(), objects.size());
+        List<VttLight> lights = lights(vttScene);
+        Layout layout = layout(maps.size(), objects.size(), lights.size());
         renderPanelBackground(context, PANEL_X, PANEL_Y, PANEL_WIDTH, layout.panelHeight());
 
         int textX = PANEL_X + PADDING;
@@ -100,13 +105,40 @@ public final class SceneOutlinerOverlay {
                         EditorHudTheme.outline());
             }
         }
+
+        drawLine(context, font, "Lights: " + lights.size(),
+                textX, layout.lightsTitleY(), TEXT_COLOR);
+        if (lights.isEmpty()) {
+            drawLine(context, font, "  No lights",
+                    textX, layout.firstLightY(), MUTED_TEXT_COLOR);
+        } else {
+            for (int index = 0; index < layout.visibleLights(); index++) {
+                VttLight light = lights.get(lightScrollOffset + index);
+                boolean selected = light.getId().equals(selectedLightId);
+                String text = (selected ? "> " : "  ")
+                        + (light.isEnabled() ? "[V] " : "[H] ")
+                        + light.getType().name() + " " + light.getId();
+                drawLine(context, font, text, textX,
+                        layout.firstLightY() + index * LINE_HEIGHT,
+                        selected ? EditorHudTheme.opaqueSelection()
+                                : light.isEnabled() ? TEXT_COLOR : MUTED_TEXT_COLOR);
+            }
+            if (lights.size() > MAX_VISIBLE_LIGHTS) {
+                drawLine(context, font, range(
+                        lightScrollOffset, layout.visibleLights(), lights.size()),
+                        textX, layout.lightRangeY(), MUTED_TEXT_COLOR);
+                EditorScrollbar.render(context, scrollbarX(), layout.firstLightY(), 4,
+                        MAX_VISIBLE_LIGHTS * LINE_HEIGHT, lights.size(), MAX_VISIBLE_LIGHTS,
+                        lightScrollOffset, EditorHudTheme.outline());
+            }
+        }
     }
 
     public Optional<String> findMapIdAt(
             VttScene scene, CanvasScene canvasScene, double mouseX, double mouseY
     ) {
         List<VttSceneMap> maps = sortedMaps(scene);
-        Layout layout = layout(maps.size(), canvasScene.getObjects().size());
+        Layout layout = layout(maps.size(), canvasScene.getObjects().size(), lightCount(scene));
         if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
         for (int index = 0; index < layout.visibleMaps(); index++) {
             if (insideRow(mouseY, layout.firstMapY() + index * LINE_HEIGHT)) {
@@ -120,11 +152,26 @@ public final class SceneOutlinerOverlay {
             CanvasScene scene, VttScene vttScene, double mouseX, double mouseY
     ) {
         List<CanvasObject> objects = scene.getObjects();
-        Layout layout = layout(sortedMaps(vttScene).size(), objects.size());
+        Layout layout = layout(sortedMaps(vttScene).size(), objects.size(), lightCount(vttScene));
         if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
         for (int index = 0; index < layout.visibleObjects(); index++) {
             if (insideRow(mouseY, layout.firstObjectY() + index * LINE_HEIGHT)) {
                 return Optional.of(objects.get(objectScrollOffset + index).id());
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Optional<String> findLightIdAt(
+            CanvasScene canvasScene, VttScene vttScene, double mouseX, double mouseY
+    ) {
+        List<VttLight> lights = lights(vttScene);
+        Layout layout = layout(sortedMaps(vttScene).size(),
+                canvasScene.getObjects().size(), lights.size());
+        if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
+        for (int index = 0; index < layout.visibleLights(); index++) {
+            if (insideRow(mouseY, layout.firstLightY() + index * LINE_HEIGHT)) {
+                return Optional.of(lights.get(lightScrollOffset + index).getId());
             }
         }
         return Optional.empty();
@@ -135,12 +182,20 @@ public final class SceneOutlinerOverlay {
     ) {
         List<VttSceneMap> maps = sortedMaps(vttScene);
         int objectCount = canvasScene.getObjects().size();
-        Layout layout = layout(maps.size(), objectCount);
+        int lightCount = lightCount(vttScene);
+        Layout layout = layout(maps.size(), objectCount, lightCount);
         if (maps.size() > MAX_VISIBLE_MAPS && EditorScrollbar.contains(
                 mouseX, mouseY, scrollbarX() - 3, layout.firstMapY(),
                 10, MAX_VISIBLE_MAPS * LINE_HEIGHT)) {
             draggingScrollbar = ScrollSection.MAPS;
             updateMapScrollFromMouse(maps.size(), layout, mouseY);
+            return true;
+        }
+        if (lightCount > MAX_VISIBLE_LIGHTS && EditorScrollbar.contains(
+                mouseX, mouseY, scrollbarX() - 3, layout.firstLightY(),
+                10, MAX_VISIBLE_LIGHTS * LINE_HEIGHT)) {
+            draggingScrollbar = ScrollSection.LIGHTS;
+            updateLightScrollFromMouse(lightCount, layout, mouseY);
             return true;
         }
         if (objectCount > MAX_VISIBLE_OBJECTS && EditorScrollbar.contains(
@@ -157,9 +212,14 @@ public final class SceneOutlinerOverlay {
             CanvasScene canvasScene, VttScene vttScene, double mouseY
     ) {
         List<VttSceneMap> maps = sortedMaps(vttScene);
-        Layout layout = layout(maps.size(), canvasScene.getObjects().size());
+        int lightCount = lightCount(vttScene);
+        Layout layout = layout(maps.size(), canvasScene.getObjects().size(), lightCount);
         if (draggingScrollbar == ScrollSection.MAPS) {
             updateMapScrollFromMouse(maps.size(), layout, mouseY);
+            return true;
+        }
+        if (draggingScrollbar == ScrollSection.LIGHTS) {
+            updateLightScrollFromMouse(lightCount, layout, mouseY);
             return true;
         }
         if (draggingScrollbar == ScrollSection.OBJECTS) {
@@ -181,15 +241,19 @@ public final class SceneOutlinerOverlay {
     ) {
         List<VttSceneMap> maps = sortedMaps(vttScene);
         int objectCount = canvasScene.getObjects().size();
-        Layout layout = layout(maps.size(), objectCount);
+        int lightCount = lightCount(vttScene);
+        Layout layout = layout(maps.size(), objectCount, lightCount);
         if (!insidePanel(mouseX, mouseY, layout)) return false;
         int delta = scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0;
         if (mouseY < layout.objectsTitleY()) {
             mapScrollOffset = EditorScrollbar.clampOffset(
                     mapScrollOffset + delta, maps.size(), MAX_VISIBLE_MAPS);
-        } else {
+        } else if (mouseY < layout.lightsTitleY()) {
             objectScrollOffset = EditorScrollbar.clampOffset(
                     objectScrollOffset + delta, objectCount, MAX_VISIBLE_OBJECTS);
+        } else {
+            lightScrollOffset = EditorScrollbar.clampOffset(
+                    lightScrollOffset + delta, lightCount, MAX_VISIBLE_LIGHTS);
         }
         return true;
     }
@@ -198,16 +262,20 @@ public final class SceneOutlinerOverlay {
             CanvasScene canvasScene, VttScene vttScene, double mouseX, double mouseY
     ) {
         return insidePanel(mouseX, mouseY,
-                layout(sortedMaps(vttScene).size(), canvasScene.getObjects().size()));
+                layout(sortedMaps(vttScene).size(), canvasScene.getObjects().size(),
+                        lightCount(vttScene)));
     }
 
-    private Layout layout(int mapCount, int objectCount) {
+    private Layout layout(int mapCount, int objectCount, int lightCount) {
         mapScrollOffset = EditorScrollbar.clampOffset(
                 mapScrollOffset, mapCount, MAX_VISIBLE_MAPS);
         objectScrollOffset = EditorScrollbar.clampOffset(
                 objectScrollOffset, objectCount, MAX_VISIBLE_OBJECTS);
+        lightScrollOffset = EditorScrollbar.clampOffset(
+                lightScrollOffset, lightCount, MAX_VISIBLE_LIGHTS);
         int visibleMaps = Math.min(MAX_VISIBLE_MAPS, mapCount);
         int visibleObjects = Math.min(MAX_VISIBLE_OBJECTS, objectCount);
+        int visibleLights = Math.min(MAX_VISIBLE_LIGHTS, lightCount);
         int mapsTitleY = PANEL_Y + PADDING + LINE_HEIGHT + 4;
         int firstMapY = mapsTitleY + LINE_HEIGHT + 2;
         int mapRows = Math.max(1, visibleMaps);
@@ -216,9 +284,15 @@ public final class SceneOutlinerOverlay {
         int firstObjectY = objectsTitleY + LINE_HEIGHT + 2;
         int objectRows = Math.max(1, visibleObjects);
         int objectRangeY = firstObjectY + objectRows * LINE_HEIGHT;
-        int bottom = objectRangeY + (objectCount > MAX_VISIBLE_OBJECTS ? LINE_HEIGHT : 0);
-        return new Layout(visibleMaps, visibleObjects, mapsTitleY, firstMapY,
+        int lightsTitleY = objectRangeY
+                + (objectCount > MAX_VISIBLE_OBJECTS ? LINE_HEIGHT : 0) + 5;
+        int firstLightY = lightsTitleY + LINE_HEIGHT + 2;
+        int lightRows = Math.max(1, visibleLights);
+        int lightRangeY = firstLightY + lightRows * LINE_HEIGHT;
+        int bottom = lightRangeY + (lightCount > MAX_VISIBLE_LIGHTS ? LINE_HEIGHT : 0);
+        return new Layout(visibleMaps, visibleObjects, visibleLights, mapsTitleY, firstMapY,
                 mapRangeY, objectsTitleY, firstObjectY, objectRangeY,
+                lightsTitleY, firstLightY, lightRangeY,
                 bottom - PANEL_Y + PADDING);
     }
 
@@ -227,6 +301,15 @@ public final class SceneOutlinerOverlay {
         return scene.getMaps().stream().filter(map -> map != null)
                 .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex).reversed())
                 .toList();
+    }
+
+    private List<VttLight> lights(VttScene scene) {
+        if (scene == null) return List.of();
+        return scene.getLights().stream().filter(light -> light != null).toList();
+    }
+
+    private int lightCount(VttScene scene) {
+        return lights(scene).size();
     }
 
     private void updateMapScrollFromMouse(int count, Layout layout, double mouseY) {
@@ -239,6 +322,12 @@ public final class SceneOutlinerOverlay {
         objectScrollOffset = EditorScrollbar.offsetForMouse(
                 mouseY, layout.firstObjectY(), MAX_VISIBLE_OBJECTS * LINE_HEIGHT,
                 count, MAX_VISIBLE_OBJECTS);
+    }
+
+    private void updateLightScrollFromMouse(int count, Layout layout, double mouseY) {
+        lightScrollOffset = EditorScrollbar.offsetForMouse(
+                mouseY, layout.firstLightY(), MAX_VISIBLE_LIGHTS * LINE_HEIGHT,
+                count, MAX_VISIBLE_LIGHTS);
     }
 
     private boolean insidePanel(double x, double y, Layout layout) {
@@ -276,17 +365,21 @@ public final class SceneOutlinerOverlay {
         context.graphics().drawString(font, text, x, y, color, false);
     }
 
-    private enum ScrollSection { NONE, MAPS, OBJECTS }
+    private enum ScrollSection { NONE, MAPS, OBJECTS, LIGHTS }
 
     private record Layout(
             int visibleMaps,
             int visibleObjects,
+            int visibleLights,
             int mapsTitleY,
             int firstMapY,
             int mapRangeY,
             int objectsTitleY,
             int firstObjectY,
             int objectRangeY,
+            int lightsTitleY,
+            int firstLightY,
+            int lightRangeY,
             int panelHeight
     ) {}
 }

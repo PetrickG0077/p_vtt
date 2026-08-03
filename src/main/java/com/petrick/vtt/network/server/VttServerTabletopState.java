@@ -820,6 +820,36 @@ public final class VttServerTabletopState {
                     || !validGeometry(door.getTransform(), door.getSize())
                     || door.getWallId() != null && !wallIds.contains(door.getWallId())) return false;
         }
+        Set<String> lightIds = new HashSet<>();
+        for (var light : scene.getLights()) {
+            if (light == null || light.getId() == null || light.getId().isBlank()
+                    || light.getId().length() > 128 || !lightIds.add(light.getId())
+                    || light.getType() != com.petrick.vtt.feature.tabletop.VttLightType.POINT
+                    && light.getType() != com.petrick.vtt.feature.tabletop.VttLightType.SPOT
+                    || !Double.isFinite(light.getX()) || !Double.isFinite(light.getY())
+                    || !Double.isFinite(light.getInnerRadius())
+                    || !Double.isFinite(light.getOuterRadius())
+                    || !Double.isFinite(light.getIntensity())
+                    || !Double.isFinite(light.getDirectionDegrees())
+                    || !Double.isFinite(light.getConeAngleDegrees())
+                    || !Double.isFinite(light.getInnerConeAngleDegrees())
+                    || Math.abs(light.getX()) > 10_000_000.0
+                    || Math.abs(light.getY()) > 10_000_000.0
+                    || light.getInnerRadius() < 0.0
+                    || light.getOuterRadius() < 1.0
+                    || light.getOuterRadius() > 100_000.0
+                    || light.getInnerRadius() > light.getOuterRadius()
+                    || light.getIntensity()
+                    < com.petrick.vtt.feature.tabletop.VttLight.MIN_INTENSITY
+                    || light.getIntensity()
+                    > com.petrick.vtt.feature.tabletop.VttLight.MAX_INTENSITY
+                    || light.getConeAngleDegrees()
+                    < com.petrick.vtt.feature.tabletop.VttLight.MIN_CONE_ANGLE_DEGREES
+                    || light.getConeAngleDegrees()
+                    > com.petrick.vtt.feature.tabletop.VttLight.MAX_CONE_ANGLE_DEGREES
+                    || light.getInnerConeAngleDegrees() <= 0.0
+                    || light.getInnerConeAngleDegrees() > light.getConeAngleDegrees()) return false;
+        }
         Set<String> fogIds = new HashSet<>();
         for (VttFogArea area : scene.getFogOfWar().getHiddenAreas()) {
             if (!validHistoryFogArea(area, fogIds)) return false;

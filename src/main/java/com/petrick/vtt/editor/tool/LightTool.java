@@ -201,6 +201,21 @@ public final class LightTool implements Tool {
         return true;
     }
 
+    public boolean selectLight(String lightId) {
+        VttScene scene = sceneSupplier.get();
+        if (scene == null || lightId == null || scene.getLights().stream()
+                .noneMatch(light -> light != null && lightId.equals(light.getId()))) {
+            return false;
+        }
+        selectedId = lightId;
+        closePopup();
+        return true;
+    }
+
+    public String getSelectedLightId() {
+        return selectedLight() == null ? null : selectedId;
+    }
+
     public boolean keyPressed(int keyCode) {
         if (colorPicker.isOpen()) return colorPicker.keyPressed(keyCode);
         if (popup == Popup.NONE) return false;

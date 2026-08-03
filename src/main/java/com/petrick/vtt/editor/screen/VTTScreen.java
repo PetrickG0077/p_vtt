@@ -440,7 +440,8 @@ public final class VTTScreen extends Screen {
             if (panelVisibility.isSceneOutlinerVisible()) {
                 sceneOutlinerOverlay.render(
                         context, this.font, scene, session.getActiveScene(),
-                        selectionManager, sceneBackgroundEditor.getSelectedMapId());
+                        selectionManager, sceneBackgroundEditor.getSelectedMapId(),
+                        inputController.getSelectedLightId());
             }
             if (draggingMapDefinition != null
                     && mapDragDistance(mouseX, mouseY) >= 6.0) {
@@ -523,7 +524,8 @@ public final class VTTScreen extends Screen {
         if (session.isLocalMaster() && panelVisibility.isSceneOutlinerVisible()) {
             sceneOutlinerOverlay.render(
                     context, this.font, scene, session.getActiveScene(),
-                    selectionManager, sceneBackgroundEditor.getSelectedMapId());
+                    selectionManager, sceneBackgroundEditor.getSelectedMapId(),
+                    inputController.getSelectedLightId());
         }
 
         if (session.isLocalMaster() && panelVisibility.isSceneListVisible()) {
@@ -2695,6 +2697,13 @@ public final class VTTScreen extends Screen {
                     }
 
                     inputController.selectSelectTool();
+                    return true;
+                }
+                var clickedLightId = sceneOutlinerOverlay.findLightIdAt(
+                        scene, session.getActiveScene(), mouseX, mouseY);
+                if (clickedLightId.isPresent()) {
+                    selectionManager.clearSelection();
+                    inputController.selectLight(clickedLightId.get());
                     return true;
                 }
             }
