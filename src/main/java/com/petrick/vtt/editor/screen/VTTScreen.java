@@ -3256,11 +3256,6 @@ public final class VTTScreen extends Screen {
     ) {
         if (clickedObject == null || !clickedObject.hasSourceAttachmentDefinition()
                 || !session.isLocalMaster()) return false;
-        if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment binding requires authoritative attachment sync");
-            return true;
-        }
         selectionManager.selectOnly(clickedObject.id());
         inputController.selectSelectTool();
         canvasTokenContextMenuOverlay.close();
@@ -3346,6 +3341,12 @@ public final class VTTScreen extends Screen {
         }
         AttachmentBindingService.synchronize(
                 session.getActiveScene(), scene, Set.of());
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                    session, attachmentId, attachment.getAttachmentBinding());
+        } else {
+            saveCanvasSceneWithAttachmentBindings();
+        }
     }
 
     private CanvasObject canvasTokenContextToken() {

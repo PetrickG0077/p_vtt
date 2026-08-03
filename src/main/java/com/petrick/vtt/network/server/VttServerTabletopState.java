@@ -11,6 +11,7 @@ import com.petrick.vtt.feature.tabletop.persistence.TabletopStoragePaths;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneDuplicator;
 import net.neoforged.fml.loading.FMLPaths;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.google.gson.reflect.TypeToken;
@@ -1306,6 +1307,9 @@ public final class VttServerTabletopState {
                 case VttEnvironmentCommandPayload.LIGHT -> delete
                         ? activeScene.removeLight(command.entityId())
                         : upsertLight(command.entityId(), command.entityJson());
+                case VttEnvironmentCommandPayload.ATTACHMENT_BINDING -> delete
+                        ? clearAttachmentBinding(command.entityId())
+                        : applyAttachmentBinding(command.entityId(), command.entityJson());
                 default -> false;
             };
             if (!changed) return null;
@@ -1394,6 +1398,33 @@ public final class VttServerTabletopState {
                 activeScene, VttEnvironmentCommandPayload.WALL, id) != null) return false;
         activeScene.getWalls().removeIf(value -> value != null && id.equals(value.getId()));
         activeScene.addWall(wall);
+        return true;
+    }
+
+    private boolean applyAttachmentBinding(String attachmentId, String json) {
+        VttSceneObject attachment = activeScene.getObjects().stream()
+                .filter(object -> object != null && attachmentId.equals(object.getId()))
+                .findFirst().orElse(null);
+        VttAttachmentBinding binding = GSON.fromJson(json, VttAttachmentBinding.class);
+        if (attachment == null || !attachment.isAttachment() || binding == null
+                || !binding.isBound() || binding.getTargetObjectId() == null
+                || attachmentId.equals(binding.getTargetObjectId())) return false;
+        boolean targetIsToken = activeScene.getObjects().stream().anyMatch(object -> object != null
+                && binding.getTargetObjectId().equals(object.getId())
+                && object.getSourceTokenDefinitionId() != null
+                && !object.getSourceTokenDefinitionId().isBlank());
+        if (!targetIsToken) return false;
+        attachment.setAttachmentBinding(binding);
+        return true;
+    }
+
+    private boolean clearAttachmentBinding(String attachmentId) {
+        VttSceneObject attachment = activeScene.getObjects().stream()
+                .filter(object -> object != null && attachmentId.equals(object.getId()))
+                .findFirst().orElse(null);
+        if (attachment == null || !attachment.isAttachment()
+                || attachment.getAttachmentBinding() == null) return false;
+        attachment.setAttachmentBinding(null);
         return true;
     }
 
@@ -1626,6 +1657,12 @@ public final class VttServerTabletopState {
             case VttEnvironmentCommandPayload.LIGHT -> GSON.toJson(
                     activeScene.getLights().stream()
                             .filter(value -> value != null && id.equals(value.getId()))
+                            .findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.ATTACHMENT_BINDING -> GSON.toJson(
+                    activeScene.getObjects().stream()
+                            .filter(value -> value != null && id.equals(value.getId()))
+                            .map(VttSceneObject::getAttachmentBinding)
+                            .filter(java.util.Objects::nonNull)
                             .findFirst().orElseThrow());
             default -> throw new IllegalArgumentException("Unknown environment entity type");
         };

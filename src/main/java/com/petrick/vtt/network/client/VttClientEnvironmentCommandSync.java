@@ -13,6 +13,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -268,6 +269,14 @@ public final class VttClientEnvironmentCommandSync {
                             GSON.fromJson(update.entityJson(), VttLight.class));
                     updateLast(lastLights, update, delete);
                 }
+                case VttEnvironmentCommandPayload.ATTACHMENT_BINDING -> {
+                    session.getActiveScene().getObjects().stream()
+                            .filter(object -> object != null
+                                    && update.entityId().equals(object.getId()))
+                            .findFirst().ifPresent(object -> object.setAttachmentBinding(delete
+                                    ? null : GSON.fromJson(
+                                    update.entityJson(), VttAttachmentBinding.class)));
+                }
                 default -> VTT.LOGGER.warn("Ignored unknown VTT environment entity: {}", update.entityType());
             }
             if (acknowledgement) latestSentSequences.remove(revisionKey);
@@ -414,6 +423,20 @@ public final class VttClientEnvironmentCommandSync {
                 "darkness_color",
                 GSON.toJson(new DarknessColorConfig(
                         session.getActiveScene().getLighting().getDarknessColorRgb())));
+    }
+
+    public static void sendAttachmentBinding(
+            VTTSession session, String attachmentId, VttAttachmentBinding binding
+    ) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null
+                || attachmentId == null || attachmentId.isBlank()) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        send(binding == null ? VttEnvironmentCommandPayload.DELETE
+                        : VttEnvironmentCommandPayload.UPSERT,
+                VttEnvironmentCommandPayload.ATTACHMENT_BINDING,
+                attachmentId, binding == null ? "" : GSON.toJson(binding));
     }
 
     private static String entityKey(String entityType, String entityId) {
