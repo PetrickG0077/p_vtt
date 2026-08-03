@@ -36,6 +36,7 @@ public final class SceneOutlinerOverlay {
 
     private int mapScrollOffset;
     private int entryScrollOffset;
+    private final Set<String> collapsedObjectIds = new HashSet<>();
     private ScrollSection draggingScrollbar = ScrollSection.NONE;
 
     public void render(VRenderContext context, Font font, CanvasScene canvasScene, VttScene vttScene,
@@ -79,7 +80,9 @@ public final class SceneOutlinerOverlay {
                         : entry.id.equals(selectedLightId);
                 boolean visible = entry.object != null ? entry.object.visible() : entry.light.isEnabled();
                 String marker = selected ? "> " : "  ";
-                String text = marker + "  ".repeat(entry.depth) + entry.label;
+                String expansion = entry.expandable
+                        ? (collapsedObjectIds.contains(entry.id) ? "[+] " : "[-] ") : "    ";
+                String text = marker + "  ".repeat(entry.depth) + expansion + entry.label;
                 drawLine(context, font, text, textX, layout.firstEntryY() + index * LINE_HEIGHT,
                         selected ? EditorHudTheme.opaqueSelection() : visible ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
@@ -109,6 +112,18 @@ public final class SceneOutlinerOverlay {
                                            double mouseX, double mouseY) {
         TreeEntry entry = entryAt(canvasScene, scene, mouseX, mouseY);
         return entry != null && entry.object != null ? Optional.of(entry.id) : Optional.empty();
+    }
+
+    /** Handles the small expansion control at the beginning of a tree row. */
+    public boolean toggleExpansionAt(
+            CanvasScene canvasScene, VttScene scene, double mouseX, double mouseY
+    ) {
+        TreeEntry entry = entryAt(canvasScene, scene, mouseX, mouseY);
+        if (entry == null || entry.object == null || !entry.expandable) return false;
+        int expansionRight = PANEL_X + PADDING + 14 + entry.depth * 8 + 26;
+        if (mouseX > expansionRight) return false;
+        if (!collapsedObjectIds.add(entry.id)) collapsedObjectIds.remove(entry.id);
+        return true;
     }
 
     public Optional<String> findLightIdAt(CanvasScene canvasScene, VttScene scene,
@@ -240,8 +255,13 @@ public final class SceneOutlinerOverlay {
                               Map<String, List<CanvasObject>> children, VttScene scene,
                               Set<String> renderedObjects, Set<String> renderedLights) {
         if (!renderedObjects.add(object.id())) return;
-        entries.add(TreeEntry.object(object, depth));
-        for (CanvasObject child : children.getOrDefault(object.id(), List.of())) {
+        List<CanvasObject> childObjects = children.getOrDefault(object.id(), List.of());
+        boolean hasAttachedLights = scene != null && scene.getLights().stream()
+                .anyMatch(light -> light != null && object.id().equals(light.getAttachedToObjectId()));
+        boolean expandable = !childObjects.isEmpty() || hasAttachedLights;
+        entries.add(TreeEntry.object(object, depth, expandable));
+        if (expandable && collapsedObjectIds.contains(object.id())) return;
+        for (CanvasObject child : childObjects) {
             appendObject(entries, child, depth + 1, children, scene, renderedObjects, renderedLights);
         }
         if (scene == null) return;
@@ -301,15 +321,17 @@ public final class SceneOutlinerOverlay {
 
     private enum ScrollSection { NONE, MAPS, ENTRIES }
 
-    private record TreeEntry(String id, CanvasObject object, VttLight light, int depth, String label) {
-        private static TreeEntry object(CanvasObject object, int depth) {
+    private record TreeEntry(
+            String id, CanvasObject object, VttLight light, int depth, String label, boolean expandable
+    ) {
+        private static TreeEntry object(CanvasObject object, int depth, boolean expandable) {
             return new TreeEntry(object.id(), object, null, depth,
-                    (object.visible() ? "[V] " : "[H] ") + object.displayName());
+                    (object.visible() ? "[V] " : "[H] ") + object.displayName(), expandable);
         }
 
         private static TreeEntry light(VttLight light, int depth) {
             return new TreeEntry(light.getId(), null, light, depth,
-                    (light.isEnabled() ? "[V] " : "[H] ") + "Light: " + light.getType().name());
+                    (light.isEnabled() ? "[V] " : "[H] ") + "Light: " + light.getType().name(), false);
         }
     }
 

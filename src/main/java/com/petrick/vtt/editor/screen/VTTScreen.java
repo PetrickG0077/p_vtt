@@ -2932,6 +2932,10 @@ public final class VTTScreen extends Screen {
                         scene, session.getActiveScene(), mouseX, mouseY)) {
                     return true;
                 }
+                if (sceneOutlinerOverlay.toggleExpansionAt(
+                        scene, session.getActiveScene(), mouseX, mouseY)) {
+                    return true;
+                }
                 var clickedMapId = sceneOutlinerOverlay.findMapIdAt(
                         session.getActiveScene(), scene, mouseX, mouseY);
                 if (clickedMapId.isPresent()) {
