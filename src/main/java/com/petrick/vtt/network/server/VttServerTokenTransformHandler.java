@@ -34,9 +34,8 @@ public final class VttServerTokenTransformHandler {
             if (confirmed != null) PacketDistributor.sendToPlayer(player, confirmed);
             return;
         }
-        var update = state.applyTokenTransform(
-                request, player.getUUID().toString(), VttServerPlayerEvents.isMaster(player)
-        );
+        boolean master = VttServerPlayerEvents.isMaster(player);
+        var update = state.applyTokenTransform(request, player.getUUID().toString(), master);
         if (update == null) {
             VttServerRequestRateLimiter.reject(
                     player, VttServerRequestRateLimiter.Category.TOKEN_TRANSFORM,
@@ -50,12 +49,16 @@ public final class VttServerTokenTransformHandler {
             }
             return;
         }
+        var bindingUpdate = master ? state.currentAttachmentBindingUpdate(update.objectId()) : null;
         var dependencies = state.synchronizeAttachmentDependencies(update.objectId());
         VttServerVisionSourceSync.afterTokenTransform(
                 player.getServer(), state, update.objectId());
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
             if (VttServerVisionSourceSync.canReceiveObject(connected, state, update.objectId())) {
                 PacketDistributor.sendToPlayer(connected, update);
+            }
+            if (bindingUpdate != null) {
+                PacketDistributor.sendToPlayer(connected, bindingUpdate);
             }
             for (var attachmentUpdate : dependencies.transforms()) {
                 if (VttServerVisionSourceSync.canReceiveObject(

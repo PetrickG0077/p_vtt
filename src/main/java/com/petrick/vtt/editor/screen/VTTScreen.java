@@ -3329,6 +3329,14 @@ public final class VTTScreen extends Screen {
                                 session.getActiveScene(), scene, attachmentId);
                     }
                 }
+                case TOGGLE_FLIP -> {
+                    var binding = attachment.getAttachmentBinding();
+                    if (binding != null) {
+                        binding.setFlipOffset(!binding.isFlipOffset());
+                    }
+                }
+                case CAPTURE_OFFSET -> AttachmentBindingService.recapture(
+                        session.getActiveScene(), scene, attachmentId);
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DELETE -> {

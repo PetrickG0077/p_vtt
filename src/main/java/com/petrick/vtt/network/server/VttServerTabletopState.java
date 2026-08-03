@@ -1007,8 +1007,11 @@ public final class VttServerTabletopState {
         boolean followsPosition = binding != null && binding.isBound() && binding.isFollowPosition();
         boolean followsRotation = binding != null && binding.isBound() && binding.isFollowRotation();
         boolean followsScale = binding != null && binding.isBound() && binding.isFollowScale();
+        // Masters edit a bound attachment's local offset through the regular transform tools.
+        // The resulting world transform is captured back into the binding below.
+        boolean editingAttachmentOffset = master && attachment && binding != null && binding.isBound();
         Vec2d currentPosition = new Vec2d(object.getTransform().getX(), object.getTransform().getY());
-        Vec2d requestedDelta = followsPosition ? Vec2d.ZERO
+        Vec2d requestedDelta = followsPosition && !editingAttachmentOffset ? Vec2d.ZERO
                 : new Vec2d(request.x(), request.y()).subtract(currentPosition);
         boolean bypassCollision = attachment || master && request.bypassCollision();
         Vec2d allowedDelta;
@@ -1027,17 +1030,19 @@ public final class VttServerTabletopState {
                 && request.visible() == object.getState().isVisible()
                 && Objects.equals(request.displayName(), object.getDisplayName()));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
-        double acceptedRotation = followsRotation ? object.getTransform().getRotationDegrees()
+        double acceptedRotation = followsRotation && !editingAttachmentOffset
+                ? object.getTransform().getRotationDegrees()
                 : normalizeRotation(request.rotationDegrees());
         boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
                 || !nearlyEqual(acceptedPosition.y(), object.getTransform().getY())
                 || !nearlyEqual(acceptedRotation, object.getTransform().getRotationDegrees())
-                || !followsPosition && (object.getState().isFlippedHorizontally()
+                || (!followsPosition || editingAttachmentOffset) && (object.getState().isFlippedHorizontally()
                 != request.flippedHorizontally())
                 || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
                 || object.getState().getTintColorRgb() != (request.tintColorRgb() & 0x00FFFFFF)
                 || master && (
-                !followsScale && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
+                (!followsScale || editingAttachmentOffset)
+                && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
                 || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY()))
                 || request.layerIndex() != previousLayerIndex
                 || request.visible() != object.getState().isVisible()
@@ -1046,7 +1051,7 @@ public final class VttServerTabletopState {
         object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(acceptedRotation);
         if (master) {
-            if (!followsScale) {
+            if (!followsScale || editingAttachmentOffset) {
                 object.getTransform().setScaleX(request.scaleX());
                 object.getTransform().setScaleY(request.scaleY());
             }
@@ -1054,11 +1059,14 @@ public final class VttServerTabletopState {
             object.getState().setVisible(request.visible());
             object.setDisplayName(request.displayName());
         }
-        if (!followsPosition) {
+        if (!followsPosition || editingAttachmentOffset) {
             object.getState().setFlippedHorizontally(request.flippedHorizontally());
         }
         object.getState().setActiveStateId(request.activeStateId());
         object.getState().setTintColorRgb(request.tintColorRgb());
+        if (editingAttachmentOffset) {
+            captureAttachmentBindingFromTransform(object, binding);
+        }
         objectSpatialIndex.addOrUpdate(object);
         if (contentChanged) markActiveSceneDirty();
 
@@ -1071,6 +1079,25 @@ public final class VttServerTabletopState {
                 object.getDisplayName(), object.getState().getActiveStateId(),
                 object.getState().getTintColorRgb(),
                 playerId, movementAccepted && masterFieldsAccepted);
+    }
+
+    /** Returns the authoritative binding after a master edits a bound attachment's offset. */
+    public synchronized VttEnvironmentCommandUpdatePayload currentAttachmentBindingUpdate(
+            String attachmentId
+    ) {
+        if (activeScene == null || attachmentId == null || attachmentId.isBlank()) return null;
+        VttSceneObject attachment = activeScene.getObjects().stream()
+                .filter(object -> object != null && attachmentId.equals(object.getId()))
+                .findFirst().orElse(null);
+        if (attachment == null || !attachment.isAttachment()
+                || attachment.getAttachmentBinding() == null
+                || !attachment.getAttachmentBinding().isBound()) return null;
+        String key = VttEnvironmentCommandPayload.ATTACHMENT_BINDING + "\u0000" + attachmentId;
+        return new VttEnvironmentCommandUpdatePayload(authorityRevision,
+                nextRevision(environmentRevisions, key), 0L,
+                VttEnvironmentCommandPayload.UPSERT, activeScene.getId(),
+                VttEnvironmentCommandPayload.ATTACHMENT_BINDING, attachmentId,
+                GSON.toJson(attachment.getAttachmentBinding()), "server");
     }
 
     public synchronized VttTokenTransformUpdatePayload currentTokenTransform(
@@ -1183,6 +1210,45 @@ public final class VttServerTabletopState {
         childTransform.setScaleX(scaleX); childTransform.setScaleY(scaleY);
         child.getState().setFlippedHorizontally(flipped);
         return true;
+    }
+
+    private void captureAttachmentBindingFromTransform(
+            VttSceneObject attachment, VttAttachmentBinding binding
+    ) {
+        VttSceneObject parent = activeScene.getObjects().stream()
+                .filter(object -> object != null
+                        && binding.getTargetObjectId().equals(object.getId()))
+                .findFirst().orElse(null);
+        if (parent == null) return;
+        var childTransform = attachment.getTransform();
+        var parentTransform = parent.getTransform();
+        double offsetX = childTransform.getX() - parentTransform.getX();
+        double offsetY = childTransform.getY() - parentTransform.getY();
+        if (binding.isFollowRotation()) {
+            double radians = Math.toRadians(-parentTransform.getRotationDegrees());
+            double rotatedX = offsetX * Math.cos(radians) - offsetY * Math.sin(radians);
+            offsetY = offsetX * Math.sin(radians) + offsetY * Math.cos(radians);
+            offsetX = rotatedX;
+        }
+        if (binding.isFollowScale()) {
+            offsetX /= nonZeroScale(parentTransform.getScaleX());
+            offsetY /= nonZeroScale(parentTransform.getScaleY());
+        }
+        if (parent.getState().isFlippedHorizontally()) offsetX = -offsetX;
+        binding.setOffsetX(offsetX);
+        binding.setOffsetY(offsetY);
+        binding.setRotationOffsetDegrees(childTransform.getRotationDegrees()
+                - parentTransform.getRotationDegrees());
+        binding.setScaleMultiplierX(childTransform.getScaleX()
+                / nonZeroScale(parentTransform.getScaleX()));
+        binding.setScaleMultiplierY(childTransform.getScaleY()
+                / nonZeroScale(parentTransform.getScaleY()));
+        binding.setFlipOffset(attachment.getState().isFlippedHorizontally()
+                ^ parent.getState().isFlippedHorizontally());
+    }
+
+    private static double nonZeroScale(double value) {
+        return Double.isFinite(value) && Math.abs(value) > 0.0001 ? value : 1.0;
     }
 
     private boolean resolveAttachedLight(VttLight light, VttSceneObject attachment) {

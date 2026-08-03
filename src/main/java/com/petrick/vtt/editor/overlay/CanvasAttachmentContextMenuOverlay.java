@@ -14,7 +14,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 132;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 7;
+    private static final int ROWS = 9;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -53,9 +53,13 @@ public final class CanvasAttachmentContextMenuOverlay {
         toggle(context, 2, bound && binding.isFollowRotation(), bound);
         row(context, font, 3, "Follow scale", bound);
         toggle(context, 3, bound && binding.isFollowScale(), bound);
-        row(context, font, 4, "Detach", bound);
-        row(context, font, 5, "Duplicate", true);
-        row(context, font, 6, "Delete", true);
+        row(context, font, 4, "Follow flip", bound);
+        // flipOffset is the inverse of the UI concept: false means follow the parent flip.
+        toggle(context, 4, bound && !binding.isFlipOffset(), bound);
+        row(context, font, 5, "Capture offset", bound);
+        row(context, font, 6, "Detach", bound);
+        row(context, font, 7, "Duplicate", true);
+        row(context, font, 8, "Delete", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
     }
@@ -88,10 +92,14 @@ public final class CanvasAttachmentContextMenuOverlay {
                         : Interaction.handled();
                 case 3 -> bound ? new Interaction(Action.TOGGLE_SCALE, null, true)
                         : Interaction.handled();
-                case 4 -> bound ? new Interaction(Action.DETACH, null, true)
+                case 4 -> bound ? new Interaction(Action.TOGGLE_FLIP, null, true)
                         : Interaction.handled();
-                case 5 -> new Interaction(Action.DUPLICATE, null, true);
-                case 6 -> new Interaction(Action.DELETE, null, true);
+                case 5 -> bound ? new Interaction(Action.CAPTURE_OFFSET, null, true)
+                        : Interaction.handled();
+                case 6 -> bound ? new Interaction(Action.DETACH, null, true)
+                        : Interaction.handled();
+                case 7 -> new Interaction(Action.DUPLICATE, null, true);
+                case 8 -> new Interaction(Action.DELETE, null, true);
                 default -> Interaction.handled();
             };
         }
@@ -178,7 +186,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     }
 
     public enum Action {
-        NONE, BIND, TOGGLE_POSITION, TOGGLE_ROTATION, TOGGLE_SCALE,
+        NONE, BIND, TOGGLE_POSITION, TOGGLE_ROTATION, TOGGLE_SCALE, TOGGLE_FLIP, CAPTURE_OFFSET,
         DETACH, DUPLICATE, DELETE
     }
 
