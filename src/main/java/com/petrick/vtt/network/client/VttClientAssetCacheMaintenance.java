@@ -135,7 +135,7 @@ final class VttClientAssetCacheMaintenance {
 
     private static long removeUnindexedActiveFiles(Path root, Set<String> retained) throws IOException {
         long removed = 0L;
-        for (String category : List.of("assets", "tokens")) {
+        for (String category : List.of("assets", "tokens", "maps", "attachments")) {
             Path categoryRoot = root.resolve(category);
             if (!Files.isDirectory(categoryRoot, LinkOption.NOFOLLOW_LINKS)) continue;
             try (var paths = Files.walk(categoryRoot)) {

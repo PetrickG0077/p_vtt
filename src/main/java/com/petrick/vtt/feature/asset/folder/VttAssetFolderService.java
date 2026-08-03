@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.petrick.vtt.VTT;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.tabletop.VttTabletop;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
@@ -72,6 +73,15 @@ public final class VttAssetFolderService {
             MapDefinitionRegistry maps,
             TokenDefinitionRegistry tokens
     ) {
+        applyMetadata(tabletop, maps, tokens, null);
+    }
+
+    public synchronized void applyMetadata(
+            VttTabletop tabletop,
+            MapDefinitionRegistry maps,
+            TokenDefinitionRegistry tokens,
+            AttachmentDefinitionRegistry attachments
+    ) {
         if (tabletop != null) {
             for (Section section : Section.values()) {
                 tabletop.setCatalogFolders(section.name(), folders(section));
@@ -90,6 +100,10 @@ public final class VttAssetFolderService {
             tokens.clearFolders();
             itemFolders.getOrDefault(Section.TOKENS, Map.of())
                     .forEach(tokens::setFolder);
+        }
+        if (attachments != null) {
+            itemFolders.getOrDefault(Section.ATTACHMENTS, Map.of())
+                    .forEach(attachments::setFolder);
         }
     }
 
@@ -170,6 +184,7 @@ public final class VttAssetFolderService {
                         case SCENES -> "id";
                         case MAPS -> "mapDefinitionId";
                         case TOKENS -> "tokenDefinitionId";
+                        case ATTACHMENTS -> "attachmentDefinitionId";
                     };
                     if (json.has(idField) && json.get(idField).isJsonPrimitive()) {
                         String newId = uniqueCopyId(
@@ -621,6 +636,7 @@ public final class VttAssetFolderService {
                 case SCENES -> "id";
                 case MAPS -> "mapDefinitionId";
                 case TOKENS -> "tokenDefinitionId";
+                case ATTACHMENTS -> "attachmentDefinitionId";
             };
             return json.has(field) && json.get(field).isJsonPrimitive()
                     ? json.get(field).getAsString() : null;
@@ -676,6 +692,7 @@ public final class VttAssetFolderService {
             case SCENES -> created.resolve("tabletops").resolve(tabletopId).resolve("scenes");
             case MAPS -> created.resolve("maps");
             case TOKENS -> created.resolve("tokens");
+            case ATTACHMENTS -> created.resolve("attachments");
         }).toAbsolutePath().normalize();
     }
 
@@ -717,7 +734,7 @@ public final class VttAssetFolderService {
         }
     }
 
-    public enum Section { SCENES, MAPS, TOKENS }
+    public enum Section { SCENES, MAPS, TOKENS, ATTACHMENTS }
 
     public record FolderInspection(
             boolean exists,

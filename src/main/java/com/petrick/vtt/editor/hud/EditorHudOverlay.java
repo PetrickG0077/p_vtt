@@ -123,7 +123,7 @@ public final class EditorHudOverlay {
                 state.canRedo(), false));
 
         if (state.master()) {
-            int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
+            int bottomWidth = PADDING * 2 + size * 5 + GAP * 4;
             int bottomX = (screenWidth - bottomWidth) / 2 + PADDING;
             int bottomY = screenHeight - MARGIN - PADDING - size;
             result.add(button(Action.SCENES, bottomX, bottomY, size, "", "Scenes", true,
@@ -134,6 +134,9 @@ public final class EditorHudOverlay {
             bottomX += size + GAP;
             result.add(button(Action.TOKENS, bottomX, bottomY, size, "", "Tokens", true,
                     state.tokensOpen()));
+            bottomX += size + GAP;
+            result.add(button(Action.ATTACHMENTS, bottomX, bottomY, size, "", "Attachments", true,
+                    state.attachmentsOpen()));
             bottomX += size + GAP;
             result.add(button(Action.CREATION, bottomX, bottomY, size, "", "Asset Manager",
                     true, state.creationOpen()));
@@ -170,7 +173,7 @@ public final class EditorHudOverlay {
                 size + PADDING * 2, rightHeight);
 
         if (state.master()) {
-            int bottomWidth = PADDING * 2 + size * 4 + GAP * 3;
+            int bottomWidth = PADDING * 2 + size * 5 + GAP * 4;
             renderPanel(context, (screenWidth - bottomWidth) / 2,
                     screenHeight - MARGIN - PADDING * 2 - size,
                     bottomWidth, size + PADDING * 2);
@@ -586,7 +589,8 @@ public final class EditorHudOverlay {
     }
 
     private ResourceLocation icon(Action action) {
-        String fileName = action.name().toLowerCase(Locale.ROOT) + ".png";
+        String fileName = action == Action.ATTACHMENTS
+                ? "tokens.png" : action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
     }
@@ -626,6 +630,7 @@ public final class EditorHudOverlay {
         SCENES,
         MAPS,
         TOKENS,
+        ATTACHMENTS,
         CREATION;
 
         private boolean isPopup() {
@@ -648,6 +653,7 @@ public final class EditorHudOverlay {
             boolean scenesOpen,
             boolean mapsOpen,
             boolean tokensOpen,
+            boolean attachmentsOpen,
             boolean outlinerOpen,
             List<VttPlayerOption> players,
             List<VttOwnedTokenOption> ownedTokens,

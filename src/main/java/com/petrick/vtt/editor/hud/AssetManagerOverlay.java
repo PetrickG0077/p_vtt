@@ -1,6 +1,9 @@
 package com.petrick.vtt.editor.hud;
 
 import com.petrick.vtt.VTT;
+import com.petrick.vtt.feature.attachment.AttachmentDefinition;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.AssetRef;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
@@ -33,7 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Central searchable manager for scene, map and token definitions. */
+/** Central searchable manager for scene, map, token and attachment definitions. */
 public final class AssetManagerOverlay {
     private static final int CARD_WIDTH = 112;
     private static final int CARD_HEIGHT = 116;
@@ -64,6 +67,7 @@ public final class AssetManagerOverlay {
     private final CanvasVisualRenderer visualRenderer =
             new CanvasVisualRenderer(new AnimatedTextureService());
     private final SceneThumbnailRenderer sceneThumbnailRenderer;
+    private AttachmentDefinitionRegistry attachments = new AttachmentDefinitionRegistry();
 
     private Section section = Section.SCENES;
     private String search = "";
@@ -94,6 +98,11 @@ public final class AssetManagerOverlay {
             scrollRows.put(candidate, 0);
             currentFolders.put(candidate, "");
         }
+    }
+
+    public void setAttachmentRegistry(AttachmentDefinitionRegistry attachments) {
+        this.attachments = attachments == null
+                ? new AttachmentDefinitionRegistry() : attachments;
     }
 
     public void render(
@@ -783,6 +792,13 @@ public final class AssetManagerOverlay {
                         CreatedTokenStorage.isUserCreatedToken(token),
                         CreatedTokenStorage.isUserCreatedToken(token), false,
                         tokens.folderOf(token.id()))));
+        attachments.getAll().stream()
+                .sorted(Comparator.comparing(AttachmentDefinition::displayName))
+                .forEach(attachment -> result.add(new Item(
+                        Section.ATTACHMENTS, attachment.id(), attachment.displayName(), attachment,
+                        CreatedAttachmentStorage.isUserCreatedAttachment(attachment),
+                        CreatedAttachmentStorage.isUserCreatedAttachment(attachment), false,
+                        attachments.folderOf(attachment.id()))));
         return result;
     }
 
@@ -891,6 +907,23 @@ public final class AssetManagerOverlay {
                         fitted.right(), fitted.bottom());
                 return;
             }
+        }
+        if (item.value() instanceof AttachmentDefinition attachment) {
+            Texture texture = texture(attachment.assetId(), assets, thumbnails);
+            if (texture != null) {
+                Bounds fitted = fitInside(bounds, texture.width(), texture.height());
+                context.graphics().blit(
+                        texture.location(), fitted.x(), fitted.y(), fitted.width(), fitted.height(),
+                        0.0F, 0.0F, texture.width(), texture.height(),
+                        texture.width(), texture.height());
+                return;
+            }
+            int size = Math.min(42, Math.min(bounds.width(), bounds.height()));
+            int left = bounds.x() + (bounds.width() - size) / 2;
+            int top = bounds.y() + (bounds.height() - size) / 2;
+            context.graphics().fill(left, top, left + size, top + size, 0xCC278CFF);
+            border(context, new Bounds(left, top, size, size), 0xFF66CCFF);
+            return;
         }
         context.graphics().blit(
                 SCENE_ICON, bounds.x() + (bounds.width() - 32) / 2,
@@ -1008,8 +1041,11 @@ public final class AssetManagerOverlay {
     }
 
     private Bounds tabBounds(Bounds panel, Section section) {
-        return new Bounds(panel.x() + 1 + section.ordinal() * 140,
-                panel.y() + HEADER_HEIGHT, 140, TABS_HEIGHT);
+        int tabWidth = Math.max(1, (panel.width() - 2) / Section.values().length);
+        int x = panel.x() + 1 + section.ordinal() * tabWidth;
+        int width = section == Section.values()[Section.values().length - 1]
+                ? panel.right() - 1 - x : tabWidth;
+        return new Bounds(x, panel.y() + HEADER_HEIGHT, width, TABS_HEIGHT);
     }
 
     private void renderBreadcrumbs(
@@ -1341,7 +1377,8 @@ public final class AssetManagerOverlay {
     public enum Section {
         SCENES("Scenes", SCENE_ICON),
         MAPS("Maps", MAP_ICON),
-        TOKENS("Tokens", TOKEN_ICON);
+        TOKENS("Tokens", TOKEN_ICON),
+        ATTACHMENTS("Attachments", TOKEN_ICON);
         private final String label;
         private final ResourceLocation icon;
         Section(String label, ResourceLocation icon) {

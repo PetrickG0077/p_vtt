@@ -21,6 +21,7 @@ public final class EditorPanelVisibility {
     private boolean sceneOutlinerVisible = false;
     private boolean sceneListVisible = false;
     private boolean mapCatalogVisible = false;
+    private boolean attachmentCatalogVisible = false;
 
     public boolean isHelpVisible() {
         return helpVisible;
@@ -47,6 +48,7 @@ public final class EditorPanelVisibility {
     }
     public boolean isSceneListVisible() { return sceneListVisible; }
     public boolean isMapCatalogVisible() { return mapCatalogVisible; }
+    public boolean isAttachmentCatalogVisible() { return attachmentCatalogVisible; }
 
     public void toggleHelp() {
         helpVisible = !helpVisible;
@@ -69,6 +71,7 @@ public final class EditorPanelVisibility {
         if (tokenCatalogVisible) {
             sceneListVisible = false;
             mapCatalogVisible = false;
+            attachmentCatalogVisible = false;
         }
     }
 
@@ -80,6 +83,7 @@ public final class EditorPanelVisibility {
         if (sceneListVisible) {
             tokenCatalogVisible = false;
             mapCatalogVisible = false;
+            attachmentCatalogVisible = false;
         }
     }
 
@@ -88,6 +92,16 @@ public final class EditorPanelVisibility {
         if (mapCatalogVisible) {
             sceneListVisible = false;
             tokenCatalogVisible = false;
+            attachmentCatalogVisible = false;
+        }
+    }
+
+    public void toggleAttachmentCatalog() {
+        attachmentCatalogVisible = !attachmentCatalogVisible;
+        if (attachmentCatalogVisible) {
+            sceneListVisible = false;
+            mapCatalogVisible = false;
+            tokenCatalogVisible = false;
         }
     }
 
@@ -95,6 +109,7 @@ public final class EditorPanelVisibility {
         tokenCatalogVisible = false;
         sceneListVisible = false;
         mapCatalogVisible = false;
+        attachmentCatalogVisible = false;
     }
 
     public void hideMasterPanels() {
@@ -103,6 +118,7 @@ public final class EditorPanelVisibility {
         sceneOutlinerVisible = false;
         sceneListVisible = false;
         mapCatalogVisible = false;
+        attachmentCatalogVisible = false;
         selectionInspectorVisible = false;
     }
 
@@ -114,6 +130,7 @@ public final class EditorPanelVisibility {
         sceneOutlinerVisible = false;
         sceneListVisible = false;
         mapCatalogVisible = false;
+        attachmentCatalogVisible = false;
     }
 
     public void showAllEditorPanels() {
@@ -124,5 +141,6 @@ public final class EditorPanelVisibility {
         sceneOutlinerVisible = true;
         sceneListVisible = false;
         mapCatalogVisible = false;
+        attachmentCatalogVisible = false;
     }
 }

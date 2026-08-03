@@ -9,12 +9,14 @@ import com.petrick.vtt.editor.catalog.AssetCatalogController;
 import com.petrick.vtt.editor.catalog.AssetCatalogItem;
 import com.petrick.vtt.editor.catalog.AssetCatalogSelection;
 import com.petrick.vtt.editor.catalog.AssetCatalogVisibleRow;
+import com.petrick.vtt.editor.catalog.AttachmentCatalogSelection;
 import com.petrick.vtt.editor.catalog.MapCatalogSelection;
 import com.petrick.vtt.editor.catalog.MapCatalogContextMenu;
 import com.petrick.vtt.editor.catalog.TokenCatalogClickResult;
 import com.petrick.vtt.editor.catalog.TokenCatalogController;
 import com.petrick.vtt.editor.catalog.TokenCatalogSelection;
 import com.petrick.vtt.editor.dialog.TokenCreationDialog;
+import com.petrick.vtt.editor.dialog.AttachmentDefinitionDialog;
 import com.petrick.vtt.editor.input.InputController;
 import com.petrick.vtt.editor.hud.EditorHudOverlay;
 import com.petrick.vtt.editor.hud.EditorHudTheme;
@@ -24,6 +26,7 @@ import com.petrick.vtt.editor.hud.AssetBatchDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetFolderDeleteConfirmationOverlay;
 import com.petrick.vtt.editor.hud.AssetManagerOverlay;
 import com.petrick.vtt.editor.overlay.AssetCatalogOverlay;
+import com.petrick.vtt.editor.overlay.AttachmentCatalogOverlay;
 import com.petrick.vtt.editor.overlay.DebugOverlay;
 import com.petrick.vtt.editor.overlay.HelpOverlay;
 import com.petrick.vtt.editor.overlay.MapCatalogOverlay;
@@ -40,6 +43,9 @@ import com.petrick.vtt.editor.token.TokenCreationDraft;
 import com.petrick.vtt.editor.token.VttOwnedTokenOption;
 import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.attachment.AttachmentDefinition;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
 import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
@@ -129,6 +135,7 @@ public final class VTTScreen extends Screen {
 
     private final TokenDefinitionRegistry tokenDefinitionRegistry;
     private final MapDefinitionRegistry mapDefinitionRegistry;
+    private final AttachmentDefinitionRegistry attachmentDefinitionRegistry;
 
     private final CanvasScene scene;
 
@@ -175,7 +182,11 @@ public final class VTTScreen extends Screen {
     private final TokenCatalogController tokenCatalogController;
     private final MapCatalogOverlay mapCatalogOverlay;
     private final MapCatalogSelection mapCatalogSelection;
+    private final AttachmentCatalogOverlay attachmentCatalogOverlay;
+    private final AttachmentCatalogSelection attachmentCatalogSelection;
+    private final AttachmentDefinitionDialog attachmentDefinitionDialog;
     private int mapCatalogScrollOffset;
+    private int attachmentCatalogScrollOffset;
     private boolean draggingMapCatalogScrollbar;
     private MapDefinition draggingMapDefinition;
     private double mapDragStartX;
@@ -330,6 +341,7 @@ public final class VTTScreen extends Screen {
         this.assetRegistry = session.getAssetRegistry();
         this.tokenDefinitionRegistry = session.getTokenDefinitionRegistry();
         this.mapDefinitionRegistry = session.getMapDefinitionRegistry();
+        this.attachmentDefinitionRegistry = session.getAttachmentDefinitionRegistry();
         this.scene = session.getCanvasScene();
 
         this.selectionManager = new SelectionManager();
@@ -343,6 +355,7 @@ public final class VTTScreen extends Screen {
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
         this.editorHudOverlay = new EditorHudOverlay();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
+        this.assetManagerOverlay.setAttachmentRegistry(attachmentDefinitionRegistry);
         this.editorSettingsOverlay = new EditorSettingsOverlay();
         this.sceneBackgroundEditor = new SceneBackgroundEditor(
                 assetRegistry, session.getAssetThumbnailRegistry());
@@ -362,6 +375,9 @@ public final class VTTScreen extends Screen {
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
         this.mapCatalogOverlay = new MapCatalogOverlay();
         this.mapCatalogSelection = new MapCatalogSelection();
+        this.attachmentCatalogOverlay = new AttachmentCatalogOverlay();
+        this.attachmentCatalogSelection = new AttachmentCatalogSelection();
+        this.attachmentDefinitionDialog = new AttachmentDefinitionDialog();
 
         this.sceneOutlinerOverlay = new SceneOutlinerOverlay();
         this.sceneListOverlay = new SceneListOverlay();
@@ -511,6 +527,12 @@ public final class VTTScreen extends Screen {
                     context, this.font, mapDefinitionRegistry, mapCatalogSelection,
                     assetRegistry, session.getAssetThumbnailRegistry(), mapCatalogScrollOffset);
         }
+        if (session.isLocalMaster() && panelVisibility.isAttachmentCatalogVisible()) {
+            attachmentCatalogOverlay.render(
+                    context, this.font, attachmentDefinitionRegistry,
+                    attachmentCatalogSelection, assetRegistry,
+                    session.getAssetThumbnailRegistry(), attachmentCatalogScrollOffset);
+        }
         if (mapPickerActive) {
             mapCatalogOverlay.render(
                     context, this.font, mapDefinitionRegistry, mapCatalogSelection,
@@ -600,6 +622,10 @@ public final class VTTScreen extends Screen {
         }
         if (newMapNameBuffer != null && !backgroundImagePickerActive) {
             renderNewMapDialog(context);
+        }
+        if (attachmentDefinitionDialog.isOpen() && !backgroundImagePickerActive) {
+            attachmentDefinitionDialog.render(context, this.font,
+                    assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS));
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
@@ -772,6 +798,7 @@ public final class VTTScreen extends Screen {
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isMapCatalogVisible(),
                 panelVisibility.isTokenCatalogVisible(),
+                panelVisibility.isAttachmentCatalogVisible(),
                 panelVisibility.isSceneOutlinerVisible(), getConnectedPlayerOptions(),
                 getOwnedTokenOptions(),
                 session.getLocalPlayerId(),
@@ -901,6 +928,7 @@ public final class VTTScreen extends Screen {
                 case SCENES -> beginNewSceneDialog();
                 case MAPS -> beginNewMapDialog();
                 case TOKENS -> beginCreateTokenDefinition();
+                case ATTACHMENTS -> beginNewAttachmentDialog();
             }
             return;
         }
@@ -920,6 +948,8 @@ public final class VTTScreen extends Screen {
                 case MAPS -> beginEditSelectedMapDialog();
                 case TOKENS -> tokenDefinitionRegistry.findById(interaction.id())
                         .ifPresent(this::beginEditTokenDefinition);
+                case ATTACHMENTS -> attachmentDefinitionRegistry.findById(interaction.id())
+                        .ifPresent(this::beginEditAttachmentDialog);
             }
         } else if (interaction.action() == AssetManagerOverlay.Action.DELETE) {
             beginAssetManagerDeletion(interaction.section(), interaction.id());
@@ -1503,6 +1533,8 @@ public final class VTTScreen extends Screen {
                             tokenCatalogSelection.getSelectedTokenDefinitionId());
                 }
             });
+            case ATTACHMENTS -> attachmentDefinitionRegistry.findById(id)
+                    .ifPresent(this::duplicateAttachmentDefinition);
         }
     }
 
@@ -1660,6 +1692,12 @@ public final class VTTScreen extends Screen {
                 } else if (!findDefinitionUsages(section, entry.id()).isEmpty()) {
                     blocked.add("Token is used in a scene: " + definition.displayName());
                 }
+            } else if (section == AssetManagerOverlay.Section.ATTACHMENTS) {
+                AttachmentDefinition definition = attachmentDefinitionRegistry
+                        .findById(entry.id()).orElse(null);
+                if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) {
+                    blocked.add("Attachment cannot be deleted: " + entry.id());
+                }
             } else if (!session.getActiveTabletop().getSceneIds().contains(entry.id())) {
                 blocked.add("Scene no longer exists: " + entry.id());
             }
@@ -1759,6 +1797,13 @@ public final class VTTScreen extends Screen {
                     blockedMessage = "Remove every placed token before deleting this definition.";
                 }
             }
+            case ATTACHMENTS -> {
+                AttachmentDefinition definition =
+                        attachmentDefinitionRegistry.findById(id).orElse(null);
+                if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return null;
+                typeLabel = "Attachment";
+                displayName = definition.displayName();
+            }
             default -> {
                 return null;
             }
@@ -1850,6 +1895,8 @@ public final class VTTScreen extends Screen {
                     ? null : session.getActiveTabletop().getActiveSceneId();
             case MAPS -> mapCatalogSelection.getSelectedMapDefinitionId();
             case TOKENS -> tokenCatalogSelection.getSelectedTokenDefinitionId();
+            case ATTACHMENTS -> attachmentCatalogSelection
+                    .getSelectedAttachmentDefinitionId();
         };
         assetManagerOverlay.openFolder(target, targetFolder);
         assetManagerOverlay.select(target, selectedId);
@@ -1868,6 +1915,7 @@ public final class VTTScreen extends Screen {
             }
             case MAPS -> mapCatalogSelection.select(id);
             case TOKENS -> tokenCatalogSelection.select(id);
+            case ATTACHMENTS -> attachmentCatalogSelection.select(id);
         }
     }
 
@@ -1982,6 +2030,8 @@ public final class VTTScreen extends Screen {
                     mapDefinitionRegistry.findById(refreshed.id()).orElse(null));
             case TOKENS -> tokenDefinitionRegistry.findById(refreshed.id())
                     .ifPresent(this::deleteTokenDefinitionFromManager);
+            case ATTACHMENTS -> attachmentDefinitionRegistry.findById(refreshed.id())
+                    .ifPresent(this::deleteAttachmentDefinition);
         }
         pendingAssetDeletion = null;
     }
@@ -2186,6 +2236,10 @@ public final class VTTScreen extends Screen {
             }
             case TOKENS -> {
                 if (master) panelVisibility.toggleTokenCatalog();
+                closeHudPopups();
+            }
+            case ATTACHMENTS -> {
+                if (master) panelVisibility.toggleAttachmentCatalog();
                 closeHudPopups();
             }
             case CREATION -> {
@@ -2466,6 +2520,13 @@ public final class VTTScreen extends Screen {
             if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) return true;
             return handleNewMapDialogMouseClicked(mouseX, mouseY, button);
         }
+        if (attachmentDefinitionDialog.isOpen()) {
+            if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) return true;
+            handleAttachmentDialogAction(attachmentDefinitionDialog.mouseClicked(
+                    mouseX, mouseY, button, this.width, this.height));
+            return true;
+        }
+
         if (renamingSceneId != null || pendingDeleteSceneId != null) return true;
 
         if (handleBackgroundImagePickerMouseClicked(mouseX, mouseY, button)) {
@@ -2630,6 +2691,21 @@ public final class VTTScreen extends Screen {
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            if (panelVisibility.isAttachmentCatalogVisible()
+                    && attachmentCatalogOverlay.contains(attachmentDefinitionRegistry,
+                    this.width, this.height, mouseX, mouseY)) {
+                if (attachmentCatalogOverlay.openFolderAt(attachmentDefinitionRegistry,
+                        this.width, this.height, mouseX, mouseY,
+                        attachmentCatalogScrollOffset)) {
+                    attachmentCatalogScrollOffset = 0;
+                } else {
+                    AttachmentDefinition definition = attachmentCatalogOverlay.findAt(
+                            attachmentDefinitionRegistry, this.width, this.height,
+                            mouseX, mouseY, attachmentCatalogScrollOffset);
+                    if (definition != null) attachmentCatalogSelection.select(definition.id());
+                }
+                return true;
+            }
             if (handleMapCatalogPlacementMouseClicked(mouseX, mouseY, button)) return true;
 
             TokenCatalogClickResult tokenCatalogClickResult =
@@ -3285,6 +3361,7 @@ public final class VTTScreen extends Screen {
         if (mapPickerActive) return true;
         if (newSceneNameBuffer != null) return true;
         if (newMapNameBuffer != null) return true;
+        if (attachmentDefinitionDialog.isOpen()) return true;
 
         if (tokenCreationDraft != null) {
             return true;
@@ -3388,6 +3465,7 @@ public final class VTTScreen extends Screen {
         }
         if (newSceneNameBuffer != null) return true;
         if (newMapNameBuffer != null) return true;
+        if (attachmentDefinitionDialog.isOpen()) return true;
 
         if (tokenCreationDraft != null) {
             return true;
@@ -3469,6 +3547,7 @@ public final class VTTScreen extends Screen {
         }
         if (newSceneNameBuffer != null) return true;
         if (newMapNameBuffer != null) return true;
+        if (attachmentDefinitionDialog.isOpen()) return true;
 
         if (tokenCreationDraft != null && tokenImagePickerActive) {
             if (assetCatalogController.mouseScrolled(
@@ -3514,6 +3593,15 @@ public final class VTTScreen extends Screen {
             mapCatalogScrollOffset = mapCatalogOverlay.clampScrollOffset(
                     mapDefinitionRegistry,
                     mapCatalogScrollOffset + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0));
+            return true;
+        }
+        if (panelVisibility.isAttachmentCatalogVisible()
+                && attachmentCatalogOverlay.contains(attachmentDefinitionRegistry,
+                this.width, this.height, mouseX, mouseY)) {
+            attachmentCatalogScrollOffset = attachmentCatalogOverlay.clamp(
+                    attachmentDefinitionRegistry,
+                    attachmentCatalogScrollOffset
+                            + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0));
             return true;
         }
 
@@ -3733,6 +3821,17 @@ public final class VTTScreen extends Screen {
                 closeNewMapDialog();
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !newMapNameBuffer.isEmpty()) {
                 newMapNameBuffer = newMapNameBuffer.substring(0, newMapNameBuffer.length() - 1);
+            }
+            return true;
+        }
+
+        if (attachmentDefinitionDialog.isOpen()) {
+            if (backgroundImagePickerActive) {
+                if (keyCode == GLFW.GLFW_KEY_ESCAPE) closeBackgroundImagePicker();
+                else assetCatalogController.keyPressed(keyCode, getKeyboardModifiers());
+            } else {
+                handleAttachmentDialogAction(
+                        attachmentDefinitionDialog.keyPressed(keyCode));
             }
             return true;
         }
@@ -4342,6 +4441,7 @@ public final class VTTScreen extends Screen {
             tokenCatalogContextMenu.close();
             closeNewSceneDialog();
             closeNewMapDialog();
+            attachmentDefinitionDialog.close();
             cancelRename();
             inputController.selectHandTool();
             closeHudPopups();
@@ -4385,6 +4485,9 @@ public final class VTTScreen extends Screen {
         }
         if (backgroundPickerTarget == BackgroundPickerTarget.NEW_MAP) {
             return applyNewMapImageSelection(item);
+        }
+        if (backgroundPickerTarget == BackgroundPickerTarget.NEW_ATTACHMENT) {
+            return applyAttachmentImageSelection(item);
         }
         if (backgroundPickerTarget == BackgroundPickerTarget.ACTIVE_SCENE
                 && isSelectableBackgroundImage(item)) {
@@ -4771,6 +4874,12 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (attachmentDefinitionDialog.isOpen()) {
+            if (backgroundImagePickerActive) assetCatalogController.charTyped(codePoint);
+            else attachmentDefinitionDialog.charTyped(codePoint);
+            return true;
+        }
+
         if (backgroundImagePickerActive) {
             assetCatalogController.charTyped(codePoint);
             return true;
@@ -5088,6 +5197,173 @@ public final class VTTScreen extends Screen {
         newMapTextureMode = MapTextureMode.STRETCH;
         newMapTextureModeListOpen = false;
         clearNewMapImage();
+    }
+
+    private void beginNewAttachmentDialog() {
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show(
+                    "Server attachment editing will be enabled with authoritative attachment sync");
+            returnToAssetManagerIfRequested();
+            return;
+        }
+        attachmentDefinitionDialog.openNew();
+    }
+
+    private void beginEditAttachmentDialog(AttachmentDefinition definition) {
+        if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) {
+            VttClientEditorNotice.show("Select a user-created attachment first");
+            returnToAssetManagerIfRequested();
+            return;
+        }
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show(
+                    "Server attachment editing will be enabled with authoritative attachment sync");
+            returnToAssetManagerIfRequested();
+            return;
+        }
+        MapPreview preview = resolveAttachmentPreview(definition);
+        attachmentDefinitionDialog.openEdit(definition,
+                preview == null ? null : preview.texture(),
+                preview == null ? 0 : preview.width(),
+                preview == null ? 0 : preview.height());
+    }
+
+    private void handleAttachmentDialogAction(AttachmentDefinitionDialog.Action action) {
+        if (action == AttachmentDefinitionDialog.Action.CHOOSE_IMAGE) {
+            openBackgroundImagePicker(BackgroundPickerTarget.NEW_ATTACHMENT);
+        } else if (action == AttachmentDefinitionDialog.Action.SAVE) {
+            confirmAttachmentDefinition();
+        } else if (action == AttachmentDefinitionDialog.Action.CANCEL) {
+            closeAttachmentDialog();
+        }
+    }
+
+    private void confirmAttachmentDefinition() {
+        if (!attachmentDefinitionDialog.valid()) {
+            VttClientEditorNotice.show("Enter a name and a size between 1 and 16000 px");
+            return;
+        }
+        try {
+            String editingId = attachmentDefinitionDialog.editingId();
+            AttachmentDefinition existing = editingId == null ? null
+                    : attachmentDefinitionRegistry.findById(editingId).orElse(null);
+            AttachmentDefinition definition = existing == null
+                    ? CreatedAttachmentStorage.createDefinition(
+                    attachmentDefinitionDialog.name(), attachmentDefinitionDialog.assetId(),
+                    attachmentDefinitionDialog.parsedWidth(),
+                    attachmentDefinitionDialog.parsedHeight())
+                    : CreatedAttachmentStorage.updateDefinition(
+                    existing, attachmentDefinitionDialog.name(),
+                    attachmentDefinitionDialog.assetId(),
+                    attachmentDefinitionDialog.parsedWidth(),
+                    attachmentDefinitionDialog.parsedHeight());
+            String folder = existing == null
+                    ? assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS)
+                    : attachmentDefinitionRegistry.folderOf(existing.id());
+            java.nio.file.Path targetFolder = CreatedAttachmentStorage.getAttachmentsFolder();
+            if (folder != null && !folder.isBlank()) targetFolder = targetFolder.resolve(folder);
+            if (!CreatedAttachmentStorage.save(definition, targetFolder)) {
+                VttClientEditorNotice.show("Could not save attachment");
+                return;
+            }
+            attachmentDefinitionRegistry.register(definition, folder);
+            attachmentCatalogSelection.select(definition.id());
+            VttClientEditorNotice.show((existing == null ? "Attachment created: "
+                    : "Attachment updated: ") + definition.displayName());
+            closeAttachmentDialog();
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error("Failed to save VTT attachment", exception);
+            VttClientEditorNotice.show("Could not save attachment");
+        }
+    }
+
+    private void closeAttachmentDialog() {
+        attachmentDefinitionDialog.close();
+        closeBackgroundImagePicker();
+        returnToAssetManagerIfRequested();
+    }
+
+    private void duplicateAttachmentDefinition(AttachmentDefinition definition) {
+        if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return;
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show(
+                    "Server attachment editing will be enabled with authoritative attachment sync");
+            return;
+        }
+        try {
+            AttachmentDefinition duplicate = CreatedAttachmentStorage.duplicate(definition);
+            attachmentDefinitionRegistry.register(
+                    duplicate, CreatedAttachmentStorage.folderOf(duplicate));
+            attachmentCatalogSelection.select(duplicate.id());
+            assetManagerOverlay.select(AssetManagerOverlay.Section.ATTACHMENTS, duplicate.id());
+            VttClientEditorNotice.show("Attachment duplicated: " + duplicate.displayName());
+        } catch (RuntimeException exception) {
+            VTT.LOGGER.error("Failed to duplicate VTT attachment", exception);
+            VttClientEditorNotice.show("Could not duplicate attachment");
+        }
+    }
+
+    private void deleteAttachmentDefinition(AttachmentDefinition definition) {
+        if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return;
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show(
+                    "Server attachment editing will be enabled with authoritative attachment sync");
+            return;
+        }
+        if (!CreatedAttachmentStorage.delete(definition)) {
+            VttClientEditorNotice.show("Could not delete attachment");
+            return;
+        }
+        attachmentDefinitionRegistry.removeById(definition.id());
+        attachmentCatalogSelection.clear();
+        VttClientEditorNotice.show("Attachment deleted");
+    }
+
+    private boolean applyAttachmentImageSelection(AssetCatalogItem item) {
+        if (!attachmentDefinitionDialog.isOpen() || !isSelectableBackgroundImage(item)) {
+            return false;
+        }
+        ResourceLocation texture = null;
+        int imageWidth = 0;
+        int imageHeight = 0;
+        if (item instanceof AssetCatalogItem.RegisteredAsset registered
+                && registered.assetRef() instanceof BuiltInTextureAssetRef builtIn) {
+            texture = builtIn.texture();
+            imageWidth = builtIn.textureWidth();
+            imageHeight = builtIn.textureHeight();
+        } else if (item instanceof AssetCatalogItem.LibraryFile libraryFile) {
+            AssetThumbnail thumbnail = session.getAssetThumbnailRegistry()
+                    .findById(libraryFile.entry().id()).orElse(null);
+            if (thumbnail != null) {
+                texture = thumbnail.texture();
+                imageWidth = thumbnail.width();
+                imageHeight = thumbnail.height();
+            }
+        }
+        if (texture == null) return false;
+        attachmentDefinitionDialog.setImage(
+                item.id(), item.displayName(), texture, imageWidth, imageHeight);
+        return true;
+    }
+
+    private MapPreview resolveAttachmentPreview(AttachmentDefinition definition) {
+        if (definition == null || !definition.hasImage()) return null;
+        AssetThumbnail thumbnail = session.getAssetThumbnailRegistry()
+                .findById(definition.assetId()).orElse(null);
+        if (thumbnail == null && definition.assetId().startsWith("library:")) {
+            thumbnail = session.getAssetThumbnailRegistry().findById(
+                    definition.assetId().substring("library:".length())).orElse(null);
+        }
+        if (thumbnail != null) {
+            return new MapPreview(thumbnail.texture(), thumbnail.width(), thumbnail.height());
+        }
+        String id = definition.assetId().startsWith("registered:")
+                ? definition.assetId().substring("registered:".length())
+                : definition.assetId();
+        if (assetRegistry.findById(id).orElse(null) instanceof BuiltInTextureAssetRef builtIn) {
+            return new MapPreview(builtIn.texture(), builtIn.textureWidth(), builtIn.textureHeight());
+        }
+        return null;
     }
 
     private void beginEditSelectedMapDialog() {
@@ -6018,6 +6294,7 @@ public final class VTTScreen extends Screen {
         NONE,
         NEW_SCENE,
         NEW_MAP,
+        NEW_ATTACHMENT,
         ACTIVE_SCENE
     }
 

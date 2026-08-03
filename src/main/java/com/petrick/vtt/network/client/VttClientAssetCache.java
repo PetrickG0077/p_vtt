@@ -339,7 +339,7 @@ public final class VttClientAssetCache {
 
     private static boolean validCategory(String category) {
         return "assets".equals(category) || "tokens".equals(category)
-                || "maps".equals(category);
+                || "maps".equals(category) || "attachments".equals(category);
     }
 
     private static boolean validUuid(String value) {
@@ -383,7 +383,7 @@ public final class VttClientAssetCache {
     }
 
     private static void removeStaleFiles(Path root, Set<String> retained) throws IOException {
-        for (String category : List.of("assets", "tokens", "maps")) {
+        for (String category : List.of("assets", "tokens", "maps", "attachments")) {
             Path categoryRoot = root.resolve(category);
             if (!Files.isDirectory(categoryRoot)) continue;
             try (var paths = Files.walk(categoryRoot)) {

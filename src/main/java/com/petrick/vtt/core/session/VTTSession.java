@@ -2,6 +2,8 @@ package com.petrick.vtt.core.session;
 
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.token.DebugTokenDefinitions;
@@ -63,6 +65,7 @@ public final class VTTSession {
     private final TokenDefinitionRegistry tokenDefinitionRegistry;
 
     private final MapDefinitionRegistry mapDefinitionRegistry;
+    private final AttachmentDefinitionRegistry attachmentDefinitionRegistry;
 
     private final TabletopStoragePaths tabletopStoragePaths;
 
@@ -125,6 +128,7 @@ public final class VTTSession {
         this.tokenDefinitionRegistry = new TokenDefinitionRegistry();
         DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
         this.mapDefinitionRegistry = new MapDefinitionRegistry();
+        this.attachmentDefinitionRegistry = new AttachmentDefinitionRegistry();
 
         this.tabletopStoragePaths = new TabletopStoragePaths(
                 Minecraft.getInstance().gameDirectory.toPath()
@@ -142,10 +146,12 @@ public final class VTTSession {
                 assetRegistry
         );
         CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
+        CreatedAttachmentStorage.loadCreatedAttachments(attachmentDefinitionRegistry);
         this.assetFolderService = new VttAssetFolderService(
                 Minecraft.getInstance().gameDirectory.toPath(), activeTabletop.getId());
         this.assetFolderService.applyMetadata(
-                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry,
+                attachmentDefinitionRegistry);
         tabletopStorage.saveTabletop(activeTabletop);
 
         this.canvasScene = CanvasScene.createDebugScene(assetRegistry);
@@ -212,7 +218,8 @@ public final class VTTSession {
         };
         if (!changed) return false;
         assetFolderService.applyMetadata(
-                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry,
+                attachmentDefinitionRegistry);
         tabletopStorage.saveTabletop(activeTabletop);
         return true;
     }
@@ -251,6 +258,9 @@ public final class VTTSession {
                 if (section == VttAssetFolderService.Section.TOKENS
                         && !CreatedTokenStorage.isUserCreatedToken(
                         tokenDefinitionRegistry.findById(id).orElse(null))) return false;
+                if (section == VttAssetFolderService.Section.ATTACHMENTS
+                        && !CreatedAttachmentStorage.isUserCreatedAttachment(
+                        attachmentDefinitionRegistry.findById(id).orElse(null))) return false;
             }
         }
         if (!assetFolderService.deleteSelection(section, encodedSources)) return false;
@@ -263,8 +273,10 @@ public final class VTTSession {
             }
         } else if (section == VttAssetFolderService.Section.MAPS) {
             itemIds.forEach(mapDefinitionRegistry::removeById);
-        } else {
+        } else if (section == VttAssetFolderService.Section.TOKENS) {
             itemIds.forEach(tokenDefinitionRegistry::removeById);
+        } else {
+            itemIds.forEach(attachmentDefinitionRegistry::removeById);
         }
         return true;
     }
@@ -303,6 +315,8 @@ public final class VTTSession {
             CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
         } else if (section == VttAssetFolderService.Section.TOKENS) {
             CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
+        } else if (section == VttAssetFolderService.Section.ATTACHMENTS) {
+            CreatedAttachmentStorage.loadCreatedAttachments(attachmentDefinitionRegistry);
         }
         return true;
     }
@@ -345,6 +359,12 @@ public final class VTTSession {
                     .count();
             case TOKENS -> (int) tokenDefinitionRegistry.getAll().stream()
                     .map(definition -> tokenDefinitionRegistry.folderOf(definition.id()))
+                    .map(this::normalizeAssetFolder)
+                    .filter(candidate -> candidate.equals(normalized)
+                            || candidate.startsWith(prefix))
+                    .count();
+            case ATTACHMENTS -> (int) attachmentDefinitionRegistry.getAll().stream()
+                    .map(definition -> attachmentDefinitionRegistry.folderOf(definition.id()))
                     .map(this::normalizeAssetFolder)
                     .filter(candidate -> candidate.equals(normalized)
                             || candidate.startsWith(prefix))
@@ -810,7 +830,8 @@ public final class VTTSession {
                     VttAssetFolderService.Section.SCENES,
                     duplicateId, sourceFolder);
             assetFolderService.applyMetadata(
-                    activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+                    activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry,
+                    attachmentDefinitionRegistry);
         }
         activeTabletop.addSceneId(duplicateId);
         activeTabletop.setSceneDisplayName(duplicateId, displayName);
@@ -1007,6 +1028,9 @@ public final class VTTSession {
         mapDefinitionRegistry.clear();
         CreatedMapStorage.loadCreatedMapsFromFolder(
                 cacheRoot.resolve("maps"), mapDefinitionRegistry);
+        attachmentDefinitionRegistry.clear();
+        CreatedAttachmentStorage.loadCreatedAttachmentsFromFolder(
+                cacheRoot.resolve("attachments"), attachmentDefinitionRegistry);
         VTT.LOGGER.info("Loaded {} synchronized VTT assets from server", synced.totalCount());
     }
 
@@ -1044,6 +1068,8 @@ public final class VTTSession {
         CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
         mapDefinitionRegistry.clear();
         CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
+        attachmentDefinitionRegistry.clear();
+        CreatedAttachmentStorage.loadCreatedAttachments(attachmentDefinitionRegistry);
 
         assetLibraryScanResult = assetLibraryService.scanLibrary();
         assetThumbnailRegistry.clear();
@@ -1054,7 +1080,8 @@ public final class VTTSession {
         activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
         assetFolderService.refresh();
         assetFolderService.applyMetadata(
-                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry);
+                activeTabletop, mapDefinitionRegistry, tokenDefinitionRegistry,
+                attachmentDefinitionRegistry);
         loadActiveSceneToCanvasScene();
         VTT.LOGGER.info("Restored local VTT session after leaving multiplayer server");
     }
@@ -1065,6 +1092,10 @@ public final class VTTSession {
 
     public MapDefinitionRegistry getMapDefinitionRegistry() {
         return mapDefinitionRegistry;
+    }
+
+    public AttachmentDefinitionRegistry getAttachmentDefinitionRegistry() {
+        return attachmentDefinitionRegistry;
     }
 
     public AssetThumbnailRegistry getAssetThumbnailRegistry() {
