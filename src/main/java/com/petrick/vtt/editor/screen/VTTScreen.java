@@ -197,6 +197,11 @@ public final class VTTScreen extends Screen {
     private AttachmentDefinition draggingAttachmentDefinition;
     private double attachmentDragStartX;
     private double attachmentDragStartY;
+    private String draggedPlacedAttachmentId;
+    private boolean draggedPlacedAttachmentMoved;
+    private CanvasObject attachmentDropTarget;
+    private double placedAttachmentDragStartX;
+    private double placedAttachmentDragStartY;
     private boolean draggingMapCatalogScrollbar;
     private MapDefinition draggingMapDefinition;
     private double mapDragStartX;
@@ -474,6 +479,9 @@ public final class VTTScreen extends Screen {
                 session.shouldMaskWhenNetworkVisionEmpty(),
                 authoritativePlayerView
                         ? session.getNetworkVisibleObjectIds() : null);
+        if (draggedPlacedAttachmentMoved && attachmentDropTarget != null) {
+            canvasRenderer.renderAttachmentDropTarget(context, attachmentDropTarget);
+        }
         if (sceneBackgroundEditor.isActive()) {
             sceneBackgroundEditor.render(context, this.font, session.getActiveScene());
             if (panelVisibility.isMapCatalogVisible()) {
@@ -2994,6 +3002,7 @@ public final class VTTScreen extends Screen {
                 getKeyboardModifiers(),
                 renderState
         )) {
+            beginPlacedAttachmentDragCandidate(mouseX, mouseY, button);
             return true;
         }
 
@@ -3234,6 +3243,80 @@ public final class VTTScreen extends Screen {
         }
         canvasAttachmentContextMenuOverlay.render(context, this.font,
                 sceneObject.getAttachmentBinding(), attachmentTargetTokens());
+    }
+
+    private void beginPlacedAttachmentDragCandidate(double mouseX, double mouseY, int button) {
+        clearPlacedAttachmentDrag();
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !session.isLocalMaster()
+                || !"select".equals(inputController.getActiveToolId())
+                || selectionManager.getSelectedObjectIds().size() != 1) return;
+        String selectedId = selectionManager.getSelectedObjectIds().iterator().next();
+        CanvasObject selected = scene.findObjectById(selectedId);
+        if (selected == null || !selected.hasSourceAttachmentDefinition()) return;
+        draggedPlacedAttachmentId = selectedId;
+        placedAttachmentDragStartX = mouseX;
+        placedAttachmentDragStartY = mouseY;
+    }
+
+    private void updatePlacedAttachmentDropTarget(double mouseX, double mouseY, int button) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || draggedPlacedAttachmentId == null
+                || renderState == null) return;
+        if (!draggedPlacedAttachmentMoved) {
+            double deltaX = mouseX - placedAttachmentDragStartX;
+            double deltaY = mouseY - placedAttachmentDragStartY;
+            draggedPlacedAttachmentMoved = deltaX * deltaX + deltaY * deltaY >= 16.0;
+        }
+        if (!draggedPlacedAttachmentMoved) return;
+        Vec2d worldPosition = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+        attachmentDropTarget = attachmentTargetAt(worldPosition);
+    }
+
+    private CanvasObject attachmentTargetAt(Vec2d worldPosition) {
+        List<CanvasObject> objects = scene.getObjects();
+        for (int index = objects.size() - 1; index >= 0; index--) {
+            CanvasObject object = objects.get(index);
+            if (object.hasSourceTokenDefinition() && object.visible()
+                    && object.containsWorldPoint(worldPosition)) {
+                return object;
+            }
+        }
+        return null;
+    }
+
+    private void finishPlacedAttachmentDrop(double mouseX, double mouseY, int button) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || draggedPlacedAttachmentId == null) {
+            clearPlacedAttachmentDrag();
+            return;
+        }
+        if (draggedPlacedAttachmentMoved && renderState != null) {
+            attachmentDropTarget = attachmentTargetAt(
+                    renderState.screenToWorld(new Vec2d(mouseX, mouseY)));
+        }
+        String attachmentId = draggedPlacedAttachmentId;
+        CanvasObject target = attachmentDropTarget;
+        clearPlacedAttachmentDrag();
+        if (target == null || !session.isLocalMaster()) return;
+        inputController.beginEditorAction();
+        try {
+            if (!AttachmentBindingService.bind(
+                    session.getActiveScene(), scene, attachmentId, target.id())) return;
+            AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+        } finally {
+            inputController.endEditorAction();
+        }
+        var attachment = AttachmentBindingService.find(session.getActiveScene(), attachmentId);
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                    session, attachmentId, attachment == null ? null : attachment.getAttachmentBinding());
+        } else {
+            saveCanvasSceneWithAttachmentBindings();
+        }
+    }
+
+    private void clearPlacedAttachmentDrag() {
+        draggedPlacedAttachmentId = null;
+        draggedPlacedAttachmentMoved = false;
+        attachmentDropTarget = null;
     }
 
     private boolean handleCanvasAttachmentContextClick(
@@ -3702,12 +3785,9 @@ public final class VTTScreen extends Screen {
         }
 
         if (renderState != null && inputController.mouseReleased(
-                mouseX,
-                mouseY,
-                button,
-                getKeyboardModifiers(),
-                renderState
+                mouseX, mouseY, button, getKeyboardModifiers(), renderState
         )) {
+            finishPlacedAttachmentDrop(mouseX, mouseY, button);
             return true;
         }
 
@@ -3805,6 +3885,7 @@ public final class VTTScreen extends Screen {
                 getKeyboardModifiers(),
                 renderState
         )) {
+            updatePlacedAttachmentDropTarget(mouseX, mouseY, button);
             return true;
         }
 

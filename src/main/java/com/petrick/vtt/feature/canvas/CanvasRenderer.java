@@ -262,6 +262,11 @@ public final class CanvasRenderer {
         poseStack.popPose();
     }
 
+    /** Highlights a token while an attachment is being dropped onto it. */
+    public void renderAttachmentDropTarget(VRenderContext context, CanvasObject target) {
+        if (target != null) renderSelectionBorder(context, target);
+    }
+
     private void renderSelectionHandles(VRenderContext context, CanvasObject object) {
         renderHandle(context, context.renderState().worldToScreen(object.worldTopLeft()));
         renderHandle(context, context.renderState().worldToScreen(object.worldTopRight()));
