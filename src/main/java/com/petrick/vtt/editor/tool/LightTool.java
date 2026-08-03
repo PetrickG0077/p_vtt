@@ -1,5 +1,6 @@
 package com.petrick.vtt.editor.tool;
 
+import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttLightType;
@@ -11,6 +12,7 @@ import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
@@ -20,6 +22,9 @@ import java.util.function.Supplier;
 /** Creates and edits point and spot lights through compact in-canvas controls. */
 public final class LightTool implements Tool {
     public static final String ID = "light";
+    private static final ResourceLocation LIGHT_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/light.png");
+    private static final int LIGHT_ICON_TEXTURE_SIZE = 16;
     private static final int YELLOW = 0xFFFFFF33;
     private static final int CYAN = 0xFF55CCFF;
     private static final int HANDLE = 0xFFFFFFFF;
@@ -259,14 +264,20 @@ public final class LightTool implements Tool {
         Vec2d p = context.renderState().worldToScreen(new Vec2d(light.getX(), light.getY()));
         int x = (int) Math.round(p.x());
         int y = (int) Math.round(p.y());
-        context.graphics().fill(x - 4, y - 4, x + 4, y + 4, YELLOW);
-        border(context, x - 5, y - 5, 10, 10,
+        context.graphics().fill(x - 7, y - 7, x + 7, y + 7, YELLOW);
+        border(context, x - 7, y - 7, 14, 14,
                 light.getId().equals(selectedId) ? CYAN : 0xFFFFAA00);
+        context.graphics().blit(
+                LIGHT_ICON, x - 5, y - 5, 10, 10,
+                0.0F, 0.0F, LIGHT_ICON_TEXTURE_SIZE, LIGHT_ICON_TEXTURE_SIZE,
+                LIGHT_ICON_TEXTURE_SIZE, LIGHT_ICON_TEXTURE_SIZE);
         if (light.getType() == VttLightType.SPOT) {
             double radians = Math.toRadians(light.getDirectionDegrees());
+            Vec2d start = new Vec2d(x + Math.cos(radians) * 7.0,
+                    y + Math.sin(radians) * 7.0);
             Vec2d end = new Vec2d(x + Math.cos(radians) * 14.0,
                     y + Math.sin(radians) * 14.0);
-            renderLine(context, new Vec2d(x, y), end, YELLOW);
+            renderLine(context, start, end, YELLOW);
         }
     }
 
@@ -596,7 +607,7 @@ public final class LightTool implements Tool {
         for (int i = lights.size() - 1; i >= 0; i--) {
             VttLight light = lights.get(i);
             Vec2d p = context.renderState().worldToScreen(new Vec2d(light.getX(), light.getY()));
-            if (Math.abs(mouseX - p.x()) <= 6 && Math.abs(mouseY - p.y()) <= 6) return light;
+            if (Math.abs(mouseX - p.x()) <= 8 && Math.abs(mouseY - p.y()) <= 8) return light;
         }
         return null;
     }
