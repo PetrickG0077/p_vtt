@@ -183,6 +183,8 @@ public final class VttServerAssetSyncService {
         Path mapsRoot = root.resolve("created/maps").normalize();
         Path attachmentsRoot = root.resolve("created/attachments").normalize();
         Set<String> definitionIds = scope == null ? Set.of() : scope.definitionIds();
+        Set<String> attachmentDefinitionIds = scope == null
+                ? Set.of() : scope.attachmentDefinitionIds();
 
         Map<String, SyncFile> result = new LinkedHashMap<>();
         long[] totalBytes = {0L};
@@ -213,13 +215,14 @@ public final class VttServerAssetSyncService {
                 VTT.LOGGER.error("Failed to scan server VTT map definitions", exception);
             }
         }
-        if (includeAllTokens && Files.isDirectory(attachmentsRoot)) {
+        if ((includeAllTokens || !attachmentDefinitionIds.isEmpty())
+                && Files.isDirectory(attachmentsRoot)) {
             try (Stream<Path> stream = Files.walk(attachmentsRoot)) {
                 stream.filter(Files::isRegularFile)
                         .filter(path -> path.toString().toLowerCase().endsWith(".json"))
                         .peek(path -> checkCancelled())
-                        .forEach(path -> collectAttachment(
-                                path, attachmentsRoot, assetsRoot, result, totalBytes));
+                        .forEach(path -> collectAttachment(path, attachmentDefinitionIds,
+                                includeAllTokens, attachmentsRoot, assetsRoot, result, totalBytes));
             } catch (IOException exception) {
                 VTT.LOGGER.error("Failed to scan server VTT attachment definitions", exception);
             }
@@ -284,12 +287,15 @@ public final class VttServerAssetSyncService {
     }
 
     private static void collectAttachment(
-            Path jsonFile, Path attachmentsRoot, Path assetsRoot,
+            Path jsonFile, Set<String> attachmentDefinitionIds, boolean includeAll,
+            Path attachmentsRoot, Path assetsRoot,
             Map<String, SyncFile> result, long[] totalBytes
     ) {
         try (Reader reader = Files.newBufferedReader(jsonFile)) {
             JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-            if (string(json, "attachmentDefinitionId") == null) return;
+            String definitionId = string(json, "attachmentDefinitionId");
+            if (definitionId == null || (!includeAll
+                    && !attachmentDefinitionIds.contains(definitionId))) return;
             addFile("attachments", attachmentsRoot, jsonFile, result, totalBytes);
             addAsset(string(json, "assetId"), assetsRoot, result, totalBytes);
         } catch (Exception exception) {
@@ -787,11 +793,14 @@ public final class VttServerAssetSyncService {
     private record AssetScope(
             String backgroundAssetId,
             Set<String> mapAssetIds,
-            Set<String> definitionIds
+            Set<String> definitionIds,
+            Set<String> attachmentDefinitionIds
     ) {
         private AssetScope {
             mapAssetIds = mapAssetIds == null ? Set.of() : Set.copyOf(mapAssetIds);
             definitionIds = definitionIds == null ? Set.of() : Set.copyOf(definitionIds);
+            attachmentDefinitionIds = attachmentDefinitionIds == null
+                    ? Set.of() : Set.copyOf(attachmentDefinitionIds);
         }
 
         private static AssetScope fromScene(VttScene scene) {
@@ -802,11 +811,13 @@ public final class VttServerAssetSyncService {
                             .map(com.petrick.vtt.feature.tabletop.VttSceneMap::getAssetId)
                             .filter(java.util.Objects::nonNull)
                             .collect(java.util.stream.Collectors.toSet()),
-                    scene == null ? Set.of() : definitionIds(scene.getObjects()));
+                    scene == null ? Set.of() : definitionIds(scene.getObjects()),
+                    scene == null ? Set.of() : attachmentDefinitionIds(scene.getObjects()));
         }
 
         private static AssetScope fromObjects(List<VttSceneObject> objects) {
-            return new AssetScope(null, Set.of(), definitionIds(objects));
+            return new AssetScope(null, Set.of(), definitionIds(objects),
+                    attachmentDefinitionIds(objects));
         }
 
         private static Set<String> definitionIds(List<VttSceneObject> objects) {
@@ -815,6 +826,17 @@ public final class VttServerAssetSyncService {
             for (VttSceneObject object : objects) {
                 if (object != null && object.getSourceTokenDefinitionId() != null) {
                     result.add(object.getSourceTokenDefinitionId());
+                }
+            }
+            return Set.copyOf(result);
+        }
+
+        private static Set<String> attachmentDefinitionIds(List<VttSceneObject> objects) {
+            if (objects == null || objects.isEmpty()) return Set.of();
+            Set<String> result = new HashSet<>();
+            for (VttSceneObject object : objects) {
+                if (object != null && object.getSourceAttachmentDefinitionId() != null) {
+                    result.add(object.getSourceAttachmentDefinitionId());
                 }
             }
             return Set.copyOf(result);

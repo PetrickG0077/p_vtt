@@ -1148,8 +1148,12 @@ public final class VttServerTabletopState {
     }
 
     private boolean validSceneObject(VttSceneObject object) {
+        boolean token = object != null && object.getSourceTokenDefinitionId() != null
+                && !object.getSourceTokenDefinitionId().isBlank();
+        boolean attachment = object != null && object.getSourceAttachmentDefinitionId() != null
+                && !object.getSourceAttachmentDefinitionId().isBlank();
         if (object == null || object.getDisplayName() == null || object.getDisplayName().isBlank()
-                || object.getSourceTokenDefinitionId() == null || object.getSourceTokenDefinitionId().isBlank()
+                || token == attachment
                 || object.getTransform() == null || object.getSize() == null || object.getState() == null
                 || object.getState().getActiveStateId() == null || object.getState().getActiveStateId().isBlank()) {
             return false;

@@ -40,7 +40,7 @@ public final class VttClientTokenLifecycleSync {
         if (VttClientSceneHistorySync.isPending()) return;
         if (!session.isLocalMaster()) return;
 
-        Map<String, CanvasObject> current = currentTokens(session);
+        Map<String, CanvasObject> current = currentLifecycleObjects(session);
         for (CanvasObject object : current.values()) {
             if (KNOWN_IDS.contains(object.id())) continue;
             VttSceneObject sceneObject = toSceneObject(session, object,
@@ -120,20 +120,25 @@ public final class VttClientTokenLifecycleSync {
 
     private static void capture(VTTSession session) {
         KNOWN_IDS.clear();
-        KNOWN_IDS.addAll(currentTokens(session).keySet());
+        KNOWN_IDS.addAll(currentLifecycleObjects(session).keySet());
     }
 
-    private static Map<String, CanvasObject> currentTokens(VTTSession session) {
+    private static Map<String, CanvasObject> currentLifecycleObjects(VTTSession session) {
         Map<String, CanvasObject> result = new LinkedHashMap<>();
         for (CanvasObject object : session.getCanvasScene().getObjects()) {
-            if (object.hasSourceTokenDefinition()) result.put(object.id(), object);
+            if (object.hasSourceTokenDefinition() || object.sourceAttachmentDefinitionId() != null) {
+                result.put(object.id(), object);
+            }
         }
         return result;
     }
 
     private static VttSceneObject toSceneObject(VTTSession session, CanvasObject object, int layerIndex) {
-        VttSceneObject result = new VttSceneObject(object.id(), object.displayName(),
-                object.sourceTokenDefinitionId());
+        VttSceneObject result = new VttSceneObject();
+        result.setId(object.id());
+        result.setDisplayName(object.displayName());
+        result.setSourceTokenDefinitionId(object.sourceTokenDefinitionId());
+        result.setSourceAttachmentDefinitionId(object.sourceAttachmentDefinitionId());
         result.setTransform(new VttSceneTransform(object.transform().position().x(),
                 object.transform().position().y(), object.transform().scale().x(),
                 object.transform().scale().y(), object.transform().rotationDegrees()));
@@ -164,7 +169,7 @@ public final class VttClientTokenLifecycleSync {
                 result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),
                         sourceBox.getOffsetY(), sourceBox.getWidth(), sourceBox.getHeight()));
             }
-        } else {
+        } else if (object.hasSourceTokenDefinition()) {
             session.getTokenDefinitionRegistry().findById(object.sourceTokenDefinitionId())
                     .ifPresent(definition -> result.setOwnerId(definition.defaultOwnerId()));
         }

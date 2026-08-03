@@ -87,6 +87,7 @@ import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientAttachmentDefinitionSync;
 import com.petrick.vtt.network.client.VttClientAttachmentDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientAttachmentLifecycleSync;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
@@ -5845,12 +5846,19 @@ public final class VTTScreen extends Screen {
                 mouseX, mouseY, this.width, this.height, editorHudState());
         draggingAttachmentDefinition = null;
         if (!place || definition == null || renderState == null) return;
+        Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
         if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment placement requires authoritative attachment lifecycle sync");
+            String objectId = "attachment_" + UUID.randomUUID().toString()
+                    .replace("-", "").substring(0, 12);
+            if (VttClientAttachmentLifecycleSync.sendCreate(
+                    session, definition, objectId, world)) {
+                inputController.selectSelectTool();
+                VttClientEditorNotice.show("Attachment placement sent to server");
+            } else {
+                VttClientEditorNotice.show("Could not place attachment on server");
+            }
             return;
         }
-        Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
         inputController.beginEditorAction();
         String objectId = scene.createUniqueObjectId("attachment");
         CanvasObject attachment = AttachmentFactory.createCanvasObject(
