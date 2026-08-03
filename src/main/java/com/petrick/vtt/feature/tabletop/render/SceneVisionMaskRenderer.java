@@ -6,6 +6,7 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttLightType;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
@@ -98,9 +99,16 @@ public final class SceneVisionMaskRenderer {
                 .filter(light -> light != null && light.isEnabled())
                 .map(light -> {
                     Vec2d worldOrigin = new Vec2d(light.getX(), light.getY());
-                    List<Vec2d> visibilityPolygon = raycaster.buildVisibilityPolygon(
+                    List<Vec2d> worldPolygon = light.getType() == VttLightType.SPOT
+                            ? raycaster.buildVisibilityCone(
                             worldOrigin, light.getOuterRadius(), sceneSegments,
-                            tabletopScene.getLighting().getVisionRayCount()).stream()
+                            Math.toRadians(light.getDirectionDegrees()),
+                            Math.toRadians(light.getConeAngleDegrees()),
+                            tabletopScene.getLighting().getVisionRayCount())
+                            : raycaster.buildVisibilityPolygon(
+                            worldOrigin, light.getOuterRadius(), sceneSegments,
+                            tabletopScene.getLighting().getVisionRayCount());
+                    List<Vec2d> visibilityPolygon = worldPolygon.stream()
                             .map(context.renderState()::worldToScreen).toList();
                     return new ScreenLight(
                             context.renderState().worldToScreen(worldOrigin),

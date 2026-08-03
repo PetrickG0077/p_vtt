@@ -6,6 +6,7 @@ import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttLightType;
 import com.petrick.vtt.feature.tabletop.VttSceneLimits;
 import com.petrick.vtt.feature.tabletop.vision.AuthoritativeVisionRegion;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
@@ -262,9 +263,15 @@ public final class VttServerVisionSourceSync {
         for (VttLight light : scene.getLights()) {
             if (light == null || !light.isEnabled()) continue;
             Vec2d origin = new Vec2d(light.getX(), light.getY());
-            List<Vec2d> polygon = RAYCASTER.buildVisibilityPolygon(
-                    origin, light.getOuterRadius(),
-                    state.queryVisionSegments(origin, light.getOuterRadius()),
+            var segments = state.queryVisionSegments(origin, light.getOuterRadius());
+            List<Vec2d> polygon = light.getType() == VttLightType.SPOT
+                    ? RAYCASTER.buildVisibilityCone(
+                    origin, light.getOuterRadius(), segments,
+                    Math.toRadians(light.getDirectionDegrees()),
+                    Math.toRadians(light.getConeAngleDegrees()),
+                    scene.getLighting().getVisionRayCount())
+                    : RAYCASTER.buildVisibilityPolygon(
+                    origin, light.getOuterRadius(), segments,
                     scene.getLighting().getVisionRayCount());
             if (polygon.size() >= 3) result.add(new LightVisibilityRegion(polygon));
         }

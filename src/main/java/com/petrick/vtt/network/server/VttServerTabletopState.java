@@ -1506,10 +1506,13 @@ public final class VttServerTabletopState {
                 value -> value != null && id.equals(value.getId()));
         if (light == null || !id.equals(light.getId())
                 || light.getType() != com.petrick.vtt.feature.tabletop.VttLightType.POINT
+                && light.getType() != com.petrick.vtt.feature.tabletop.VttLightType.SPOT
                 || !Double.isFinite(light.getX()) || !Double.isFinite(light.getY())
                 || !Double.isFinite(light.getInnerRadius())
                 || !Double.isFinite(light.getOuterRadius())
                 || !Double.isFinite(light.getIntensity())
+                || !Double.isFinite(light.getDirectionDegrees())
+                || !Double.isFinite(light.getConeAngleDegrees())
                 || Math.abs(light.getX()) > 10_000_000.0
                 || Math.abs(light.getY()) > 10_000_000.0
                 || light.getInnerRadius() < 0.0
@@ -1518,6 +1521,10 @@ public final class VttServerTabletopState {
                 || light.getInnerRadius() > light.getOuterRadius()
                 || light.getIntensity() < com.petrick.vtt.feature.tabletop.VttLight.MIN_INTENSITY
                 || light.getIntensity() > com.petrick.vtt.feature.tabletop.VttLight.MAX_INTENSITY
+                || light.getConeAngleDegrees()
+                < com.petrick.vtt.feature.tabletop.VttLight.MIN_CONE_ANGLE_DEGREES
+                || light.getConeAngleDegrees()
+                > com.petrick.vtt.feature.tabletop.VttLight.MAX_CONE_ANGLE_DEGREES
                 || !exists && VttSceneLimits.environmentUpsert(
                 activeScene, VttEnvironmentCommandPayload.LIGHT, id) != null) return false;
         activeScene.addLight(light);

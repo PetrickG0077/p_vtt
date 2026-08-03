@@ -1,6 +1,6 @@
 package com.petrick.vtt.feature.tabletop;
 
-/** Persistent scene light. Spot-specific direction/cone fields will be added later. */
+/** Persistent scene light with point and directional spot variants. */
 public final class VttLight {
     public static final double DEFAULT_INNER_RADIUS = 192.0;
     public static final double DEFAULT_OUTER_RADIUS = 320.0;
@@ -8,6 +8,10 @@ public final class VttLight {
     public static final double MIN_INTENSITY = 0.1;
     public static final double MAX_INTENSITY = 2.0;
     public static final double DEFAULT_INTENSITY = 1.0;
+    public static final double DEFAULT_DIRECTION_DEGREES = 0.0;
+    public static final double DEFAULT_CONE_ANGLE_DEGREES = 60.0;
+    public static final double MIN_CONE_ANGLE_DEGREES = 5.0;
+    public static final double MAX_CONE_ANGLE_DEGREES = 179.0;
 
     private String id;
     private VttLightType type = VttLightType.POINT;
@@ -17,6 +21,9 @@ public final class VttLight {
     private double outerRadius = DEFAULT_OUTER_RADIUS;
     private int colorRgb = DEFAULT_COLOR_RGB;
     private double intensity = DEFAULT_INTENSITY;
+    /** Local/world direction for SPOT lights; ready to become attachment-local later. */
+    private double directionDegrees = DEFAULT_DIRECTION_DEGREES;
+    private double coneAngleDegrees = DEFAULT_CONE_ANGLE_DEGREES;
     /** False means reveal-only: the light removes darkness without tinting the scene. */
     private boolean tintEnabled = true;
     private boolean enabled = true;
@@ -58,6 +65,18 @@ public final class VttLight {
     public void setTintEnabled(boolean tintEnabled) { this.tintEnabled = tintEnabled; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public double getDirectionDegrees() { return directionDegrees; }
+    public void setDirectionDegrees(double directionDegrees) {
+        if (!Double.isFinite(directionDegrees)) return;
+        this.directionDegrees = ((directionDegrees % 360.0) + 360.0) % 360.0;
+    }
+    public double getConeAngleDegrees() { return coneAngleDegrees; }
+    public void setConeAngleDegrees(double coneAngleDegrees) {
+        if (Double.isFinite(coneAngleDegrees)) {
+            this.coneAngleDegrees = Math.max(MIN_CONE_ANGLE_DEGREES,
+                    Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDegrees));
+        }
+    }
 
     public void normalize() {
         id = normalizeId(id);
@@ -66,6 +85,8 @@ public final class VttLight {
         setInnerRadius(innerRadius);
         setColorRgb(colorRgb);
         setIntensity(intensity);
+        setDirectionDegrees(directionDegrees);
+        setConeAngleDegrees(coneAngleDegrees);
     }
 
     private String normalizeId(String value) {

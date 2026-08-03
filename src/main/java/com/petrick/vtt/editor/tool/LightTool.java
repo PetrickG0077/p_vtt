@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 
-/** Creates and edits point lights through compact in-canvas controls. */
+/** Creates and edits point and spot lights through compact in-canvas controls. */
 public final class LightTool implements Tool {
     public static final String ID = "light";
     private static final int YELLOW = 0xFFFFFF33;
@@ -26,6 +26,8 @@ public final class LightTool implements Tool {
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF88888E;
+    private static final double DIRECTION_HANDLE_OFFSET = 44.0;
+    private static final double CONE_HANDLE_OFFSET = 24.0;
     private static final int REVEAL_ONLY = -1;
     private static final int[] COLORS = {
             REVEAL_ONLY,
@@ -43,7 +45,7 @@ public final class LightTool implements Tool {
     private int popupX;
     private int popupY;
     private boolean moving;
-    private RadiusHandle radiusHandle;
+    private LightHandle editHandle;
     private Vec2d dragOffset;
     private Field focusedField;
     private String fieldBuffer = "";
@@ -71,10 +73,10 @@ public final class LightTool implements Tool {
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         VttLight selected = selectedLight();
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            RadiusHandle handle = selected == null ? null
+            LightHandle handle = selected == null ? null
                     : handleAt(context, selected, mouseX, mouseY);
             if (handle != null) {
-                radiusHandle = handle;
+                editHandle = handle;
                 return true;
             }
             VttLight hit = lightAt(context, mouseX, mouseY);
@@ -126,10 +128,22 @@ public final class LightTool implements Tool {
             light.setY(world.y() + dragOffset.y());
             return true;
         }
-        if (radiusHandle != null) {
+        if (editHandle != null) {
             double distance = Math.hypot(world.x() - light.getX(), world.y() - light.getY());
-            if (radiusHandle == RadiusHandle.INNER) light.setInnerRadius(distance);
-            else light.setOuterRadius(Math.max(distance, light.getInnerRadius()));
+            if (editHandle == LightHandle.INNER) {
+                light.setInnerRadius(distance);
+            } else if (editHandle == LightHandle.OUTER) {
+                light.setOuterRadius(Math.max(distance, light.getInnerRadius()));
+            } else if (editHandle == LightHandle.DIRECTION) {
+                light.setDirectionDegrees(Math.toDegrees(Math.atan2(
+                        world.y() - light.getY(), world.x() - light.getX())));
+            } else if (editHandle == LightHandle.CONE) {
+                double pointer = Math.toDegrees(Math.atan2(
+                        world.y() - light.getY(), world.x() - light.getX()));
+                double difference = Math.abs(shortestAngleDegrees(
+                        pointer - light.getDirectionDegrees()));
+                light.setConeAngleDegrees(difference * 2.0);
+            }
             return true;
         }
         return false;
@@ -146,10 +160,10 @@ public final class LightTool implements Tool {
             saveAction.run();
             return true;
         }
-        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !moving && radiusHandle == null) return false;
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !moving && editHandle == null) return false;
         mouseDragged(context, mouseX, mouseY, button, 0.0, 0.0, modifiers);
         moving = false;
-        radiusHandle = null;
+        editHandle = null;
         dragOffset = null;
         saveAction.run();
         return true;
@@ -229,7 +243,7 @@ public final class LightTool implements Tool {
     public void deactivate() {
         colorPicker.cancel();
         moving = false;
-        radiusHandle = null;
+        editHandle = null;
         selectedId = null;
         closePopup();
     }
@@ -241,17 +255,44 @@ public final class LightTool implements Tool {
         context.graphics().fill(x - 4, y - 4, x + 4, y + 4, YELLOW);
         border(context, x - 5, y - 5, 10, 10,
                 light.getId().equals(selectedId) ? CYAN : 0xFFFFAA00);
+        if (light.getType() == VttLightType.SPOT) {
+            double radians = Math.toRadians(light.getDirectionDegrees());
+            Vec2d end = new Vec2d(x + Math.cos(radians) * 14.0,
+                    y + Math.sin(radians) * 14.0);
+            renderLine(context, new Vec2d(x, y), end, YELLOW);
+        }
     }
 
     private void renderSelection(VRenderContext context, VttLight light) {
         Vec2d origin = new Vec2d(light.getX(), light.getY());
         var segments = geometry.build(sceneSupplier.get());
-        renderPolygon(context, raycaster.buildVisibilityPolygon(
-                origin, light.getOuterRadius(), segments), 0xAA66CCFF);
-        renderPolygon(context, raycaster.buildVisibilityPolygon(
-                origin, light.getInnerRadius(), segments), 0xAA2299BB);
-        renderHandle(context, origin.add(new Vec2d(light.getInnerRadius(), 0.0)));
-        renderHandle(context, origin.add(new Vec2d(light.getOuterRadius(), 0.0)));
+        double direction = light.getType() == VttLightType.SPOT
+                ? light.getDirectionDegrees() : 0.0;
+        if (light.getType() == VttLightType.SPOT) {
+            renderPolygon(context, raycaster.buildVisibilityCone(
+                    origin, light.getOuterRadius(), segments,
+                    Math.toRadians(direction), Math.toRadians(light.getConeAngleDegrees()), 256),
+                    0xAA66CCFF);
+            renderPolygon(context, raycaster.buildVisibilityCone(
+                    origin, light.getInnerRadius(), segments,
+                    Math.toRadians(direction), Math.toRadians(light.getConeAngleDegrees()), 256),
+                    0xAA2299BB);
+            Vec2d directionEnd = pointAt(
+                    origin, light.getOuterRadius() + DIRECTION_HANDLE_OFFSET, direction);
+            renderLine(context, context.renderState().worldToScreen(origin),
+                    context.renderState().worldToScreen(directionEnd), 0xAAFFD84A);
+            renderHandle(context, directionEnd);
+            renderHandle(context, pointAt(
+                    origin, light.getOuterRadius() + CONE_HANDLE_OFFSET,
+                    direction + light.getConeAngleDegrees() / 2.0));
+        } else {
+            renderPolygon(context, raycaster.buildVisibilityPolygon(
+                    origin, light.getOuterRadius(), segments), 0xAA66CCFF);
+            renderPolygon(context, raycaster.buildVisibilityPolygon(
+                    origin, light.getInnerRadius(), segments), 0xAA2299BB);
+        }
+        renderHandle(context, pointAt(origin, light.getInnerRadius(), direction));
+        renderHandle(context, pointAt(origin, light.getOuterRadius(), direction));
     }
 
     private void renderPolygon(VRenderContext context, List<Vec2d> polygon, int color) {
@@ -283,39 +324,46 @@ public final class LightTool implements Tool {
 
     private void renderPopup(VRenderContext context, Font font) {
         int width = popup == Popup.CREATE ? 126 : 154;
-        int height = popup == Popup.CREATE ? 64 : 198;
+        int height = popupHeight();
         context.graphics().fill(popupX, popupY, popupX + width, popupY + height, PANEL);
         border(context, popupX, popupY, width, height, CYAN);
         if (popup == Popup.CREATE) {
             popupRow(context, font, 0, "Create Point Light", true);
-            popupRow(context, font, 1, "Create Spot Light", false);
+            popupRow(context, font, 1, "Create Spot Light", true);
             popupRow(context, font, 2, "Cancel", true);
             return;
         }
-        context.graphics().drawString(font, "Point Light", popupX + 7, popupY + 7, TEXT, false);
+        VttLight light = selectedLight();
+        boolean spot = light != null && light.getType() == VttLightType.SPOT;
+        context.graphics().drawString(font, spot ? "Spot Light" : "Point Light",
+                popupX + 7, popupY + 7, TEXT, false);
         renderField(context, font, Field.OUTER, "Outer Radius", 25);
         renderField(context, font, Field.INNER, "Inner Radius", 47);
-        renderField(context, font, Field.COLOR, "Color", 69);
+        if (spot) {
+            renderField(context, font, Field.DIRECTION, "Direction", 69);
+            renderField(context, font, Field.CONE, "Cone Angle", 91);
+        }
+        renderField(context, font, Field.COLOR, "Color", fieldOffset(Field.COLOR));
         renderPickerPreview(context);
+        int paletteY = paletteY();
         for (int i = 0; i < COLORS.length; i++) {
             int x = popupX + 7 + i * 16;
-            renderColorSwatch(context, x, popupY + 91, COLORS[i]);
+            renderColorSwatch(context, x, paletteY, COLORS[i]);
         }
-        VttLight light = selectedLight();
         double intensity = light == null ? VttLight.DEFAULT_INTENSITY : light.getIntensity();
         context.graphics().drawString(font,
                 String.format(Locale.ROOT, "Intensity  %.2fx", intensity),
-                popupX + 7, popupY + 111, TEXT, false);
+                popupX + 7, intensityLabelY(), TEXT, false);
         int trackX = popupX + 7;
-        int trackY = popupY + 126;
+        int trackY = intensityTrackY();
         int trackWidth = 140;
         context.graphics().fill(trackX, trackY, trackX + trackWidth, trackY + 5, 0xFF55555B);
         double progress = (intensity - VttLight.MIN_INTENSITY)
                 / (VttLight.MAX_INTENSITY - VttLight.MIN_INTENSITY);
         int knobX = trackX + (int) Math.round(progress * trackWidth);
         context.graphics().fill(knobX - 2, trackY - 3, knobX + 3, trackY + 8, CYAN);
-        popupRow(context, font, 8, "Duplicate", true);
-        popupRow(context, font, 9, "Delete", true);
+        popupRow(context, font, duplicateRow(), "Duplicate", true);
+        popupRow(context, font, deleteRow(), "Delete", true);
     }
 
     private void popupRow(VRenderContext context, Font font, int row, String label, boolean enabled) {
@@ -339,12 +387,14 @@ public final class LightTool implements Tool {
             int row = (int) ((mouseY - popupY - 3) / 19);
             if (mouseX >= popupX && mouseX <= popupX + 126) {
                 if (row == 0) createPointLight();
+                if (row == 1) createSpotLight();
                 if (row == 2) closePopup();
             }
             return true;
         }
         for (Field field : Field.values()) {
-            int y = popupY + switch (field) { case OUTER -> 25; case INNER -> 47; case COLOR -> 69; };
+            if (!fieldVisible(field)) continue;
+            int y = popupY + fieldOffset(field);
             if (mouseX >= popupX + 79 && mouseX <= popupX + 147
                     && mouseY >= y && mouseY <= y + 18) {
                 focusedField = field;
@@ -353,8 +403,10 @@ public final class LightTool implements Tool {
                 return true;
             }
         }
+        int colorOffset = fieldOffset(Field.COLOR);
         if (mouseX >= popupX + 61 && mouseX <= popupX + 75
-                && mouseY >= popupY + 72 && mouseY <= popupY + 86) {
+                && mouseY >= popupY + colorOffset + 3
+                && mouseY <= popupY + colorOffset + 17) {
             VttLight light = selectedLight();
             if (light != null) {
                 int initial = light.isTintEnabled() ? light.getColorRgb() : 0xFFFFFF;
@@ -366,8 +418,9 @@ public final class LightTool implements Tool {
             }
             return true;
         }
+        int paletteY = paletteY();
         if (mouseX >= popupX + 7 && mouseX <= popupX + 151
-                && mouseY >= popupY + 91 && mouseY <= popupY + 104) {
+                && mouseY >= paletteY && mouseY <= paletteY + 13) {
             int index = (int) ((mouseX - popupX - 7) / 16);
             VttLight light = selectedLight();
             if (light != null && index >= 0 && index < COLORS.length) {
@@ -382,15 +435,16 @@ public final class LightTool implements Tool {
             return true;
         }
         if (mouseX >= popupX + 7 && mouseX <= popupX + 147
-                && mouseY >= popupY + 119 && mouseY <= popupY + 137) {
+                && mouseY >= intensityTrackY() - 7
+                && mouseY <= intensityTrackY() + 11) {
             draggingIntensity = true;
             updateIntensity(mouseX);
             return true;
         }
         if (mouseX >= popupX && mouseX <= popupX + 154) {
             int row = (int) ((mouseY - popupY - 5) / 19);
-            if (row == 8) duplicateSelected();
-            else if (row == 9) deleteSelected();
+            if (row == duplicateRow()) duplicateSelected();
+            else if (row == deleteRow()) deleteSelected();
         }
         return true;
     }
@@ -405,6 +459,8 @@ public final class LightTool implements Tool {
         copy.setInnerRadius(source.getInnerRadius());
         copy.setColorRgb(source.getColorRgb());
         copy.setIntensity(source.getIntensity());
+        copy.setDirectionDegrees(source.getDirectionDegrees());
+        copy.setConeAngleDegrees(source.getConeAngleDegrees());
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         scene.addLight(copy);
@@ -415,10 +471,18 @@ public final class LightTool implements Tool {
     }
 
     private void createPointLight() {
+        createLight(VttLightType.POINT);
+    }
+
+    private void createSpotLight() {
+        createLight(VttLightType.SPOT);
+    }
+
+    private void createLight(VttLightType type) {
         VttScene scene = sceneSupplier.get();
         if (scene == null || creationWorld == null) return;
         VttLight light = new VttLight(nextId(scene), creationWorld.x(), creationWorld.y());
-        light.setType(VttLightType.POINT);
+        light.setType(type);
         scene.addLight(light);
         selectedId = light.getId();
         closePopup();
@@ -437,8 +501,15 @@ public final class LightTool implements Tool {
                 }
             } else {
                 double value = Double.parseDouble(fieldBuffer);
-                if (focusedField == Field.OUTER) light.setOuterRadius(Math.max(value, light.getInnerRadius()));
-                else light.setInnerRadius(Math.min(value, light.getOuterRadius()));
+                if (focusedField == Field.OUTER) {
+                    light.setOuterRadius(Math.max(value, light.getInnerRadius()));
+                } else if (focusedField == Field.INNER) {
+                    light.setInnerRadius(Math.min(value, light.getOuterRadius()));
+                } else if (focusedField == Field.DIRECTION) {
+                    light.setDirectionDegrees(value);
+                } else if (focusedField == Field.CONE) {
+                    light.setConeAngleDegrees(value);
+                }
             }
             saveAction.run();
         } catch (NumberFormatException ignored) {}
@@ -450,6 +521,8 @@ public final class LightTool implements Tool {
         return switch (field) {
             case OUTER -> String.format(Locale.ROOT, "%.0f", light.getOuterRadius());
             case INNER -> String.format(Locale.ROOT, "%.0f", light.getInnerRadius());
+            case DIRECTION -> String.format(Locale.ROOT, "%.0f", light.getDirectionDegrees());
+            case CONE -> String.format(Locale.ROOT, "%.0f", light.getConeAngleDegrees());
             case COLOR -> light.isTintEnabled()
                     ? HexColorFormat.format(light.getColorRgb()) : "None";
         };
@@ -481,7 +554,7 @@ public final class LightTool implements Tool {
         VttLight light = selectedLight();
         if (light == null) return;
         int left = popupX + 62;
-        int top = popupY + 73;
+        int top = popupY + fieldOffset(Field.COLOR) + 4;
         int color = light.isTintEnabled() ? 0xFF000000 | light.getColorRgb() : 0xFFAAAAAA;
         context.graphics().fill(left, top, left + 12, top + 12, color);
         border(context, left, top, 12, 12, CYAN);
@@ -507,17 +580,42 @@ public final class LightTool implements Tool {
         return null;
     }
 
-    private RadiusHandle handleAt(
+    private LightHandle handleAt(
             ToolContext context, VttLight light, double mouseX, double mouseY
     ) {
         Vec2d origin = new Vec2d(light.getX(), light.getY());
+        double direction = light.getType() == VttLightType.SPOT
+                ? light.getDirectionDegrees() : 0.0;
         Vec2d inner = context.renderState().worldToScreen(
-                origin.add(new Vec2d(light.getInnerRadius(), 0.0)));
+                pointAt(origin, light.getInnerRadius(), direction));
         Vec2d outer = context.renderState().worldToScreen(
-                origin.add(new Vec2d(light.getOuterRadius(), 0.0)));
-        if (Math.hypot(mouseX - inner.x(), mouseY - inner.y()) <= 9) return RadiusHandle.INNER;
-        if (Math.hypot(mouseX - outer.x(), mouseY - outer.y()) <= 9) return RadiusHandle.OUTER;
+                pointAt(origin, light.getOuterRadius(), direction));
+        if (Math.hypot(mouseX - inner.x(), mouseY - inner.y()) <= 9) return LightHandle.INNER;
+        if (Math.hypot(mouseX - outer.x(), mouseY - outer.y()) <= 9) return LightHandle.OUTER;
+        if (light.getType() == VttLightType.SPOT) {
+            Vec2d directionHandle = context.renderState().worldToScreen(
+                    pointAt(origin, light.getOuterRadius() + DIRECTION_HANDLE_OFFSET, direction));
+            if (Math.hypot(mouseX - directionHandle.x(), mouseY - directionHandle.y()) <= 9) {
+                return LightHandle.DIRECTION;
+            }
+            Vec2d coneHandle = context.renderState().worldToScreen(pointAt(
+                    origin, light.getOuterRadius() + CONE_HANDLE_OFFSET,
+                    direction + light.getConeAngleDegrees() / 2.0));
+            if (Math.hypot(mouseX - coneHandle.x(), mouseY - coneHandle.y()) <= 9) {
+                return LightHandle.CONE;
+            }
+        }
         return null;
+    }
+
+    private Vec2d pointAt(Vec2d origin, double distance, double angleDegrees) {
+        double radians = Math.toRadians(angleDegrees);
+        return origin.add(new Vec2d(Math.cos(radians) * distance,
+                Math.sin(radians) * distance));
+    }
+
+    private double shortestAngleDegrees(double degrees) {
+        return ((degrees + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
     }
 
     private VttLight selectedLight() {
@@ -541,8 +639,7 @@ public final class LightTool implements Tool {
         int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         popupX = Math.max(4, Math.min(screenWidth - popupWidth - 4,
                 (int) Math.round(mouseX) + 8));
-        popupY = Math.max(4, (int) Math.round(mouseY)
-                - (popup == Popup.CREATE ? 64 : 198));
+        popupY = Math.max(4, (int) Math.round(mouseY) - popupHeight());
         focusedField = null;
         draggingIntensity = false;
     }
@@ -554,6 +651,35 @@ public final class LightTool implements Tool {
                 (mouseX - (popupX + 7.0)) / 140.0));
         light.setIntensity(VttLight.MIN_INTENSITY
                 + progress * (VttLight.MAX_INTENSITY - VttLight.MIN_INTENSITY));
+    }
+
+    private boolean isSpot() {
+        VttLight light = selectedLight();
+        return light != null && light.getType() == VttLightType.SPOT;
+    }
+
+    private boolean fieldVisible(Field field) {
+        return field != Field.DIRECTION && field != Field.CONE || isSpot();
+    }
+
+    private int fieldOffset(Field field) {
+        return switch (field) {
+            case OUTER -> 25;
+            case INNER -> 47;
+            case DIRECTION -> 69;
+            case CONE -> 91;
+            case COLOR -> isSpot() ? 113 : 69;
+        };
+    }
+
+    private int paletteY() { return popupY + (isSpot() ? 135 : 91); }
+    private int intensityLabelY() { return popupY + (isSpot() ? 155 : 111); }
+    private int intensityTrackY() { return popupY + (isSpot() ? 170 : 126); }
+    private int duplicateRow() { return isSpot() ? 10 : 8; }
+    private int deleteRow() { return isSpot() ? 11 : 9; }
+    private int popupHeight() {
+        if (popup == Popup.CREATE) return 64;
+        return isSpot() ? 242 : 198;
     }
 
     private void closePopup() {
@@ -573,6 +699,6 @@ public final class LightTool implements Tool {
     }
 
     private enum Popup { NONE, CREATE, PROPERTIES }
-    private enum RadiusHandle { INNER, OUTER }
-    private enum Field { OUTER, INNER, COLOR }
+    private enum LightHandle { INNER, OUTER, DIRECTION, CONE }
+    private enum Field { OUTER, INNER, DIRECTION, CONE, COLOR }
 }

@@ -62,6 +62,65 @@ public final class SceneVisionRaycaster {
         return List.copyOf(polygon);
     }
 
+    /** Builds a wall-clipped visibility polygon restricted to a directional cone. */
+    public List<Vec2d> buildVisibilityCone(
+            Vec2d origin, double maxDistance, List<VisionSegment> segments,
+            double directionRadians, double coneAngleRadians, int baseRayCount
+    ) {
+        if (origin == null) return List.of();
+        List<VisionSegment> safeSegments = segments == null ? List.of() : segments;
+        double span = Math.max(Math.toRadians(1.0), Math.min(Math.PI * 1.99, coneAngleRadians));
+        double start = directionRadians - span / 2.0;
+        int fullRayCount = Math.max(8, Math.min(512, baseRayCount));
+        int rayCount = Math.max(4, (int) Math.ceil(fullRayCount * span / (Math.PI * 2.0)));
+        List<AngularPoint> hits = new ArrayList<>(rayCount + safeSegments.size() * 6);
+        for (int index = 0; index <= rayCount; index++) {
+            double offset = span * index / rayCount;
+            addConeRay(hits, origin, start + offset, offset, maxDistance, safeSegments);
+        }
+        for (VisionSegment segment : safeSegments) {
+            if (segment == null) continue;
+            addConeEndpointRays(hits, origin, segment.start(), start, span,
+                    maxDistance, safeSegments);
+            addConeEndpointRays(hits, origin, segment.end(), start, span,
+                    maxDistance, safeSegments);
+        }
+        hits.sort(Comparator.comparingDouble(AngularPoint::angle));
+        List<Vec2d> polygon = new ArrayList<>(hits.size() + 1);
+        polygon.add(origin);
+        for (AngularPoint hit : hits) polygon.add(hit.point());
+        return List.copyOf(polygon);
+    }
+
+    private void addConeEndpointRays(
+            List<AngularPoint> target, Vec2d origin, Vec2d endpoint,
+            double start, double span, double maxDistance, List<VisionSegment> segments
+    ) {
+        double angle = Math.atan2(endpoint.y() - origin.y(), endpoint.x() - origin.x());
+        double offset = positiveAngle(angle - start);
+        if (offset > span + ANGLE_EPSILON) return;
+        for (double epsilon : new double[]{-ANGLE_EPSILON, 0.0, ANGLE_EPSILON}) {
+            double candidateOffset = offset + epsilon;
+            if (candidateOffset >= 0.0 && candidateOffset <= span) {
+                addConeRay(target, origin, start + candidateOffset, candidateOffset,
+                        maxDistance, segments);
+            }
+        }
+    }
+
+    private void addConeRay(
+            List<AngularPoint> target, Vec2d origin, double angle, double offset,
+            double maxDistance, List<VisionSegment> segments
+    ) {
+        target.add(new AngularPoint(offset,
+                castRay(origin, angle, maxDistance, segments).point()));
+    }
+
+    private double positiveAngle(double angle) {
+        double result = angle % (Math.PI * 2.0);
+        return result < 0.0 ? result + Math.PI * 2.0 : result;
+    }
+
     private void addEndpointRays(
             List<AngularPoint> target, Vec2d origin, Vec2d endpoint,
             double maxDistance, List<VisionSegment> segments
