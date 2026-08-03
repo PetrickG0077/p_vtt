@@ -7,14 +7,20 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
-/** Lists scene maps, canvas objects and lights in separate selectable sections. */
+/** A selectable scene tree: token roots own their bound attachments and attached lights. */
 public final class SceneOutlinerOverlay {
     private static final int PANEL_WIDTH = 220;
     private static final int PADDING = 8;
@@ -22,33 +28,22 @@ public final class SceneOutlinerOverlay {
     private static final int PANEL_X = 10;
     private static final int PANEL_Y = 105;
     private static final int MAX_VISIBLE_MAPS = 5;
-    private static final int MAX_VISIBLE_OBJECTS = 10;
-    private static final int MAX_VISIBLE_LIGHTS = 8;
+    private static final int MAX_VISIBLE_ENTRIES = 14;
     private static final int PANEL_BACKGROUND = 0xAA000000;
     private static final int TITLE_COLOR = 0xFFFFFFFF;
     private static final int TEXT_COLOR = 0xFFDDDDDD;
     private static final int MUTED_TEXT_COLOR = 0xFF888888;
 
     private int mapScrollOffset;
-    private int objectScrollOffset;
-    private int lightScrollOffset;
+    private int entryScrollOffset;
     private ScrollSection draggingScrollbar = ScrollSection.NONE;
 
-    public void render(
-            VRenderContext context,
-            Font font,
-            CanvasScene canvasScene,
-            VttScene vttScene,
-            SelectionManager selectionManager,
-            String selectedMapId,
-            String selectedLightId
-    ) {
+    public void render(VRenderContext context, Font font, CanvasScene canvasScene, VttScene vttScene,
+                       SelectionManager selectionManager, String selectedMapId, String selectedLightId) {
         List<VttSceneMap> maps = sortedMaps(vttScene);
-        List<CanvasObject> objects = canvasScene.getObjects();
-        List<VttLight> lights = lights(vttScene);
-        Layout layout = layout(maps.size(), objects.size(), lights.size());
+        List<TreeEntry> entries = treeEntries(canvasScene, vttScene);
+        Layout layout = layout(maps.size(), entries.size());
         renderPanelBackground(context, PANEL_X, PANEL_Y, PANEL_WIDTH, layout.panelHeight());
-
         int textX = PANEL_X + PADDING;
         drawLine(context, font, "Scene Outliner", textX, PANEL_Y + PADDING, TITLE_COLOR);
         drawLine(context, font, "Maps: " + maps.size(), textX, layout.mapsTitleY(), TEXT_COLOR);
@@ -58,87 +53,49 @@ public final class SceneOutlinerOverlay {
             for (int index = 0; index < layout.visibleMaps(); index++) {
                 VttSceneMap map = maps.get(mapScrollOffset + index);
                 boolean selected = map.getId().equals(selectedMapId);
-                String text = (selected ? "> " : "  ")
-                        + (map.isVisible() ? "[V] " : "[H] ")
+                String text = (selected ? "> " : "  ") + (map.isVisible() ? "[V] " : "[H] ")
                         + "[" + map.getLayerIndex() + "] " + map.getDisplayName();
-                drawLine(context, font, text, textX,
-                        layout.firstMapY() + index * LINE_HEIGHT,
+                drawLine(context, font, text, textX, layout.firstMapY() + index * LINE_HEIGHT,
                         selected ? EditorHudTheme.opaqueSelection()
                                 : map.isVisible() ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
             if (maps.size() > MAX_VISIBLE_MAPS) {
-                drawLine(context, font, range(
-                        mapScrollOffset, layout.visibleMaps(), maps.size()),
-                        textX, layout.mapRangeY(), MUTED_TEXT_COLOR);
+                drawLine(context, font, range(mapScrollOffset, layout.visibleMaps(), maps.size()), textX,
+                        layout.mapRangeY(), MUTED_TEXT_COLOR);
                 EditorScrollbar.render(context, scrollbarX(), layout.firstMapY(), 4,
                         MAX_VISIBLE_MAPS * LINE_HEIGHT, maps.size(), MAX_VISIBLE_MAPS,
                         mapScrollOffset, EditorHudTheme.outline());
             }
         }
 
-        drawLine(context, font, "Objects: " + objects.size(),
-                textX, layout.objectsTitleY(), TEXT_COLOR);
-        if (objects.isEmpty()) {
-            drawLine(context, font, "  No objects",
-                    textX, layout.firstObjectY(), MUTED_TEXT_COLOR);
+        drawLine(context, font, "Scene tree: " + entries.size(), textX, layout.entriesTitleY(), TEXT_COLOR);
+        if (entries.isEmpty()) {
+            drawLine(context, font, "  No objects or lights", textX, layout.firstEntryY(), MUTED_TEXT_COLOR);
         } else {
-            for (int index = 0; index < layout.visibleObjects(); index++) {
-                CanvasObject object = objects.get(objectScrollOffset + index);
-                boolean selected = selectionManager.isSelected(object.id());
-                int layerIndex = canvasScene.getObjectLayerIndex(object.id());
-                String text = (selected ? "> " : "  ")
-                        + (object.visible() ? "[V] " : "[H] ")
-                        + "[" + layerIndex + "] " + object.displayName()
-                        + " {" + object.activeStateId() + "}";
-                drawLine(context, font, text, textX,
-                        layout.firstObjectY() + index * LINE_HEIGHT,
-                        selected ? EditorHudTheme.opaqueSelection()
-                                : object.visible() ? TEXT_COLOR : MUTED_TEXT_COLOR);
+            for (int index = 0; index < layout.visibleEntries(); index++) {
+                TreeEntry entry = entries.get(entryScrollOffset + index);
+                boolean selected = entry.object != null
+                        ? selectionManager.isSelected(entry.id)
+                        : entry.id.equals(selectedLightId);
+                boolean visible = entry.object != null ? entry.object.visible() : entry.light.isEnabled();
+                String marker = selected ? "> " : "  ";
+                String text = marker + "  ".repeat(entry.depth) + entry.label;
+                drawLine(context, font, text, textX, layout.firstEntryY() + index * LINE_HEIGHT,
+                        selected ? EditorHudTheme.opaqueSelection() : visible ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
-            if (objects.size() > MAX_VISIBLE_OBJECTS) {
-                drawLine(context, font, range(
-                        objectScrollOffset, layout.visibleObjects(), objects.size()),
-                        textX, layout.objectRangeY(), MUTED_TEXT_COLOR);
-                EditorScrollbar.render(context, scrollbarX(), layout.firstObjectY(), 4,
-                        MAX_VISIBLE_OBJECTS * LINE_HEIGHT, objects.size(),
-                        MAX_VISIBLE_OBJECTS, objectScrollOffset,
-                        EditorHudTheme.outline());
-            }
-        }
-
-        drawLine(context, font, "Lights: " + lights.size(),
-                textX, layout.lightsTitleY(), TEXT_COLOR);
-        if (lights.isEmpty()) {
-            drawLine(context, font, "  No lights",
-                    textX, layout.firstLightY(), MUTED_TEXT_COLOR);
-        } else {
-            for (int index = 0; index < layout.visibleLights(); index++) {
-                VttLight light = lights.get(lightScrollOffset + index);
-                boolean selected = light.getId().equals(selectedLightId);
-                String text = (selected ? "> " : "  ")
-                        + (light.isEnabled() ? "[V] " : "[H] ")
-                        + light.getType().name() + " " + light.getId();
-                drawLine(context, font, text, textX,
-                        layout.firstLightY() + index * LINE_HEIGHT,
-                        selected ? EditorHudTheme.opaqueSelection()
-                                : light.isEnabled() ? TEXT_COLOR : MUTED_TEXT_COLOR);
-            }
-            if (lights.size() > MAX_VISIBLE_LIGHTS) {
-                drawLine(context, font, range(
-                        lightScrollOffset, layout.visibleLights(), lights.size()),
-                        textX, layout.lightRangeY(), MUTED_TEXT_COLOR);
-                EditorScrollbar.render(context, scrollbarX(), layout.firstLightY(), 4,
-                        MAX_VISIBLE_LIGHTS * LINE_HEIGHT, lights.size(), MAX_VISIBLE_LIGHTS,
-                        lightScrollOffset, EditorHudTheme.outline());
+            if (entries.size() > MAX_VISIBLE_ENTRIES) {
+                drawLine(context, font, range(entryScrollOffset, layout.visibleEntries(), entries.size()), textX,
+                        layout.entryRangeY(), MUTED_TEXT_COLOR);
+                EditorScrollbar.render(context, scrollbarX(), layout.firstEntryY(), 4,
+                        MAX_VISIBLE_ENTRIES * LINE_HEIGHT, entries.size(), MAX_VISIBLE_ENTRIES,
+                        entryScrollOffset, EditorHudTheme.outline());
             }
         }
     }
 
-    public Optional<String> findMapIdAt(
-            VttScene scene, CanvasScene canvasScene, double mouseX, double mouseY
-    ) {
+    public Optional<String> findMapIdAt(VttScene scene, CanvasScene canvasScene, double mouseX, double mouseY) {
         List<VttSceneMap> maps = sortedMaps(scene);
-        Layout layout = layout(maps.size(), canvasScene.getObjects().size(), lightCount(scene));
+        Layout layout = layout(maps.size(), treeEntries(canvasScene, scene).size());
         if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
         for (int index = 0; index < layout.visibleMaps(); index++) {
             if (insideRow(mouseY, layout.firstMapY() + index * LINE_HEIGHT)) {
@@ -148,186 +105,174 @@ public final class SceneOutlinerOverlay {
         return Optional.empty();
     }
 
-    public Optional<String> findObjectIdAt(
-            CanvasScene scene, VttScene vttScene, double mouseX, double mouseY
-    ) {
-        List<CanvasObject> objects = scene.getObjects();
-        Layout layout = layout(sortedMaps(vttScene).size(), objects.size(), lightCount(vttScene));
-        if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
-        for (int index = 0; index < layout.visibleObjects(); index++) {
-            if (insideRow(mouseY, layout.firstObjectY() + index * LINE_HEIGHT)) {
-                return Optional.of(objects.get(objectScrollOffset + index).id());
-            }
-        }
-        return Optional.empty();
+    public Optional<String> findObjectIdAt(CanvasScene canvasScene, VttScene scene,
+                                           double mouseX, double mouseY) {
+        TreeEntry entry = entryAt(canvasScene, scene, mouseX, mouseY);
+        return entry != null && entry.object != null ? Optional.of(entry.id) : Optional.empty();
     }
 
-    public Optional<String> findLightIdAt(
-            CanvasScene canvasScene, VttScene vttScene, double mouseX, double mouseY
-    ) {
-        List<VttLight> lights = lights(vttScene);
-        Layout layout = layout(sortedMaps(vttScene).size(),
-                canvasScene.getObjects().size(), lights.size());
-        if (!insidePanel(mouseX, mouseY, layout)) return Optional.empty();
-        for (int index = 0; index < layout.visibleLights(); index++) {
-            if (insideRow(mouseY, layout.firstLightY() + index * LINE_HEIGHT)) {
-                return Optional.of(lights.get(lightScrollOffset + index).getId());
-            }
-        }
-        return Optional.empty();
+    public Optional<String> findLightIdAt(CanvasScene canvasScene, VttScene scene,
+                                          double mouseX, double mouseY) {
+        TreeEntry entry = entryAt(canvasScene, scene, mouseX, mouseY);
+        return entry != null && entry.light != null ? Optional.of(entry.id) : Optional.empty();
     }
 
-    public boolean mouseClickedScrollbar(
-            CanvasScene canvasScene, VttScene vttScene, double mouseX, double mouseY
-    ) {
-        List<VttSceneMap> maps = sortedMaps(vttScene);
-        int objectCount = canvasScene.getObjects().size();
-        int lightCount = lightCount(vttScene);
-        Layout layout = layout(maps.size(), objectCount, lightCount);
-        if (maps.size() > MAX_VISIBLE_MAPS && EditorScrollbar.contains(
-                mouseX, mouseY, scrollbarX() - 3, layout.firstMapY(),
-                10, MAX_VISIBLE_MAPS * LINE_HEIGHT)) {
+    public boolean mouseClickedScrollbar(CanvasScene canvasScene, VttScene scene,
+                                         double mouseX, double mouseY) {
+        List<VttSceneMap> maps = sortedMaps(scene);
+        List<TreeEntry> entries = treeEntries(canvasScene, scene);
+        Layout layout = layout(maps.size(), entries.size());
+        if (maps.size() > MAX_VISIBLE_MAPS && EditorScrollbar.contains(mouseX, mouseY,
+                scrollbarX() - 3, layout.firstMapY(), 10, MAX_VISIBLE_MAPS * LINE_HEIGHT)) {
             draggingScrollbar = ScrollSection.MAPS;
-            updateMapScrollFromMouse(maps.size(), layout, mouseY);
+            mapScrollOffset = EditorScrollbar.offsetForMouse(mouseY, layout.firstMapY(),
+                    MAX_VISIBLE_MAPS * LINE_HEIGHT, maps.size(), MAX_VISIBLE_MAPS);
             return true;
         }
-        if (lightCount > MAX_VISIBLE_LIGHTS && EditorScrollbar.contains(
-                mouseX, mouseY, scrollbarX() - 3, layout.firstLightY(),
-                10, MAX_VISIBLE_LIGHTS * LINE_HEIGHT)) {
-            draggingScrollbar = ScrollSection.LIGHTS;
-            updateLightScrollFromMouse(lightCount, layout, mouseY);
-            return true;
-        }
-        if (objectCount > MAX_VISIBLE_OBJECTS && EditorScrollbar.contains(
-                mouseX, mouseY, scrollbarX() - 3, layout.firstObjectY(),
-                10, MAX_VISIBLE_OBJECTS * LINE_HEIGHT)) {
-            draggingScrollbar = ScrollSection.OBJECTS;
-            updateObjectScrollFromMouse(objectCount, layout, mouseY);
+        if (entries.size() > MAX_VISIBLE_ENTRIES && EditorScrollbar.contains(mouseX, mouseY,
+                scrollbarX() - 3, layout.firstEntryY(), 10, MAX_VISIBLE_ENTRIES * LINE_HEIGHT)) {
+            draggingScrollbar = ScrollSection.ENTRIES;
+            entryScrollOffset = EditorScrollbar.offsetForMouse(mouseY, layout.firstEntryY(),
+                    MAX_VISIBLE_ENTRIES * LINE_HEIGHT, entries.size(), MAX_VISIBLE_ENTRIES);
             return true;
         }
         return false;
     }
 
-    public boolean mouseDraggedScrollbar(
-            CanvasScene canvasScene, VttScene vttScene, double mouseY
-    ) {
-        List<VttSceneMap> maps = sortedMaps(vttScene);
-        int lightCount = lightCount(vttScene);
-        Layout layout = layout(maps.size(), canvasScene.getObjects().size(), lightCount);
+    public boolean mouseDraggedScrollbar(CanvasScene canvasScene, VttScene scene, double mouseY) {
+        List<VttSceneMap> maps = sortedMaps(scene);
+        List<TreeEntry> entries = treeEntries(canvasScene, scene);
+        Layout layout = layout(maps.size(), entries.size());
         if (draggingScrollbar == ScrollSection.MAPS) {
-            updateMapScrollFromMouse(maps.size(), layout, mouseY);
+            mapScrollOffset = EditorScrollbar.offsetForMouse(mouseY, layout.firstMapY(),
+                    MAX_VISIBLE_MAPS * LINE_HEIGHT, maps.size(), MAX_VISIBLE_MAPS);
             return true;
         }
-        if (draggingScrollbar == ScrollSection.LIGHTS) {
-            updateLightScrollFromMouse(lightCount, layout, mouseY);
-            return true;
-        }
-        if (draggingScrollbar == ScrollSection.OBJECTS) {
-            updateObjectScrollFromMouse(canvasScene.getObjects().size(), layout, mouseY);
+        if (draggingScrollbar == ScrollSection.ENTRIES) {
+            entryScrollOffset = EditorScrollbar.offsetForMouse(mouseY, layout.firstEntryY(),
+                    MAX_VISIBLE_ENTRIES * LINE_HEIGHT, entries.size(), MAX_VISIBLE_ENTRIES);
             return true;
         }
         return false;
     }
 
     public boolean mouseReleasedScrollbar() {
-        boolean wasDragging = draggingScrollbar != ScrollSection.NONE;
+        boolean dragging = draggingScrollbar != ScrollSection.NONE;
         draggingScrollbar = ScrollSection.NONE;
-        return wasDragging;
+        return dragging;
     }
 
-    public boolean mouseScrolled(
-            CanvasScene canvasScene, VttScene vttScene,
-            double mouseX, double mouseY, double scrollY
-    ) {
-        List<VttSceneMap> maps = sortedMaps(vttScene);
-        int objectCount = canvasScene.getObjects().size();
-        int lightCount = lightCount(vttScene);
-        Layout layout = layout(maps.size(), objectCount, lightCount);
+    public boolean mouseScrolled(CanvasScene canvasScene, VttScene scene,
+                                 double mouseX, double mouseY, double scrollY) {
+        List<VttSceneMap> maps = sortedMaps(scene);
+        List<TreeEntry> entries = treeEntries(canvasScene, scene);
+        Layout layout = layout(maps.size(), entries.size());
         if (!insidePanel(mouseX, mouseY, layout)) return false;
         int delta = scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0;
-        if (mouseY < layout.objectsTitleY()) {
-            mapScrollOffset = EditorScrollbar.clampOffset(
-                    mapScrollOffset + delta, maps.size(), MAX_VISIBLE_MAPS);
-        } else if (mouseY < layout.lightsTitleY()) {
-            objectScrollOffset = EditorScrollbar.clampOffset(
-                    objectScrollOffset + delta, objectCount, MAX_VISIBLE_OBJECTS);
+        if (mouseY < layout.entriesTitleY()) {
+            mapScrollOffset = EditorScrollbar.clampOffset(mapScrollOffset + delta,
+                    maps.size(), MAX_VISIBLE_MAPS);
         } else {
-            lightScrollOffset = EditorScrollbar.clampOffset(
-                    lightScrollOffset + delta, lightCount, MAX_VISIBLE_LIGHTS);
+            entryScrollOffset = EditorScrollbar.clampOffset(entryScrollOffset + delta,
+                    entries.size(), MAX_VISIBLE_ENTRIES);
         }
         return true;
     }
 
-    public boolean contains(
-            CanvasScene canvasScene, VttScene vttScene, double mouseX, double mouseY
-    ) {
+    public boolean contains(CanvasScene canvasScene, VttScene scene, double mouseX, double mouseY) {
         return insidePanel(mouseX, mouseY,
-                layout(sortedMaps(vttScene).size(), canvasScene.getObjects().size(),
-                        lightCount(vttScene)));
+                layout(sortedMaps(scene).size(), treeEntries(canvasScene, scene).size()));
     }
 
-    private Layout layout(int mapCount, int objectCount, int lightCount) {
-        mapScrollOffset = EditorScrollbar.clampOffset(
-                mapScrollOffset, mapCount, MAX_VISIBLE_MAPS);
-        objectScrollOffset = EditorScrollbar.clampOffset(
-                objectScrollOffset, objectCount, MAX_VISIBLE_OBJECTS);
-        lightScrollOffset = EditorScrollbar.clampOffset(
-                lightScrollOffset, lightCount, MAX_VISIBLE_LIGHTS);
+    private TreeEntry entryAt(CanvasScene canvasScene, VttScene scene, double mouseX, double mouseY) {
+        List<TreeEntry> entries = treeEntries(canvasScene, scene);
+        Layout layout = layout(sortedMaps(scene).size(), entries.size());
+        if (!insidePanel(mouseX, mouseY, layout)) return null;
+        for (int index = 0; index < layout.visibleEntries(); index++) {
+            if (insideRow(mouseY, layout.firstEntryY() + index * LINE_HEIGHT)) {
+                return entries.get(entryScrollOffset + index);
+            }
+        }
+        return null;
+    }
+
+    private List<TreeEntry> treeEntries(CanvasScene canvasScene, VttScene scene) {
+        if (canvasScene == null) return List.of();
+        Map<String, VttSceneObject> sceneObjects = new HashMap<>();
+        if (scene != null) {
+            for (VttSceneObject object : scene.getObjects()) {
+                if (object != null) sceneObjects.put(object.getId(), object);
+            }
+        }
+        Map<String, List<CanvasObject>> children = new HashMap<>();
+        List<CanvasObject> roots = new ArrayList<>();
+        for (CanvasObject object : canvasScene.getObjects()) {
+            VttSceneObject metadata = sceneObjects.get(object.id());
+            String parentId = metadata != null && metadata.isAttachment()
+                    && metadata.getAttachmentBinding() != null
+                    && metadata.getAttachmentBinding().isBound()
+                    ? metadata.getAttachmentBinding().getTargetObjectId() : null;
+            if (parentId == null) roots.add(object);
+            else children.computeIfAbsent(parentId, ignored -> new ArrayList<>()).add(object);
+        }
+        List<TreeEntry> entries = new ArrayList<>();
+        Set<String> renderedObjects = new HashSet<>();
+        Set<String> renderedLights = new HashSet<>();
+        for (CanvasObject root : roots) {
+            appendObject(entries, root, 0, children, scene, renderedObjects, renderedLights);
+        }
+        for (CanvasObject object : canvasScene.getObjects()) {
+            if (!renderedObjects.contains(object.id())) {
+                appendObject(entries, object, 0, children, scene, renderedObjects, renderedLights);
+            }
+        }
+        if (scene != null) {
+            for (VttLight light : scene.getLights()) {
+                if (light != null && !renderedLights.contains(light.getId())) {
+                    entries.add(TreeEntry.light(light, 0));
+                }
+            }
+        }
+        return entries;
+    }
+
+    private void appendObject(List<TreeEntry> entries, CanvasObject object, int depth,
+                              Map<String, List<CanvasObject>> children, VttScene scene,
+                              Set<String> renderedObjects, Set<String> renderedLights) {
+        if (!renderedObjects.add(object.id())) return;
+        entries.add(TreeEntry.object(object, depth));
+        for (CanvasObject child : children.getOrDefault(object.id(), List.of())) {
+            appendObject(entries, child, depth + 1, children, scene, renderedObjects, renderedLights);
+        }
+        if (scene == null) return;
+        for (VttLight light : scene.getLights()) {
+            if (light != null && object.id().equals(light.getAttachedToObjectId())
+                    && renderedLights.add(light.getId())) {
+                entries.add(TreeEntry.light(light, depth + 1));
+            }
+        }
+    }
+
+    private Layout layout(int mapCount, int entryCount) {
+        mapScrollOffset = EditorScrollbar.clampOffset(mapScrollOffset, mapCount, MAX_VISIBLE_MAPS);
+        entryScrollOffset = EditorScrollbar.clampOffset(entryScrollOffset, entryCount, MAX_VISIBLE_ENTRIES);
         int visibleMaps = Math.min(MAX_VISIBLE_MAPS, mapCount);
-        int visibleObjects = Math.min(MAX_VISIBLE_OBJECTS, objectCount);
-        int visibleLights = Math.min(MAX_VISIBLE_LIGHTS, lightCount);
+        int visibleEntries = Math.min(MAX_VISIBLE_ENTRIES, entryCount);
         int mapsTitleY = PANEL_Y + PADDING + LINE_HEIGHT + 4;
         int firstMapY = mapsTitleY + LINE_HEIGHT + 2;
-        int mapRows = Math.max(1, visibleMaps);
-        int mapRangeY = firstMapY + mapRows * LINE_HEIGHT;
-        int objectsTitleY = mapRangeY + (mapCount > MAX_VISIBLE_MAPS ? LINE_HEIGHT : 0) + 5;
-        int firstObjectY = objectsTitleY + LINE_HEIGHT + 2;
-        int objectRows = Math.max(1, visibleObjects);
-        int objectRangeY = firstObjectY + objectRows * LINE_HEIGHT;
-        int lightsTitleY = objectRangeY
-                + (objectCount > MAX_VISIBLE_OBJECTS ? LINE_HEIGHT : 0) + 5;
-        int firstLightY = lightsTitleY + LINE_HEIGHT + 2;
-        int lightRows = Math.max(1, visibleLights);
-        int lightRangeY = firstLightY + lightRows * LINE_HEIGHT;
-        int bottom = lightRangeY + (lightCount > MAX_VISIBLE_LIGHTS ? LINE_HEIGHT : 0);
-        return new Layout(visibleMaps, visibleObjects, visibleLights, mapsTitleY, firstMapY,
-                mapRangeY, objectsTitleY, firstObjectY, objectRangeY,
-                lightsTitleY, firstLightY, lightRangeY,
-                bottom - PANEL_Y + PADDING);
+        int mapRangeY = firstMapY + Math.max(1, visibleMaps) * LINE_HEIGHT;
+        int entriesTitleY = mapRangeY + (mapCount > MAX_VISIBLE_MAPS ? LINE_HEIGHT : 0) + 5;
+        int firstEntryY = entriesTitleY + LINE_HEIGHT + 2;
+        int entryRangeY = firstEntryY + Math.max(1, visibleEntries) * LINE_HEIGHT;
+        int bottom = entryRangeY + (entryCount > MAX_VISIBLE_ENTRIES ? LINE_HEIGHT : 0);
+        return new Layout(visibleMaps, visibleEntries, mapsTitleY, firstMapY, mapRangeY,
+                entriesTitleY, firstEntryY, entryRangeY, bottom - PANEL_Y + PADDING);
     }
 
     private List<VttSceneMap> sortedMaps(VttScene scene) {
         if (scene == null) return List.of();
         return scene.getMaps().stream().filter(map -> map != null)
-                .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex).reversed())
-                .toList();
-    }
-
-    private List<VttLight> lights(VttScene scene) {
-        if (scene == null) return List.of();
-        return scene.getLights().stream().filter(light -> light != null).toList();
-    }
-
-    private int lightCount(VttScene scene) {
-        return lights(scene).size();
-    }
-
-    private void updateMapScrollFromMouse(int count, Layout layout, double mouseY) {
-        mapScrollOffset = EditorScrollbar.offsetForMouse(
-                mouseY, layout.firstMapY(), MAX_VISIBLE_MAPS * LINE_HEIGHT,
-                count, MAX_VISIBLE_MAPS);
-    }
-
-    private void updateObjectScrollFromMouse(int count, Layout layout, double mouseY) {
-        objectScrollOffset = EditorScrollbar.offsetForMouse(
-                mouseY, layout.firstObjectY(), MAX_VISIBLE_OBJECTS * LINE_HEIGHT,
-                count, MAX_VISIBLE_OBJECTS);
-    }
-
-    private void updateLightScrollFromMouse(int count, Layout layout, double mouseY) {
-        lightScrollOffset = EditorScrollbar.offsetForMouse(
-                mouseY, layout.firstLightY(), MAX_VISIBLE_LIGHTS * LINE_HEIGHT,
-                count, MAX_VISIBLE_LIGHTS);
+                .sorted(Comparator.comparingInt(VttSceneMap::getLayerIndex).reversed()).toList();
     }
 
     private boolean insidePanel(double x, double y, Layout layout) {
@@ -339,47 +284,36 @@ public final class SceneOutlinerOverlay {
         return mouseY >= rowY && mouseY <= rowY + LINE_HEIGHT;
     }
 
-    private int scrollbarX() {
-        return PANEL_X + PANEL_WIDTH - PADDING - 4;
-    }
+    private int scrollbarX() { return PANEL_X + PANEL_WIDTH - PADDING - 4; }
+    private String range(int offset, int visible, int total) { return (offset + 1) + "-" + (offset + visible) + " / " + total; }
 
-    private String range(int offset, int visible, int total) {
-        return (offset + 1) + "-" + (offset + visible) + " / " + total;
-    }
-
-    private void renderPanelBackground(
-            VRenderContext context, int x, int y, int width, int height
-    ) {
+    private void renderPanelBackground(VRenderContext context, int x, int y, int width, int height) {
         context.graphics().fill(x, y, x + width, y + height, PANEL_BACKGROUND);
         context.graphics().hLine(x, x + width, y, EditorHudTheme.outline());
-        context.graphics().hLine(
-                x, x + width, y + height, EditorHudTheme.outline());
+        context.graphics().hLine(x, x + width, y + height, EditorHudTheme.outline());
         context.graphics().vLine(x, y, y + height, EditorHudTheme.outline());
-        context.graphics().vLine(
-                x + width, y, y + height, EditorHudTheme.outline());
+        context.graphics().vLine(x + width, y, y + height, EditorHudTheme.outline());
     }
 
-    private void drawLine(
-            VRenderContext context, Font font, String text, int x, int y, int color
-    ) {
+    private void drawLine(VRenderContext context, Font font, String text, int x, int y, int color) {
         context.graphics().drawString(font, text, x, y, color, false);
     }
 
-    private enum ScrollSection { NONE, MAPS, OBJECTS, LIGHTS }
+    private enum ScrollSection { NONE, MAPS, ENTRIES }
 
-    private record Layout(
-            int visibleMaps,
-            int visibleObjects,
-            int visibleLights,
-            int mapsTitleY,
-            int firstMapY,
-            int mapRangeY,
-            int objectsTitleY,
-            int firstObjectY,
-            int objectRangeY,
-            int lightsTitleY,
-            int firstLightY,
-            int lightRangeY,
-            int panelHeight
-    ) {}
+    private record TreeEntry(String id, CanvasObject object, VttLight light, int depth, String label) {
+        private static TreeEntry object(CanvasObject object, int depth) {
+            return new TreeEntry(object.id(), object, null, depth,
+                    (object.visible() ? "[V] " : "[H] ") + object.displayName());
+        }
+
+        private static TreeEntry light(VttLight light, int depth) {
+            return new TreeEntry(light.getId(), null, light, depth,
+                    (light.isEnabled() ? "[V] " : "[H] ") + "Light: " + light.getType().name());
+        }
+    }
+
+    private record Layout(int visibleMaps, int visibleEntries, int mapsTitleY, int firstMapY,
+                          int mapRangeY, int entriesTitleY, int firstEntryY, int entryRangeY,
+                          int panelHeight) {}
 }
