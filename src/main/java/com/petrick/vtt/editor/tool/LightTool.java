@@ -64,6 +64,7 @@ public final class LightTool implements Tool {
     private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
     private CanvasScene lastCanvasScene;
     private boolean attachmentTargetsOpen;
+    private CanvasObject lightDropAttachmentTarget;
 
     public LightTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.sceneSupplier = sceneSupplier;
@@ -139,6 +140,7 @@ public final class LightTool implements Tool {
         if (moving && dragOffset != null) {
             light.setX(world.x() + dragOffset.x());
             light.setY(world.y() + dragOffset.y());
+            lightDropAttachmentTarget = attachmentTargetAt(context.scene(), world);
             return true;
         }
         if (editHandle != null) {
@@ -181,11 +183,20 @@ public final class LightTool implements Tool {
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !moving && editHandle == null) return false;
         mouseDragged(context, mouseX, mouseY, button, 0.0, 0.0, modifiers);
+        CanvasObject dropTarget = moving
+                ? attachmentTargetAt(context.scene(), context.renderState().screenToWorld(
+                new Vec2d(mouseX, mouseY))) : null;
+        VttLight releasedLight = selectedLight();
+        if (dropTarget != null && releasedLight != null) {
+            AttachmentBindingService.bindLight(
+                    sceneSupplier.get(), context.scene(), releasedLight.getId(), dropTarget.id());
+        }
         AttachmentBindingService.recaptureLight(
                 sceneSupplier.get(), context.scene(), selectedId);
         moving = false;
         editHandle = null;
         dragOffset = null;
+        lightDropAttachmentTarget = null;
         saveAction.run();
         return true;
     }
@@ -205,6 +216,9 @@ public final class LightTool implements Tool {
         if (selected != null && AttachmentVisibilityResolver.isLightEffectivelyVisible(
                 scene, toolContext.scene(), selected)) {
             renderSelection(context, selected);
+        }
+        if (moving && lightDropAttachmentTarget != null) {
+            renderAttachmentDropTarget(context, lightDropAttachmentTarget);
         }
         if (popup != Popup.NONE) renderPopup(context, Minecraft.getInstance().font);
         colorPicker.render(context, Minecraft.getInstance().font);
@@ -289,6 +303,7 @@ public final class LightTool implements Tool {
         colorPicker.cancel();
         moving = false;
         editHandle = null;
+        lightDropAttachmentTarget = null;
         selectedId = null;
         closePopup();
     }
@@ -698,6 +713,27 @@ public final class LightTool implements Tool {
         return lastCanvasScene.getObjects().stream()
                 .filter(CanvasObject::hasSourceAttachmentDefinition)
                 .toList();
+    }
+
+    private CanvasObject attachmentTargetAt(CanvasScene canvasScene, Vec2d worldPosition) {
+        if (canvasScene == null) return null;
+        List<CanvasObject> objects = canvasScene.getObjects();
+        for (int index = objects.size() - 1; index >= 0; index--) {
+            CanvasObject object = objects.get(index);
+            if (object.hasSourceAttachmentDefinition() && object.visible()
+                    && object.containsWorldPoint(worldPosition)) {
+                return object;
+            }
+        }
+        return null;
+    }
+
+    private void renderAttachmentDropTarget(VRenderContext context, CanvasObject attachment) {
+        Vec2d center = context.renderState().worldToScreen(attachment.transform().position());
+        int x = (int) Math.round(center.x());
+        int y = (int) Math.round(center.y());
+        context.graphics().fill(x - 6, y - 6, x + 7, y + 7, 0xCC00FFFF);
+        context.graphics().fill(x - 3, y - 3, x + 4, y + 4, 0xFF202028);
     }
 
     private int attachmentPopupX(int width) {
