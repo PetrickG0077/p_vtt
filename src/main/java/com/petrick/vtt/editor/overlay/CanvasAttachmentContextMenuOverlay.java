@@ -3,6 +3,7 @@ package com.petrick.vtt.editor.overlay;
 import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import org.lwjgl.glfw.GLFW;
@@ -11,10 +12,10 @@ import java.util.List;
 
 /** Context menu for a placed attachment instance. */
 public final class CanvasAttachmentContextMenuOverlay {
-    private static final int WIDTH = 132;
+    private static final int WIDTH = 154;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 10;
+    private static final int ROWS = 11;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -23,6 +24,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private int x;
     private int y;
     private boolean targetsOpen;
+    private boolean anchorsOpen;
 
     public void open(String objectId, int mouseX, int mouseY,
                      int screenWidth, int screenHeight) {
@@ -31,11 +33,13 @@ public final class CanvasAttachmentContextMenuOverlay {
         this.x = Math.max(4, Math.min(screenWidth - WIDTH - 4, mouseX + 8));
         this.y = Math.max(4, Math.min(screenHeight - height - 4, mouseY - height - 8));
         this.targetsOpen = false;
+        this.anchorsOpen = false;
     }
 
     public void close() {
         objectId = null;
         targetsOpen = false;
+        anchorsOpen = false;
     }
 
     public boolean isOpen() { return objectId != null; }
@@ -59,11 +63,14 @@ public final class CanvasAttachmentContextMenuOverlay {
         row(context, font, 5, "Capture offset", bound);
         boolean stateSpecific = bound && binding.getParentStateId() != null;
         row(context, font, 6, stateSpecific ? "Scope: Active state" : "Scope: Global", bound);
-        row(context, font, 7, "Detach", bound);
-        row(context, font, 8, "Duplicate", true);
-        row(context, font, 9, "Delete", true);
+        row(context, font, 7, "Anchor: " + (bound
+                ? binding.getAnchor().displayName() : "Custom") + "  >", bound);
+        row(context, font, 8, "Detach", bound);
+        row(context, font, 9, "Duplicate", true);
+        row(context, font, 10, "Delete", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
+        if (anchorsOpen) renderAnchors(context, font, binding);
     }
 
     public Interaction mouseClicked(double mouseX, double mouseY, int button,
@@ -72,6 +79,14 @@ public final class CanvasAttachmentContextMenuOverlay {
         if (!isOpen()) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
         int targetX = targetX(screenWidth);
+        if (anchorsOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
+                anchorHeight())) {
+            int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+            VttAttachmentAnchor[] anchors = VttAttachmentAnchor.values();
+            return index >= 0 && index < anchors.length
+                    ? new Interaction(Action.SET_ANCHOR, anchors[index].name(), true)
+                    : Interaction.handled();
+        }
         if (targetsOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
                 targetHeight(targets))) {
             int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
@@ -86,6 +101,7 @@ public final class CanvasAttachmentContextMenuOverlay {
             return switch (row) {
                 case 0 -> {
                     targetsOpen = !targetsOpen;
+                    anchorsOpen = false;
                     yield Interaction.handled();
                 }
                 case 1 -> bound ? new Interaction(Action.TOGGLE_POSITION, null, true)
@@ -100,10 +116,16 @@ public final class CanvasAttachmentContextMenuOverlay {
                         : Interaction.handled();
                 case 6 -> bound ? new Interaction(Action.TOGGLE_STATE_SCOPE, null, true)
                         : Interaction.handled();
-                case 7 -> bound ? new Interaction(Action.DETACH, null, true)
+                case 7 -> {
+                    if (!bound) yield Interaction.handled();
+                    anchorsOpen = !anchorsOpen;
+                    targetsOpen = false;
+                    yield Interaction.handled();
+                }
+                case 8 -> bound ? new Interaction(Action.DETACH, null, true)
                         : Interaction.handled();
-                case 8 -> new Interaction(Action.DUPLICATE, null, true);
-                case 9 -> new Interaction(Action.DELETE, null, true);
+                case 9 -> new Interaction(Action.DUPLICATE, null, true);
+                case 10 -> new Interaction(Action.DELETE, null, true);
                 default -> Interaction.handled();
             };
         }
@@ -141,6 +163,26 @@ public final class CanvasAttachmentContextMenuOverlay {
                     y + 7 + i * ROW_HEIGHT,
                     current ? EditorHudTheme.selection() : TEXT, false);
         }
+    }
+
+    private void renderAnchors(
+            VRenderContext context, Font font, VttAttachmentBinding binding
+    ) {
+        int targetX = targetX(context.screenWidth());
+        panel(context, targetX, y, TARGET_WIDTH, anchorHeight());
+        VttAttachmentAnchor selected = binding == null
+                ? VttAttachmentAnchor.CUSTOM : binding.getAnchor();
+        VttAttachmentAnchor[] anchors = VttAttachmentAnchor.values();
+        for (int index = 0; index < anchors.length; index++) {
+            VttAttachmentAnchor anchor = anchors[index];
+            context.graphics().drawString(font, anchor.displayName(), targetX + 7,
+                    y + 7 + index * ROW_HEIGHT,
+                    anchor == selected ? EditorHudTheme.selection() : TEXT, false);
+        }
+    }
+
+    private int anchorHeight() {
+        return 10 + VttAttachmentAnchor.values().length * ROW_HEIGHT;
     }
 
     private int targetX(int screenWidth) {
@@ -191,7 +233,7 @@ public final class CanvasAttachmentContextMenuOverlay {
 
     public enum Action {
         NONE, BIND, TOGGLE_POSITION, TOGGLE_ROTATION, TOGGLE_SCALE, TOGGLE_FLIP, CAPTURE_OFFSET,
-        TOGGLE_STATE_SCOPE,
+        TOGGLE_STATE_SCOPE, SET_ANCHOR,
         DETACH, DUPLICATE, DELETE
     }
 

@@ -98,6 +98,7 @@ public final class TokenStateOverrideService {
                     canvasAttachment != null && canvasAttachment.flippedHorizontally(),
                     attachment.getState().getTintColorRgb(), binding.isFollowPosition(),
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
+                    binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
                     binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights));
         }
@@ -178,6 +179,7 @@ public final class TokenStateOverrideService {
                     canvasAttachment != null && canvasAttachment.flippedHorizontally(),
                     attachment.getState().getTintColorRgb(), binding.isFollowPosition(),
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
+                    binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
                     binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights));
         }

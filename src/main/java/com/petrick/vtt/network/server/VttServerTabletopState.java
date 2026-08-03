@@ -1191,13 +1191,21 @@ public final class VttServerTabletopState {
         double x = childTransform.getX();
         double y = childTransform.getY();
         if (binding.isFollowPosition()) {
-            double offsetX = parent.getState().isFlippedHorizontally()
-                    ? -binding.getOffsetX() : binding.getOffsetX();
-            double offsetY = binding.getOffsetY();
+            double anchorX = parent.getSize().getWidth() * 0.5
+                    * binding.getAnchor().horizontal() * parentTransform.getScaleX();
+            double anchorY = parent.getSize().getHeight() * 0.5
+                    * binding.getAnchor().vertical() * parentTransform.getScaleY();
+            double residualX = binding.getOffsetX();
+            double residualY = binding.getOffsetY();
             if (binding.isFollowScale()) {
-                offsetX *= parentTransform.getScaleX();
-                offsetY *= parentTransform.getScaleY();
+                residualX *= parentTransform.getScaleX();
+                residualY *= parentTransform.getScaleY();
             }
+            double localX = anchorX + residualX;
+            double localY = anchorY + residualY;
+            double offsetX = parent.getState().isFlippedHorizontally()
+                    ? -localX : localX;
+            double offsetY = localY;
             if (binding.isFollowRotation()) {
                 double radians = Math.toRadians(parentTransform.getRotationDegrees());
                 double rotatedX = offsetX * Math.cos(radians) - offsetY * Math.sin(radians);
@@ -1248,11 +1256,15 @@ public final class VttServerTabletopState {
             offsetY = offsetX * Math.sin(radians) + offsetY * Math.cos(radians);
             offsetX = rotatedX;
         }
+        if (parent.getState().isFlippedHorizontally()) offsetX = -offsetX;
+        offsetX -= parent.getSize().getWidth() * 0.5
+                * binding.getAnchor().horizontal() * parentTransform.getScaleX();
+        offsetY -= parent.getSize().getHeight() * 0.5
+                * binding.getAnchor().vertical() * parentTransform.getScaleY();
         if (binding.isFollowScale()) {
             offsetX /= nonZeroScale(parentTransform.getScaleX());
             offsetY /= nonZeroScale(parentTransform.getScaleY());
         }
-        if (parent.getState().isFlippedHorizontally()) offsetX = -offsetX;
         binding.setOffsetX(offsetX);
         binding.setOffsetY(offsetY);
         binding.setRotationOffsetDegrees(childTransform.getRotationDegrees()

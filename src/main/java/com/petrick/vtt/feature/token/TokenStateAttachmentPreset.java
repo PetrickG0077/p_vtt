@@ -1,6 +1,7 @@
 package com.petrick.vtt.feature.token;
 
 import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 
 import java.util.List;
 
@@ -15,6 +16,7 @@ public record TokenStateAttachmentPreset(
         boolean followRotation,
         boolean followScale,
         boolean flipOffset,
+        VttAttachmentAnchor anchor,
         double offsetX,
         double offsetY,
         double rotationOffsetDegrees,
@@ -29,6 +31,7 @@ public record TokenStateAttachmentPreset(
         displayName = displayName == null || displayName.isBlank()
                 ? "Attachment" : displayName;
         tintColorRgb &= 0x00FFFFFF;
+        anchor = anchor == null ? VttAttachmentAnchor.CUSTOM : anchor;
         lights = lights == null ? List.of() : List.copyOf(lights);
     }
 }

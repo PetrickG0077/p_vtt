@@ -222,6 +222,7 @@ public final class VttClientTokenLifecycleSync {
         copy.setFollowScale(source.isFollowScale());
         copy.setFlipOffset(source.isFlipOffset());
         copy.setParentStateId(source.getParentStateId());
+        copy.setAnchor(source.getAnchor());
         copy.setOffsetX(source.getOffsetX());
         copy.setOffsetY(source.getOffsetY());
         copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());

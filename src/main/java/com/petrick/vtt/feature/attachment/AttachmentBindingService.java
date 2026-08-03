@@ -5,6 +5,7 @@ import com.petrick.vtt.core.transform.Transform2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttLight;
@@ -50,6 +51,24 @@ public final class AttachmentBindingService {
         CanvasObject child = canvas.findObjectById(attachmentId);
         CanvasObject parent = canvas.findObjectById(binding.getTargetObjectId());
         if (child != null && parent != null) captureCurrentTransform(binding, child, parent);
+    }
+
+    public static boolean setAnchor(
+            VttScene scene, CanvasScene canvas, String attachmentId,
+            VttAttachmentAnchor anchor
+    ) {
+        VttSceneObject attachment = find(scene, attachmentId);
+        VttAttachmentBinding binding = attachment == null
+                ? null : attachment.getAttachmentBinding();
+        CanvasObject child = canvas == null ? null : canvas.findObjectById(attachmentId);
+        CanvasObject parent = binding == null || canvas == null ? null
+                : canvas.findObjectById(binding.getTargetObjectId());
+        if (binding == null || !binding.isBound() || child == null || parent == null) return false;
+        binding.setAnchor(anchor);
+        // Recalculate the residual offset against the new anchor so changing
+        // anchor never makes an attachment jump.
+        captureCurrentTransform(binding, child, parent);
+        return true;
     }
 
     public static void captureSelectedOffsets(VttScene scene, CanvasScene canvas,
@@ -158,13 +177,16 @@ public final class AttachmentBindingService {
         if (binding.isFollowRotation()) {
             offset = rotate(offset, -parent.transform().rotationDegrees());
         }
-        if (binding.isFollowScale()) {
-            offset = new Vec2d(offset.x() / safeScale(parent.transform().scale().x()),
-                    offset.y() / safeScale(parent.transform().scale().y()));
-        }
         if (parent.flippedHorizontally()) offset = new Vec2d(-offset.x(), offset.y());
-        binding.setOffsetX(offset.x());
-        binding.setOffsetY(offset.y());
+        Vec2d anchor = scaledAnchorOffset(binding.getAnchor(), parent);
+        Vec2d residual = offset.subtract(anchor);
+        if (binding.isFollowScale()) {
+            residual = new Vec2d(
+                    residual.x() / safeScale(parent.transform().scale().x()),
+                    residual.y() / safeScale(parent.transform().scale().y()));
+        }
+        binding.setOffsetX(residual.x());
+        binding.setOffsetY(residual.y());
         binding.setFlipOffset(child.flippedHorizontally() ^ parent.flippedHorizontally());
         binding.setRotationOffsetDegrees(child.transform().rotationDegrees()
                 - parent.transform().rotationDegrees());
@@ -191,12 +213,14 @@ public final class AttachmentBindingService {
                                        Transform2D parent, boolean parentFlippedHorizontally) {
         Vec2d position = child.position();
         if (binding.isFollowPosition()) {
-            Vec2d offset = new Vec2d(binding.getOffsetX(), binding.getOffsetY());
-            if (parentFlippedHorizontally) offset = new Vec2d(-offset.x(), offset.y());
+            Vec2d anchor = scaledAnchorOffset(binding.getAnchor(), parent);
+            Vec2d residual = new Vec2d(binding.getOffsetX(), binding.getOffsetY());
             if (binding.isFollowScale()) {
-                offset = new Vec2d(offset.x() * parent.scale().x(),
-                        offset.y() * parent.scale().y());
+                residual = new Vec2d(residual.x() * parent.scale().x(),
+                        residual.y() * parent.scale().y());
             }
+            Vec2d offset = anchor.add(residual);
+            if (parentFlippedHorizontally) offset = new Vec2d(-offset.x(), offset.y());
             if (binding.isFollowRotation()) {
                 offset = rotate(offset, parent.rotationDegrees());
             }
@@ -218,6 +242,14 @@ public final class AttachmentBindingService {
         double sin = Math.sin(radians);
         return new Vec2d(point.x() * cos - point.y() * sin,
                 point.x() * sin + point.y() * cos);
+    }
+
+    private static Vec2d scaledAnchorOffset(VttAttachmentAnchor anchor, CanvasObject parent) {
+        VttAttachmentAnchor safe = anchor == null ? VttAttachmentAnchor.CUSTOM : anchor;
+        return new Vec2d(parent.size().x() * parent.transform().scale().x()
+                        * 0.5 * safe.horizontal(),
+                parent.size().y() * parent.transform().scale().y()
+                        * 0.5 * safe.vertical());
     }
 
     private static double mirrorHorizontalDirection(double degrees) {

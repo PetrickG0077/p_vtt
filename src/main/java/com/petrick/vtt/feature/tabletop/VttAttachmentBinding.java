@@ -10,6 +10,8 @@ public final class VttAttachmentBinding {
     private boolean flipOffset;
     /** Optional parent token state in which this attachment exists. Null means global. */
     private String parentStateId;
+    /** CUSTOM preserves legacy free offsets; other values track a token bound. */
+    private VttAttachmentAnchor anchor = VttAttachmentAnchor.CUSTOM;
     private double offsetX;
     private double offsetY;
     private double rotationOffsetDegrees;
@@ -34,6 +36,12 @@ public final class VttAttachmentBinding {
     public String getParentStateId() { return parentStateId; }
     public void setParentStateId(String value) {
         parentStateId = value == null || value.isBlank() ? null : value.trim();
+    }
+    public VttAttachmentAnchor getAnchor() {
+        return anchor == null ? VttAttachmentAnchor.CUSTOM : anchor;
+    }
+    public void setAnchor(VttAttachmentAnchor value) {
+        anchor = value == null ? VttAttachmentAnchor.CUSTOM : value;
     }
     public double getOffsetX() { return offsetX; }
     public void setOffsetX(double offsetX) { this.offsetX = finite(offsetX, 0.0); }

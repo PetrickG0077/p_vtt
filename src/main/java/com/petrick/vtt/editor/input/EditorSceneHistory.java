@@ -891,6 +891,7 @@ public final class EditorSceneHistory {
             boolean followScale,
             boolean flipOffset,
             String parentStateId,
+            com.petrick.vtt.feature.tabletop.VttAttachmentAnchor anchor,
             double offsetX,
             double offsetY,
             double rotationOffsetDegrees,
@@ -904,6 +905,7 @@ public final class EditorSceneHistory {
             return new AttachmentBinding(binding.getTargetObjectId(),
                     binding.isFollowPosition(), binding.isFollowRotation(),
                     binding.isFollowScale(), binding.isFlipOffset(), binding.getParentStateId(),
+                    binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(),
                     binding.getRotationOffsetDegrees(), binding.getScaleMultiplierX(),
                     binding.getScaleMultiplierY());
@@ -917,6 +919,7 @@ public final class EditorSceneHistory {
             binding.setFollowScale(followScale);
             binding.setFlipOffset(flipOffset);
             binding.setParentStateId(parentStateId);
+            binding.setAnchor(anchor);
             binding.setOffsetX(offsetX);
             binding.setOffsetY(offsetY);
             binding.setRotationOffsetDegrees(rotationOffsetDegrees);

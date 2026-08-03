@@ -64,6 +64,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
@@ -3489,6 +3490,16 @@ public final class VTTScreen extends Screen {
                         }
                     }
                 }
+                case SET_ANCHOR -> {
+                    try {
+                        VttAttachmentAnchor anchor = VttAttachmentAnchor.valueOf(
+                                interaction.targetObjectId());
+                        AttachmentBindingService.setAnchor(
+                                session.getActiveScene(), scene, attachmentId, anchor);
+                    } catch (IllegalArgumentException | NullPointerException ignored) {
+                        VttClientEditorNotice.show("Invalid attachment anchor");
+                    }
+                }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DELETE -> {
@@ -5800,6 +5811,7 @@ public final class VTTScreen extends Screen {
         binding.setFollowRotation(preset.followRotation());
         binding.setFollowScale(preset.followScale());
         binding.setFlipOffset(preset.flipOffset());
+        binding.setAnchor(preset.anchor());
         binding.setOffsetX(preset.offsetX());
         binding.setOffsetY(preset.offsetY());
         binding.setRotationOffsetDegrees(preset.rotationOffsetDegrees());
