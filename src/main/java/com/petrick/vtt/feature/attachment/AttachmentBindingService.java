@@ -30,6 +30,8 @@ public final class AttachmentBindingService {
         binding.setTargetObjectId(targetTokenId);
         attachment.setAttachmentBinding(binding);
         captureCurrentTransform(binding, child, parent);
+        // A newly created binding follows the token's flip by default.
+        binding.setFlipOffset(false);
         return true;
     }
 
@@ -75,9 +77,11 @@ public final class AttachmentBindingService {
             CanvasObject child = canvas.findObjectById(sceneObject.getId());
             CanvasObject parent = canvas.findObjectById(binding.getTargetObjectId());
             if (child == null || parent == null || !parent.hasSourceTokenDefinition()) continue;
-            Transform2D resolved = resolve(binding, child.transform(), parent.transform());
-            if (!same(child.transform(), resolved)) {
-                canvas.replaceObject(child.withTransform(resolved));
+            Transform2D resolved = resolve(binding, child.transform(), parent.transform(),
+                    parent.flippedHorizontally());
+            boolean flipped = parent.flippedHorizontally() ^ binding.isFlipOffset();
+            if (!same(child.transform(), resolved) || child.flippedHorizontally() != flipped) {
+                canvas.replaceObject(child.withTransform(resolved).withFlippedHorizontally(flipped));
             }
         }
     }
@@ -118,15 +122,19 @@ public final class AttachmentBindingService {
                 light.setAttachedToObjectId(null);
                 continue;
             }
+            double localOffsetX = attachment.flippedHorizontally()
+                    ? -light.getAttachmentOffsetX() : light.getAttachmentOffsetX();
             Vec2d offset = new Vec2d(
-                    light.getAttachmentOffsetX() * attachment.transform().scale().x(),
+                    localOffsetX * attachment.transform().scale().x(),
                     light.getAttachmentOffsetY() * attachment.transform().scale().y());
             offset = rotate(offset, attachment.transform().rotationDegrees());
             Vec2d position = attachment.transform().position().add(offset);
             light.setX(position.x());
             light.setY(position.y());
-            light.setDirectionDegrees(attachment.transform().rotationDegrees()
-                    + light.getAttachmentDirectionOffsetDegrees());
+            double localDirection = attachment.flippedHorizontally()
+                    ? mirrorHorizontalDirection(light.getAttachmentDirectionOffsetDegrees())
+                    : light.getAttachmentDirectionOffsetDegrees();
+            light.setDirectionDegrees(attachment.transform().rotationDegrees() + localDirection);
         }
     }
 
@@ -154,8 +162,10 @@ public final class AttachmentBindingService {
             offset = new Vec2d(offset.x() / safeScale(parent.transform().scale().x()),
                     offset.y() / safeScale(parent.transform().scale().y()));
         }
+        if (parent.flippedHorizontally()) offset = new Vec2d(-offset.x(), offset.y());
         binding.setOffsetX(offset.x());
         binding.setOffsetY(offset.y());
+        binding.setFlipOffset(child.flippedHorizontally() ^ parent.flippedHorizontally());
         binding.setRotationOffsetDegrees(child.transform().rotationDegrees()
                 - parent.transform().rotationDegrees());
         binding.setScaleMultiplierX(child.transform().scale().x()
@@ -178,10 +188,11 @@ public final class AttachmentBindingService {
     }
 
     private static Transform2D resolve(VttAttachmentBinding binding, Transform2D child,
-                                       Transform2D parent) {
+                                       Transform2D parent, boolean parentFlippedHorizontally) {
         Vec2d position = child.position();
         if (binding.isFollowPosition()) {
             Vec2d offset = new Vec2d(binding.getOffsetX(), binding.getOffsetY());
+            if (parentFlippedHorizontally) offset = new Vec2d(-offset.x(), offset.y());
             if (binding.isFollowScale()) {
                 offset = new Vec2d(offset.x() * parent.scale().x(),
                         offset.y() * parent.scale().y());
@@ -207,6 +218,12 @@ public final class AttachmentBindingService {
         double sin = Math.sin(radians);
         return new Vec2d(point.x() * cos - point.y() * sin,
                 point.x() * sin + point.y() * cos);
+    }
+
+    private static double mirrorHorizontalDirection(double degrees) {
+        double mirrored = 180.0 - degrees;
+        mirrored %= 360.0;
+        return mirrored < 0.0 ? mirrored + 360.0 : mirrored;
     }
 
     private static double safeScale(double value) {

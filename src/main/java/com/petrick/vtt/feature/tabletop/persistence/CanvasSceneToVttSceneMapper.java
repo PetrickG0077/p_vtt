@@ -176,6 +176,7 @@ public final class CanvasSceneToVttSceneMapper {
         copy.setFollowPosition(source.isFollowPosition());
         copy.setFollowRotation(source.isFollowRotation());
         copy.setFollowScale(source.isFollowScale());
+        copy.setFlipOffset(source.isFlipOffset());
         copy.setOffsetX(source.getOffsetX());
         copy.setOffsetY(source.getOffsetY());
         copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());

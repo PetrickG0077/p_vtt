@@ -878,6 +878,7 @@ public final class EditorSceneHistory {
             boolean followPosition,
             boolean followRotation,
             boolean followScale,
+            boolean flipOffset,
             double offsetX,
             double offsetY,
             double rotationOffsetDegrees,
@@ -890,7 +891,8 @@ public final class EditorSceneHistory {
             if (binding == null) return null;
             return new AttachmentBinding(binding.getTargetObjectId(),
                     binding.isFollowPosition(), binding.isFollowRotation(),
-                    binding.isFollowScale(), binding.getOffsetX(), binding.getOffsetY(),
+                    binding.isFollowScale(), binding.isFlipOffset(),
+                    binding.getOffsetX(), binding.getOffsetY(),
                     binding.getRotationOffsetDegrees(), binding.getScaleMultiplierX(),
                     binding.getScaleMultiplierY());
         }
@@ -901,6 +903,7 @@ public final class EditorSceneHistory {
             binding.setFollowPosition(followPosition);
             binding.setFollowRotation(followRotation);
             binding.setFollowScale(followScale);
+            binding.setFlipOffset(flipOffset);
             binding.setOffsetX(offsetX);
             binding.setOffsetY(offsetY);
             binding.setRotationOffsetDegrees(rotationOffsetDegrees);
