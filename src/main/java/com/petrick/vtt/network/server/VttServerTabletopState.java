@@ -247,6 +247,20 @@ public final class VttServerTabletopState {
         advanceAuthorityRevision();
     }
 
+    public synchronized boolean isAttachmentDefinitionInUse(String definitionId) {
+        if (definitionId == null || definitionId.isBlank()) return false;
+        for (String sceneId : List.copyOf(tabletop.getSceneIds())) {
+            VttScene scene = activeScene != null && sceneId.equals(activeScene.getId())
+                    ? activeScene : storage.loadScene(tabletop.getId(), sceneId);
+            if (scene == null) continue;
+            if (scene.getObjects().stream().anyMatch(object -> object != null
+                    && definitionId.equals(object.getSourceAttachmentDefinitionId()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean refreshAssetFolders() {
         assetFolderService.refresh();
         return true;

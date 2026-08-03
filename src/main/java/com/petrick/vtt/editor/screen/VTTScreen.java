@@ -85,6 +85,8 @@ import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionSync;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientAttachmentDefinitionSync;
+import com.petrick.vtt.network.client.VttClientAttachmentDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
@@ -94,6 +96,7 @@ import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
+import com.petrick.vtt.network.payload.VttAttachmentDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
@@ -322,6 +325,13 @@ public final class VTTScreen extends Screen {
     private String pendingMapDefinitionRestoreSelectionId;
     private long pendingMapDefinitionAcknowledgedRevision = -1L;
     private long pendingMapDefinitionRequestUntil;
+    private String pendingAttachmentDefinitionRequestId;
+    private String pendingAttachmentDefinitionOperation;
+    private String pendingAttachmentDefinitionSuccessMessage;
+    private String pendingAttachmentDefinitionSelectionId;
+    private String pendingAttachmentDefinitionRestoreSelectionId;
+    private long pendingAttachmentDefinitionAcknowledgedRevision = -1L;
+    private long pendingAttachmentDefinitionRequestUntil;
     private String pendingTokenDefinitionRequestId;
     private String pendingTokenDefinitionOperation;
     private String pendingTokenDefinitionSuccessMessage;
@@ -415,6 +425,7 @@ public final class VTTScreen extends Screen {
         resolvePendingHistoryResult();
         resolvePendingAssetFolderResult();
         resolvePendingMapDefinitionResult();
+        resolvePendingAttachmentDefinitionResult();
         resolvePendingTokenDefinitionResult();
         resolvePendingSceneResult();
         applyRemoteAssetManagerChanges();
@@ -877,6 +888,7 @@ public final class VTTScreen extends Screen {
         if (interaction.section() == null) return;
         if ((pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
+                || pendingAttachmentDefinitionRequestId != null
                 || pendingTokenDefinitionRequestId != null
                 || pendingSceneRequestId != null)
                 && interaction.action() != AssetManagerOverlay.Action.NONE
@@ -1034,6 +1046,7 @@ public final class VTTScreen extends Screen {
         if (session.isNetworkAuthorityActive()
                 && (pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
+                || pendingAttachmentDefinitionRequestId != null
                 || pendingTokenDefinitionRequestId != null
                 || pendingSceneRequestId != null)) {
             VttClientEditorNotice.show("Wait for the current Asset Manager operation");
@@ -1162,6 +1175,7 @@ public final class VTTScreen extends Screen {
     ) {
         if (pendingMapDefinitionRequestId != null
                 || pendingAssetFolderRequestId != null
+                || pendingAttachmentDefinitionRequestId != null
                 || pendingTokenDefinitionRequestId != null
                 || pendingSceneRequestId != null) {
             VttClientEditorNotice.show("Wait for the current map operation");
@@ -1259,6 +1273,107 @@ public final class VTTScreen extends Screen {
         assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
     }
 
+    private String beginPendingAttachmentDefinitionRequest(
+            String operation, String successMessage,
+            String selectionId, String restoreSelectionId
+    ) {
+        if (hasPendingAssetManagerOperation()) {
+            VttClientEditorNotice.show("Wait for the current attachment operation");
+            return null;
+        }
+        String requestId = UUID.randomUUID().toString();
+        VttClientAttachmentDefinitionResultState.reset();
+        pendingAttachmentDefinitionRequestId = requestId;
+        pendingAttachmentDefinitionOperation = operation;
+        pendingAttachmentDefinitionSuccessMessage = successMessage;
+        pendingAttachmentDefinitionSelectionId = selectionId;
+        pendingAttachmentDefinitionRestoreSelectionId = restoreSelectionId;
+        pendingAttachmentDefinitionAcknowledgedRevision = -1L;
+        pendingAttachmentDefinitionRequestUntil = System.currentTimeMillis() + 120_000L;
+        assetManagerOverlay.setPendingOperation(operation);
+        return requestId;
+    }
+
+    private void resolvePendingAttachmentDefinitionResult() {
+        if (pendingAttachmentDefinitionAcknowledgedRevision >= 0L
+                && session.getNetworkAuthorityRevision()
+                >= pendingAttachmentDefinitionAcknowledgedRevision) {
+            completePendingAttachmentDefinitionRequest();
+            return;
+        }
+        VttAttachmentDefinitionResultPayload result =
+                VttClientAttachmentDefinitionResultState.consume();
+        if (result != null && pendingAttachmentDefinitionRequestId != null
+                && pendingAttachmentDefinitionRequestId.equals(result.requestId())) {
+            if (result.success()) {
+                pendingAttachmentDefinitionSuccessMessage = result.message().isBlank()
+                        ? pendingAttachmentDefinitionSuccessMessage : result.message();
+                if (!result.definitionId().isBlank()) {
+                    pendingAttachmentDefinitionSelectionId = result.definitionId();
+                }
+                pendingAttachmentDefinitionAcknowledgedRevision = result.authorityRevision();
+                pendingAttachmentDefinitionOperation = "synchronizing attachments";
+                assetManagerOverlay.setPendingOperation(pendingAttachmentDefinitionOperation);
+                if (session.getNetworkAuthorityRevision()
+                        >= pendingAttachmentDefinitionAcknowledgedRevision) {
+                    completePendingAttachmentDefinitionRequest();
+                }
+            } else {
+                restorePendingAttachmentDefinitionSelection();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the attachment operation" : result.message());
+                if (VttAttachmentDefinitionResultPayload.STALE_REVISION.equals(result.code())) {
+                    session.requestAssetManagerResync();
+                }
+                clearPendingAttachmentDefinitionRequest();
+            }
+            return;
+        }
+        if (pendingAttachmentDefinitionRequestId != null
+                && System.currentTimeMillis() > pendingAttachmentDefinitionRequestUntil) {
+            restorePendingAttachmentDefinitionSelection();
+            clearPendingAttachmentDefinitionRequest();
+            VttClientEditorNotice.show("Attachment operation timed out");
+            session.requestAssetManagerResync();
+        }
+    }
+
+    private void completePendingAttachmentDefinitionRequest() {
+        String selectionId = pendingAttachmentDefinitionSelectionId;
+        String message = pendingAttachmentDefinitionSuccessMessage;
+        clearPendingAttachmentDefinitionRequest();
+        assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
+        assetManagerOverlay.reconcileSelection(
+                session.getActiveTabletop(), mapDefinitionRegistry,
+                tokenDefinitionRegistry);
+        if (selectionId != null
+                && attachmentDefinitionRegistry.findById(selectionId).isPresent()) {
+            attachmentCatalogSelection.select(selectionId);
+            assetManagerOverlay.select(AssetManagerOverlay.Section.ATTACHMENTS, selectionId);
+        } else {
+            attachmentCatalogSelection.clear();
+        }
+        VttClientEditorNotice.show(message);
+    }
+
+    private void restorePendingAttachmentDefinitionSelection() {
+        String id = pendingAttachmentDefinitionRestoreSelectionId;
+        if (id == null || attachmentDefinitionRegistry.findById(id).isEmpty()) return;
+        attachmentCatalogSelection.select(id);
+        assetManagerOverlay.select(AssetManagerOverlay.Section.ATTACHMENTS, id);
+    }
+
+    private void clearPendingAttachmentDefinitionRequest() {
+        pendingAttachmentDefinitionRequestId = null;
+        pendingAttachmentDefinitionOperation = null;
+        pendingAttachmentDefinitionSuccessMessage = null;
+        pendingAttachmentDefinitionSelectionId = null;
+        pendingAttachmentDefinitionRestoreSelectionId = null;
+        pendingAttachmentDefinitionAcknowledgedRevision = -1L;
+        pendingAttachmentDefinitionRequestUntil = 0L;
+        assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
+    }
+
     private String beginPendingTokenDefinitionRequest(
             String operation, String successMessage, String selectionId,
             String restoreSelectionId, String targetFolder
@@ -1266,6 +1381,7 @@ public final class VTTScreen extends Screen {
         if (pendingTokenDefinitionRequestId != null
                 || pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
+                || pendingAttachmentDefinitionRequestId != null
                 || pendingSceneRequestId != null) {
             VttClientEditorNotice.show("Wait for the current token operation");
             return null;
@@ -1370,6 +1486,9 @@ public final class VTTScreen extends Screen {
     private String currentAssetManagerPendingOperation() {
         if (pendingAssetFolderOperation != null) return pendingAssetFolderOperation;
         if (pendingMapDefinitionOperation != null) return pendingMapDefinitionOperation;
+        if (pendingAttachmentDefinitionOperation != null) {
+            return pendingAttachmentDefinitionOperation;
+        }
         if (pendingTokenDefinitionOperation != null) return pendingTokenDefinitionOperation;
         return pendingSceneOperation;
     }
@@ -1377,6 +1496,7 @@ public final class VTTScreen extends Screen {
     private boolean hasPendingAssetManagerOperation() {
         return pendingAssetFolderRequestId != null
                 || pendingMapDefinitionRequestId != null
+                || pendingAttachmentDefinitionRequestId != null
                 || pendingTokenDefinitionRequestId != null
                 || pendingSceneRequestId != null
                 || pendingHistoryRequestId != null;
@@ -5394,24 +5514,12 @@ public final class VTTScreen extends Screen {
     }
 
     private void beginNewAttachmentDialog() {
-        if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment editing will be enabled with authoritative attachment sync");
-            returnToAssetManagerIfRequested();
-            return;
-        }
         attachmentDefinitionDialog.openNew();
     }
 
     private void beginEditAttachmentDialog(AttachmentDefinition definition) {
         if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) {
             VttClientEditorNotice.show("Select a user-created attachment first");
-            returnToAssetManagerIfRequested();
-            return;
-        }
-        if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment editing will be enabled with authoritative attachment sync");
             returnToAssetManagerIfRequested();
             return;
         }
@@ -5454,6 +5562,22 @@ public final class VTTScreen extends Screen {
             String folder = existing == null
                     ? assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS)
                     : attachmentDefinitionRegistry.folderOf(existing.id());
+            if (session.isNetworkAuthorityActive()) {
+                String requestId = beginPendingAttachmentDefinitionRequest(
+                        existing == null ? "creating attachment" : "updating attachment",
+                        existing == null ? "Attachment created" : "Attachment updated",
+                        definition.id(), existing == null ? null : existing.id());
+                if (requestId == null) return;
+                if (!VttClientAttachmentDefinitionSync.sendUpsert(
+                        requestId, session.getNetworkAuthorityRevision(), definition, folder)) {
+                    clearPendingAttachmentDefinitionRequest();
+                    VttClientEditorNotice.show("Could not save attachment on server");
+                    return;
+                }
+                closeAttachmentDialog();
+                VttClientEditorNotice.show("Attachment save sent to server");
+                return;
+            }
             java.nio.file.Path targetFolder = CreatedAttachmentStorage.getAttachmentsFolder();
             if (folder != null && !folder.isBlank()) targetFolder = targetFolder.resolve(folder);
             if (!CreatedAttachmentStorage.save(definition, targetFolder)) {
@@ -5495,8 +5619,16 @@ public final class VTTScreen extends Screen {
     private void duplicateAttachmentDefinition(AttachmentDefinition definition) {
         if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return;
         if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment editing will be enabled with authoritative attachment sync");
+            String requestId = beginPendingAttachmentDefinitionRequest(
+                    "duplicating attachment", "Attachment duplicated", null, definition.id());
+            if (requestId == null) return;
+            if (VttClientAttachmentDefinitionSync.sendDuplicate(
+                    requestId, session.getNetworkAuthorityRevision(), definition.id())) {
+                VttClientEditorNotice.show("Attachment duplication sent to server");
+            } else {
+                clearPendingAttachmentDefinitionRequest();
+                VttClientEditorNotice.show("Could not duplicate attachment on server");
+            }
             return;
         }
         try {
@@ -5515,8 +5647,16 @@ public final class VTTScreen extends Screen {
     private void deleteAttachmentDefinition(AttachmentDefinition definition) {
         if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return;
         if (session.isNetworkAuthorityActive()) {
-            VttClientEditorNotice.show(
-                    "Server attachment editing will be enabled with authoritative attachment sync");
+            String requestId = beginPendingAttachmentDefinitionRequest(
+                    "deleting attachment", "Attachment deleted", null, definition.id());
+            if (requestId == null) return;
+            if (VttClientAttachmentDefinitionSync.sendDelete(
+                    requestId, session.getNetworkAuthorityRevision(), definition.id())) {
+                VttClientEditorNotice.show("Attachment deletion sent to server");
+            } else {
+                clearPendingAttachmentDefinitionRequest();
+                VttClientEditorNotice.show("Could not delete attachment on server");
+            }
             return;
         }
         if (!CreatedAttachmentStorage.delete(definition)) {

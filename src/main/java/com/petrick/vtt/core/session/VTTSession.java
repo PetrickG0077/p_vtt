@@ -39,6 +39,7 @@ import com.petrick.vtt.network.client.VttClientAssetCache;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.client.VttClientAssetManagerChangeState;
 import com.petrick.vtt.network.client.VttClientMapDefinitionResultState;
+import com.petrick.vtt.network.client.VttClientAttachmentDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
 
@@ -1047,6 +1048,7 @@ public final class VTTSession {
         VttClientAssetFolderResultState.reset();
         VttClientAssetManagerChangeState.reset();
         VttClientMapDefinitionResultState.reset();
+        VttClientAttachmentDefinitionResultState.reset();
         VttClientTokenDefinitionResultState.reset();
         VttClientSceneCommandResultState.reset();
         networkAuthorityActive = false;

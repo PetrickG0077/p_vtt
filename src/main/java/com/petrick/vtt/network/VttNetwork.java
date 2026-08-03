@@ -50,6 +50,10 @@ import com.petrick.vtt.network.payload.VttMapDefinitionUpsertPayload;
 import com.petrick.vtt.network.payload.VttMapDefinitionCommandPayload;
 import com.petrick.vtt.network.server.VttServerMapDefinitionHandler;
 import com.petrick.vtt.network.payload.VttMapDefinitionResultPayload;
+import com.petrick.vtt.network.payload.VttAttachmentDefinitionUpsertPayload;
+import com.petrick.vtt.network.payload.VttAttachmentDefinitionCommandPayload;
+import com.petrick.vtt.network.payload.VttAttachmentDefinitionResultPayload;
+import com.petrick.vtt.network.server.VttServerAttachmentDefinitionHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -58,7 +62,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "48";
+    private static final String PROTOCOL_VERSION = "49";
 
     private VttNetwork() {
     }
@@ -163,6 +167,15 @@ public final class VttNetwork {
         registrar.playToClient(VttMapDefinitionResultPayload.TYPE,
                 VttMapDefinitionResultPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleMapDefinitionResult);
+        registrar.playToServer(VttAttachmentDefinitionUpsertPayload.TYPE,
+                VttAttachmentDefinitionUpsertPayload.STREAM_CODEC,
+                VttServerAttachmentDefinitionHandler::handleUpsert);
+        registrar.playToServer(VttAttachmentDefinitionCommandPayload.TYPE,
+                VttAttachmentDefinitionCommandPayload.STREAM_CODEC,
+                VttServerAttachmentDefinitionHandler::handleCommand);
+        registrar.playToClient(VttAttachmentDefinitionResultPayload.TYPE,
+                VttAttachmentDefinitionResultPayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleAttachmentDefinitionResult);
         registrar.playToClient(VttPresentationUpdatePayload.TYPE,
                 VttPresentationUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handlePresentationUpdate);
