@@ -602,6 +602,46 @@ public final class VTTSession {
         requestNetworkResync("ENVIRONMENT_CONFIRMATION_RECOVERY");
     }
 
+    /** Explicit user-requested refresh; unlike automatic recovery it is not
+     * suppressed by the client-side revision-gap throttle. */
+    public void forceReloadOrResynchronize() {
+        if (networkAuthorityActive) {
+            if (activeScene == null) return;
+            networkResyncPending = true;
+            networkResyncRequestCount++;
+            lastNetworkResyncRequestAt = System.currentTimeMillis();
+            lastNetworkRecoveryReason = "MANUAL_RELOAD";
+            PacketDistributor.sendToServer(new VttReplicationResyncRequestPayload(
+                    networkAuthorityRevision, activeScene.getId(), networkVisionRevision,
+                    networkReplicationRevision, "MANUAL_RELOAD"));
+            VTT.LOGGER.info("Requested manual VTT server resynchronization");
+            return;
+        }
+
+        assetLibraryScanResult = assetLibraryService.scanLibrary();
+        assetRegistry.clear();
+        DebugAssets.registerAll(assetRegistry);
+        tokenDefinitionRegistry.clear();
+        DebugTokenDefinitions.registerAll(tokenDefinitionRegistry, assetRegistry);
+        CreatedTokenStorage.loadCreatedTokens(tokenDefinitionRegistry, assetRegistry);
+        mapDefinitionRegistry.clear();
+        CreatedMapStorage.loadCreatedMaps(mapDefinitionRegistry);
+        attachmentDefinitionRegistry.clear();
+        CreatedAttachmentStorage.loadCreatedAttachments(attachmentDefinitionRegistry);
+        assetThumbnailRegistry.clear();
+        animatedTextureService.setUseServerCache(false);
+        loadAssetThumbnails();
+
+        activeTabletop = tabletopStorage.loadOrCreateDefaultTabletop();
+        activeScene = tabletopStorage.loadOrCreateActiveScene(activeTabletop);
+        assetFolderService.refresh();
+        assetFolderService.applyMetadata(activeTabletop, mapDefinitionRegistry,
+                tokenDefinitionRegistry, attachmentDefinitionRegistry);
+        loadActiveSceneToCanvasScene();
+        refreshPlacedAttachmentVisuals();
+        VTT.LOGGER.info("Reloaded local VTT assets, definitions and active scene");
+    }
+
     public String getNetworkReplicationDiagnostics() {
         if (!networkAuthorityActive) return "Network: local session";
         return "Network: A=" + networkAuthorityRevision + " V=" + networkVisionRevision

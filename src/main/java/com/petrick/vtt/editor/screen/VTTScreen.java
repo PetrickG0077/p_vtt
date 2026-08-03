@@ -2363,6 +2363,16 @@ public final class VTTScreen extends Screen {
                 hudCreationOpen = false;
                 if (closing) persistGridSettings();
             }
+            case RELOAD -> {
+                finishGridSettingsDrag();
+                editorSettingsOverlay.cancelDrag();
+                closeHudPopups();
+                selectionManager.clearSelection();
+                session.forceReloadOrResynchronize();
+                VttClientEditorNotice.show(session.isNetworkAuthorityActive()
+                        ? "Resynchronizing VTT with server..."
+                        : "Local VTT data reloaded");
+            }
             case OUTLINER -> {
                 if (master) panelVisibility.toggleSceneOutliner();
                 closeHudPopups();

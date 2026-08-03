@@ -95,9 +95,12 @@ public final class EditorHudOverlay {
         }
         if (state.spectator()) return result;
 
-        int settingsX = screenWidth / 2 - size / 2;
+        int settingsGroupWidth = size * 2 + GAP;
+        int settingsX = (screenWidth - settingsGroupWidth) / 2;
         result.add(button(Action.SETTINGS, settingsX, topY, size, "", "Settings", true,
                 state.settingsOpen()));
+        result.add(button(Action.RELOAD, settingsX + size + GAP, topY, size, "",
+                "Reload / Resynchronize", true, false));
 
         List<Action> tools = new ArrayList<>(List.of(Action.HAND, Action.SELECT));
         if (state.master()) tools.addAll(List.of(
@@ -162,8 +165,9 @@ public final class EditorHudOverlay {
         renderPanel(context, MARGIN, MARGIN,
                 PADDING * 2 + topCount * size + (topCount - 1) * GAP, PADDING * 2 + size);
         if (state.spectator()) return;
-        renderPanel(context, screenWidth / 2 - size / 2 - PADDING, MARGIN,
-                size + PADDING * 2, size + PADDING * 2);
+        int settingsGroupWidth = size * 2 + GAP;
+        renderPanel(context, (screenWidth - settingsGroupWidth) / 2 - PADDING, MARGIN,
+                settingsGroupWidth + PADDING * 2, size + PADDING * 2);
 
         int toolCount = state.master() ? 7 : 2;
         int rightCount = toolCount + 2;
@@ -589,8 +593,9 @@ public final class EditorHudOverlay {
     }
 
     private ResourceLocation icon(Action action) {
-        String fileName = action == Action.ATTACHMENTS
-                ? "attachs.png" : action.name().toLowerCase(Locale.ROOT) + ".png";
+        String fileName = action == Action.ATTACHMENTS ? "attachs.png"
+                : action == Action.RELOAD ? "redo.png"
+                : action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
     }
@@ -618,6 +623,7 @@ public final class EditorHudOverlay {
         FOCUS_SELECTED_PLAYER_TOKEN,
         OUTLINER,
         SETTINGS,
+        RELOAD,
         HAND,
         SELECT,
         FOG,
