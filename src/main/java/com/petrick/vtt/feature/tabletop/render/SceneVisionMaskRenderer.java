@@ -3,6 +3,7 @@ package com.petrick.vtt.feature.tabletop.render;
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.attachment.AttachmentVisibilityResolver;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttLight;
@@ -68,7 +69,7 @@ public final class SceneVisionMaskRenderer {
             for (CanvasObject source : sources) {
                 VisionRadii radii = resolveVisionRadii(tabletopScene, source.id());
                 double raycastDistance = visibilityReach(
-                        tabletopScene, source.transform().position(), radii.outerRadius());
+                        tabletopScene, canvasScene, source.transform().position(), radii.outerRadius());
                 List<Vec2d> outerWorldPolygon = raycaster.buildVisibilityPolygon(
                         source.transform().position(), raycastDistance, sceneSegments,
                         tabletopScene.getLighting().getVisionRayCount());
@@ -96,7 +97,8 @@ public final class SceneVisionMaskRenderer {
         fillOutsidePolygons(context, outerPolygons, darknessRgb, pixelSize);
         double zoom = context.renderState().getCamera().getZoom();
         List<ScreenLight> screenLights = tabletopScene.getLights().stream()
-                .filter(light -> light != null && light.isEnabled())
+                .filter(light -> AttachmentVisibilityResolver.isLightEffectivelyVisible(
+                        tabletopScene, canvasScene, light))
                 .map(light -> {
                     Vec2d worldOrigin = new Vec2d(light.getX(), light.getY());
                     List<Vec2d> worldPolygon = light.getType() == VttLightType.SPOT
@@ -254,10 +256,12 @@ public final class SceneVisionMaskRenderer {
         return (int) Math.round(darkness * 255.0);
     }
 
-    private double visibilityReach(VttScene scene, Vec2d origin, double baseRadius) {
+    private double visibilityReach(
+            VttScene scene, CanvasScene canvasScene, Vec2d origin, double baseRadius
+    ) {
         double reach = baseRadius;
         for (VttLight light : scene.getLights()) {
-            if (light == null || !light.isEnabled()) continue;
+            if (!AttachmentVisibilityResolver.isLightEffectivelyVisible(scene, canvasScene, light)) continue;
             reach = Math.max(reach, Math.hypot(
                     light.getX() - origin.x(), light.getY() - origin.y())
                     + light.getOuterRadius());

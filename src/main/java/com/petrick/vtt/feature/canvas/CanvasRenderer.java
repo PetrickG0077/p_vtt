@@ -10,6 +10,7 @@ import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 import com.petrick.vtt.feature.canvas.visual.CanvasVisualRenderer;
 import com.petrick.vtt.feature.grid.GridRenderer;
 import com.petrick.vtt.feature.selection.SelectionManager;
+import com.petrick.vtt.feature.attachment.AttachmentVisibilityResolver;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.render.SceneBackgroundRenderer;
 import com.petrick.vtt.feature.tabletop.render.SceneWallRenderer;
@@ -131,10 +132,12 @@ public final class CanvasRenderer {
             }
         });
         for (CanvasObject object : scene.getObjects()) {
-            if (!object.visible() && !masterView) continue;
+            boolean effectivelyVisible = AttachmentVisibilityResolver.isObjectEffectivelyVisible(
+                    tabletopScene, scene, object);
+            if (!effectivelyVisible && !masterView) continue;
             if (visibleIds != null && !visibleIds.contains(object.id())) continue;
 
-            renderObject(context, object, object.visible() ? 1.0F : 0.5F,
+            renderObject(context, object, effectivelyVisible ? 1.0F : 0.5F,
                     tintColors.getOrDefault(object.id(), 0xFFFFFF));
 
             if (attachmentMarkersVisible && object.hasSourceAttachmentDefinition()

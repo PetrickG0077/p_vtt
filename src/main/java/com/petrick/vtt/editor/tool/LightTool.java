@@ -10,6 +10,7 @@ import com.petrick.vtt.editor.hud.EditorColorPickerOverlay;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
 import com.petrick.vtt.feature.attachment.AttachmentBindingService;
+import com.petrick.vtt.feature.attachment.AttachmentVisibilityResolver;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.platform.render.VRenderContext;
@@ -194,9 +195,17 @@ public final class LightTool implements Tool {
         lastCanvasScene = toolContext.scene();
         VttScene scene = sceneSupplier.get();
         if (scene == null) return;
-        for (VttLight light : scene.getLights()) renderCenter(context, light);
+        for (VttLight light : scene.getLights()) {
+            if (AttachmentVisibilityResolver.isLightEffectivelyVisible(
+                    scene, toolContext.scene(), light)) {
+                renderCenter(context, light);
+            }
+        }
         VttLight selected = selectedLight();
-        if (selected != null) renderSelection(context, selected);
+        if (selected != null && AttachmentVisibilityResolver.isLightEffectivelyVisible(
+                scene, toolContext.scene(), selected)) {
+            renderSelection(context, selected);
+        }
         if (popup != Popup.NONE) renderPopup(context, Minecraft.getInstance().font);
         colorPicker.render(context, Minecraft.getInstance().font);
     }
