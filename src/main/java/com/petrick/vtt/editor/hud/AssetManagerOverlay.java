@@ -51,6 +51,8 @@ public final class AssetManagerOverlay {
             VTT.MOD_ID, "textures/gui/editor_hud/maps.png");
     private static final ResourceLocation TOKEN_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/tokens.png");
+    private static final ResourceLocation ATTACHMENT_ICON = ResourceLocation.fromNamespaceAndPath(
+            VTT.MOD_ID, "textures/gui/editor_hud/attachs.png");
     private static final ResourceLocation EDIT_ICON = ResourceLocation.fromNamespaceAndPath(
             VTT.MOD_ID, "textures/gui/editor_hud/edit.png");
     private static final ResourceLocation TRASH_ICON = ResourceLocation.fromNamespaceAndPath(
@@ -1378,7 +1380,7 @@ public final class AssetManagerOverlay {
         SCENES("Scenes", SCENE_ICON),
         MAPS("Maps", MAP_ICON),
         TOKENS("Tokens", TOKEN_ICON),
-        ATTACHMENTS("Attachments", TOKEN_ICON);
+        ATTACHMENTS("Attachments", ATTACHMENT_ICON);
         private final String label;
         private final ResourceLocation icon;
         Section(String label, ResourceLocation icon) {

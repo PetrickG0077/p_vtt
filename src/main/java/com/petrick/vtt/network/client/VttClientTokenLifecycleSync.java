@@ -47,6 +47,9 @@ public final class VttClientTokenLifecycleSync {
             if (KNOWN_IDS.contains(object.id())) continue;
             VttSceneObject sceneObject = toSceneObject(session, object,
                     session.getCanvasScene().getObjectLayerIndex(object.id()));
+            VTT.LOGGER.info(
+                    "Sending token lifecycle CREATE {} with state appearances {}",
+                    object.id(), sceneObject.getStateAppearances().keySet());
             PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
                     CREATE, object.id(), GSON.toJson(sceneObject)));
         }
@@ -157,6 +160,29 @@ public final class VttClientTokenLifecycleSync {
                 .max(java.util.Comparator.comparingInt(source -> source.getId().length()))
                 .orElse(null);
         VttSceneObject metadataSource = exactSource != null ? exactSource : duplicateSource;
+
+        // A created token must carry the reusable presets from its catalog
+        // definition in the authoritative CREATE request. Do this here as well
+        // as in the editor placement flow: lifecycle synchronization is the
+        // final serialization boundary before the server accepts the object.
+        if (object.hasSourceTokenDefinition()) {
+            session.getTokenDefinitionRegistry().findById(object.sourceTokenDefinitionId())
+                    .ifPresent(definition -> {
+                        result.setOwnerId(definition.defaultOwnerId());
+                        result.setGlobalStateAppearance(new VttTokenStateAppearance());
+                        Map<String, VttTokenStateAppearance> definitionAppearances =
+                                new LinkedHashMap<>();
+                        definition.statePresets().forEach((stateId, preset) ->
+                                definitionAppearances.put(
+                                        stateId, copyAppearance(preset.appearance())));
+                        result.setStateAppearances(definitionAppearances);
+                        var activePreset = definition.statePresets().get(object.activeStateId());
+                        if (activePreset != null) {
+                            result.getState().setTintColorRgb(
+                                    activePreset.appearance().getTintColorRgb());
+                        }
+                    });
+        }
         if (metadataSource != null) {
             result.setOwnerId(metadataSource.getOwnerId());
             result.setVisionInnerRadius(metadataSource.getVisionInnerRadius());
@@ -168,7 +194,8 @@ public final class VttClientTokenLifecycleSync {
             }
             result.setGlobalStateAppearance(copyAppearance(
                     metadataSource.getGlobalStateAppearance()));
-            Map<String, VttTokenStateAppearance> stateAppearances = new LinkedHashMap<>();
+            Map<String, VttTokenStateAppearance> stateAppearances = new LinkedHashMap<>(
+                    result.getStateAppearances());
             metadataSource.getStateAppearances().forEach((stateId, appearance) ->
                     stateAppearances.put(stateId, copyAppearance(appearance)));
             result.setStateAppearances(stateAppearances);
@@ -178,9 +205,6 @@ public final class VttClientTokenLifecycleSync {
                 result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),
                         sourceBox.getOffsetY(), sourceBox.getWidth(), sourceBox.getHeight()));
             }
-        } else if (object.hasSourceTokenDefinition()) {
-            session.getTokenDefinitionRegistry().findById(object.sourceTokenDefinitionId())
-                    .ifPresent(definition -> result.setOwnerId(definition.defaultOwnerId()));
         }
         return result;
     }

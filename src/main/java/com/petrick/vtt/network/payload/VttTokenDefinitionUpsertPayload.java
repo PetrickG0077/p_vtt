@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 public record VttTokenDefinitionUpsertPayload(
         String requestId, long authorityRevision, String tokenJson)
         implements CustomPacketPayload {
-    public static final int MAX_JSON_LENGTH = 30_000;
+    public static final int MAX_JSON_LENGTH = 262_144;
     public static final Type<VttTokenDefinitionUpsertPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "token_definition_upsert")
     );

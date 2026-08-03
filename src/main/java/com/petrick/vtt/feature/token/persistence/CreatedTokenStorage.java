@@ -164,6 +164,7 @@ public final class CreatedTokenStorage {
                     createStateDraftsFromSaveData(data),
                     data.activeStateId
             );
+            draft.setStatePresets(data.statePresets);
 
             return draft;
         } catch (Exception exception) {
@@ -200,6 +201,59 @@ public final class CreatedTokenStorage {
 
     public static String serializeEditedToken(TokenCreationDraft draft) {
         return GSON.toJson(createSaveDataForEditedDraft(draft));
+    }
+
+    public static String serializeTokenStatePreset(
+            TokenDefinition definition, Path folder,
+            String stateId, com.petrick.vtt.feature.token.TokenStatePreset preset
+    ) {
+        CreatedTokenSaveData data = readTokenData(definition, folder);
+        if (data == null || stateId == null || !definition.states().containsKey(stateId)
+                || preset == null) return null;
+        if (data.statePresets == null) data.statePresets = new LinkedHashMap<>();
+        data.statePresets.put(stateId, preset);
+        return GSON.toJson(data);
+    }
+
+    public static TokenDefinition saveTokenStatePreset(
+            TokenDefinition definition, String stateId,
+            com.petrick.vtt.feature.token.TokenStatePreset preset,
+            TokenDefinitionRegistry registry, AssetRegistry assetRegistry
+    ) {
+        if (definition == null || registry == null || assetRegistry == null) return null;
+        Path file = findTokenFile(getTokensFolder(), definition);
+        CreatedTokenSaveData data = readTokenData(definition, getTokensFolder());
+        if (file == null || data == null || stateId == null
+                || !definition.states().containsKey(stateId) || preset == null) return null;
+        if (data.statePresets == null) data.statePresets = new LinkedHashMap<>();
+        data.statePresets.put(stateId, preset);
+        try {
+            saveCreatedTokenData(data, file.getParent());
+            TokenDefinition updated = createTokenDefinitionFromSaveData(data, assetRegistry);
+            String folder = registry.folderOf(definition.id());
+            registry.removeById(definition.id());
+            registry.register(updated, folder);
+            return updated;
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to save token state preset: {} / {}",
+                    definition.id(), stateId, exception);
+            return null;
+        }
+    }
+
+    private static CreatedTokenSaveData readTokenData(
+            TokenDefinition definition, Path folder
+    ) {
+        if (definition == null || folder == null) return null;
+        Path file = findTokenFile(folder, definition);
+        if (file == null) return null;
+        try (Reader reader = Files.newBufferedReader(file)) {
+            CreatedTokenSaveData data = GSON.fromJson(reader, CreatedTokenSaveData.class);
+            return isValid(data) ? data : null;
+        } catch (IOException | RuntimeException exception) {
+            VTT.LOGGER.error("Failed to read token preset source: {}", definition.id(), exception);
+            return null;
+        }
     }
 
     public static TokenDefinition updateCreatedTokenInMemory(
@@ -576,7 +630,8 @@ public final class CreatedTokenStorage {
                 new Vec2d(data.defaultWidth, data.defaultHeight),
                 states,
                 defaultStateId,
-                data.player
+                data.player,
+                data.statePresets
         );
     }
 
@@ -719,6 +774,7 @@ public final class CreatedTokenStorage {
         data.defaultHeight = draft.getDefaultHeight();
 
         data.states.clear();
+        data.statePresets = new LinkedHashMap<>();
 
         for (TokenStateDraft stateDraft : draft.getStates()) {
             if (!stateDraft.hasImage()) {
@@ -739,6 +795,9 @@ public final class CreatedTokenStorage {
             stateData.imageHeight = stateDraft.getImageHeight();
 
             data.states.add(stateData);
+            com.petrick.vtt.feature.token.TokenStatePreset preset =
+                    draft.getStatePresets().get(stateDraft.getId());
+            if (preset != null) data.statePresets.put(stateDraft.getId(), preset);
         }
     }
 

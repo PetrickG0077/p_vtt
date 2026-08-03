@@ -312,6 +312,46 @@ public final class VttServerTokenDefinitionHandler {
         if (data.activeStateId == null || !stateIds.contains(data.activeStateId)) {
             throw new JsonParseException("Invalid default token state");
         }
+        if (data.statePresets != null) {
+            if (data.statePresets.size() > stateIds.size()) {
+                throw new JsonParseException("Too many token state presets");
+            }
+            data.statePresets.forEach((stateId, preset) -> {
+                if (!stateIds.contains(stateId) || preset == null || preset.appearance() == null
+                        || !validPresetScale(preset.appearance().getScaleX())
+                        || !validPresetScale(preset.appearance().getScaleY())
+                        || !Double.isFinite(preset.appearance().getRotationDegrees())
+                        || preset.attachments().size() > 64) {
+                    throw new JsonParseException("Invalid token state preset");
+                }
+                preset.attachments().forEach(attachment -> {
+                    if (attachment == null || attachment.definitionId() == null
+                            || attachment.definitionId().isBlank()
+                            || attachment.definitionId().length() > 256
+                            || !Double.isFinite(attachment.offsetX())
+                            || !Double.isFinite(attachment.offsetY())
+                            || !Double.isFinite(attachment.rotationOffsetDegrees())
+                            || !validPresetScale(Math.abs(attachment.scaleMultiplierX()))
+                            || !validPresetScale(Math.abs(attachment.scaleMultiplierY()))
+                            || attachment.lights().size() > 16) {
+                        throw new JsonParseException("Invalid token state attachment preset");
+                    }
+                    attachment.lights().forEach(light -> {
+                        if (light == null || !Double.isFinite(light.getInnerRadius())
+                                || !Double.isFinite(light.getOuterRadius())
+                                || light.getInnerRadius() < 0.0
+                                || light.getOuterRadius() < 1.0
+                                || light.getInnerRadius() > light.getOuterRadius()) {
+                            throw new JsonParseException("Invalid token state light preset");
+                        }
+                    });
+                });
+            });
+        }
+    }
+
+    private static boolean validPresetScale(double value) {
+        return Double.isFinite(value) && value >= 0.0001 && value <= 1_000.0;
     }
 
     private static void save(CreatedTokenSaveData data) throws IOException {

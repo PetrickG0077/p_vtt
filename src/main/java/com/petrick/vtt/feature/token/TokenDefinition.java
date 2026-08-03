@@ -23,7 +23,8 @@ public record TokenDefinition(
         Vec2d defaultSize,
         Map<String, CanvasObjectState> states,
         String defaultStateId,
-        String defaultOwnerId
+        String defaultOwnerId,
+        Map<String, TokenStatePreset> statePresets
 ) {
     public static final double MIN_DEFAULT_SIZE = 1.0;
     public static final double MAX_DEFAULT_SIZE = 10_000.0;
@@ -32,7 +33,16 @@ public record TokenDefinition(
             String id, String displayName, Vec2d defaultSize,
             Map<String, CanvasObjectState> states, String defaultStateId
     ) {
-        this(id, displayName, defaultSize, states, defaultStateId, null);
+        this(id, displayName, defaultSize, states, defaultStateId, null, Map.of());
+    }
+
+    public TokenDefinition(
+            String id, String displayName, Vec2d defaultSize,
+            Map<String, CanvasObjectState> states, String defaultStateId,
+            String defaultOwnerId
+    ) {
+        this(id, displayName, defaultSize, states, defaultStateId,
+                defaultOwnerId, Map.of());
     }
 
     public TokenDefinition {
@@ -69,5 +79,16 @@ public record TokenDefinition(
                 ? null : defaultOwnerId.trim();
 
         states = Collections.unmodifiableMap(new LinkedHashMap<>(states));
+        Map<String, TokenStatePreset> normalizedPresets = new LinkedHashMap<>();
+        if (statePresets != null) {
+            for (Map.Entry<String, TokenStatePreset> entry : statePresets.entrySet()) {
+                String stateId = entry.getKey();
+                TokenStatePreset preset = entry.getValue();
+                if (stateId != null && states.containsKey(stateId) && preset != null) {
+                    normalizedPresets.put(stateId, preset);
+                }
+            }
+        }
+        statePresets = Collections.unmodifiableMap(normalizedPresets);
     }
 }

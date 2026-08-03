@@ -183,8 +183,8 @@ public final class VttServerAssetSyncService {
         Path mapsRoot = root.resolve("created/maps").normalize();
         Path attachmentsRoot = root.resolve("created/attachments").normalize();
         Set<String> definitionIds = scope == null ? Set.of() : scope.definitionIds();
-        Set<String> attachmentDefinitionIds = scope == null
-                ? Set.of() : scope.attachmentDefinitionIds();
+        Set<String> attachmentDefinitionIds = new LinkedHashSet<>(scope == null
+                ? Set.of() : scope.attachmentDefinitionIds());
 
         Map<String, SyncFile> result = new LinkedHashMap<>();
         long[] totalBytes = {0L};
@@ -198,8 +198,8 @@ public final class VttServerAssetSyncService {
             try (Stream<Path> stream = Files.walk(tokensRoot)) {
                 stream.filter(Files::isRegularFile).filter(path -> path.toString().toLowerCase().endsWith(".json"))
                         .peek(path -> checkCancelled())
-                        .forEach(path -> collectToken(path, definitionIds, includeAllTokens,
-                                tokensRoot, assetsRoot, result, totalBytes));
+                        .forEach(path -> collectToken(path, definitionIds, attachmentDefinitionIds,
+                                includeAllTokens, tokensRoot, assetsRoot, result, totalBytes));
             } catch (IOException exception) {
                 VTT.LOGGER.error("Failed to scan server VTT token definitions", exception);
             }
@@ -245,7 +245,9 @@ public final class VttServerAssetSyncService {
         }
     }
 
-    private static void collectToken(Path jsonFile, Set<String> ids, boolean includeAllTokens,
+    private static void collectToken(Path jsonFile, Set<String> ids,
+                                     Set<String> attachmentDefinitionIds,
+                                     boolean includeAllTokens,
                                      Path tokensRoot, Path assetsRoot,
                                      Map<String, SyncFile> result, long[] totalBytes) {
         try (Reader reader = Files.newBufferedReader(jsonFile)) {
@@ -261,6 +263,19 @@ public final class VttServerAssetSyncService {
                 });
             } else {
                 addAsset(string(json, "selectedImageId"), assetsRoot, result, totalBytes);
+            }
+            JsonElement statePresets = json.get("statePresets");
+            if (statePresets != null && statePresets.isJsonObject()) {
+                statePresets.getAsJsonObject().entrySet().forEach(entry -> {
+                    if (!entry.getValue().isJsonObject()) return;
+                    JsonElement attachments = entry.getValue().getAsJsonObject().get("attachments");
+                    if (attachments == null || !attachments.isJsonArray()) return;
+                    attachments.getAsJsonArray().forEach(element -> {
+                        if (!element.isJsonObject()) return;
+                        String attachmentId = string(element.getAsJsonObject(), "definitionId");
+                        if (attachmentId != null) attachmentDefinitionIds.add(attachmentId);
+                    });
+                });
             }
         } catch (Exception exception) {
             if (exception instanceof CancellationException

@@ -7,7 +7,10 @@ import com.petrick.vtt.feature.token.TokenDefinition;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import com.petrick.vtt.feature.token.TokenStatePreset;
 
 /**
  * Dados temporários enquanto o usuário está criando ou editando um token.
@@ -58,6 +61,8 @@ public final class TokenCreationDraft {
     private final List<TokenStateDraft> states = new ArrayList<>();
 
     private String selectedStateId;
+
+    private final Map<String, TokenStatePreset> statePresets = new LinkedHashMap<>();
 
     public TokenCreationDraft() {
         ensureDefaultState();
@@ -197,6 +202,15 @@ public final class TokenCreationDraft {
 
     public String getOriginalDisplayName() {
         return originalDisplayName;
+    }
+
+    public Map<String, TokenStatePreset> getStatePresets() {
+        return Collections.unmodifiableMap(statePresets);
+    }
+
+    public void setStatePresets(Map<String, TokenStatePreset> presets) {
+        statePresets.clear();
+        if (presets != null) statePresets.putAll(presets);
     }
 
     public String getName() {

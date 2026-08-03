@@ -8,11 +8,15 @@ import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttTokenStateAppearance;
+import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.attachment.AttachmentBindingService;
 
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Maintains global token appearance and explicitly saved per-state instance overrides. */
 public final class TokenStateOverrideService {
@@ -72,6 +76,41 @@ public final class TokenStateOverrideService {
     public boolean hasOverride(VttScene scene, String tokenId, String stateId) {
         VttSceneObject token = findToken(scene, tokenId);
         return token != null && stateId != null && token.getStateAppearances().containsKey(stateId);
+    }
+
+    public TokenStatePreset captureDefinitionPreset(
+            VttScene scene, CanvasScene canvas, String tokenId
+    ) {
+        if (!saveCurrentState(scene, canvas, tokenId)) return null;
+        CanvasObject token = canvas.findObjectById(tokenId);
+        VttSceneObject metadata = findToken(scene, tokenId);
+        if (token == null || metadata == null) return null;
+        String stateId = token.activeStateId();
+        List<TokenStateAttachmentPreset> attachments = new ArrayList<>();
+        for (VttSceneObject attachment : scene.getObjects()) {
+            if (attachment == null || !attachment.isAttachment()) continue;
+            VttAttachmentBinding binding = attachment.getAttachmentBinding();
+            if (binding == null || !binding.isBound()
+                    || !tokenId.equals(binding.getTargetObjectId())
+                    || !stateId.equals(binding.getParentStateId())) continue;
+            AttachmentBindingService.recapture(scene, canvas, attachment.getId());
+            CanvasObject canvasAttachment = canvas.findObjectById(attachment.getId());
+            List<VttLight> lights = scene.getLights().stream()
+                    .filter(light -> light != null
+                            && attachment.getId().equals(light.getAttachedToObjectId()))
+                    .map(this::copyLightTemplate).toList();
+            attachments.add(new TokenStateAttachmentPreset(
+                    attachment.getSourceAttachmentDefinitionId(), attachment.getDisplayName(),
+                    canvasAttachment == null || canvasAttachment.visible(),
+                    canvasAttachment != null && canvasAttachment.flippedHorizontally(),
+                    attachment.getState().getTintColorRgb(), binding.isFollowPosition(),
+                    binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
+                    binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
+                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights));
+        }
+        VttTokenStateAppearance appearance = metadata.getStateAppearances().get(stateId);
+        return appearance == null ? null
+                : new TokenStatePreset(appearance.copy(), attachments);
     }
 
     private void reconcileUnsavedChanges(VttSceneObject token, CanvasObject liveToken) {
@@ -142,5 +181,24 @@ public final class TokenStateOverrideService {
 
     private double ratio(double value, double base) {
         return Math.abs(base) < EPSILON ? 1.0 : value / base;
+    }
+
+    private VttLight copyLightTemplate(VttLight source) {
+        VttLight copy = new VttLight(source.getId(), 0.0, 0.0);
+        copy.setType(source.getType());
+        copy.setOuterRadius(source.getOuterRadius());
+        copy.setInnerRadius(source.getInnerRadius());
+        copy.setColorRgb(source.getColorRgb());
+        copy.setIntensity(source.getIntensity());
+        copy.setDirectionDegrees(source.getDirectionDegrees());
+        copy.setConeAngleDegrees(source.getConeAngleDegrees());
+        copy.setInnerConeAngleDegrees(source.getInnerConeAngleDegrees());
+        copy.setTintEnabled(source.isTintEnabled());
+        copy.setEnabled(source.isEnabled());
+        copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
+        copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
+        copy.setAttachmentDirectionOffsetDegrees(
+                source.getAttachmentDirectionOffsetDegrees());
+        return copy;
     }
 }

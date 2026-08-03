@@ -63,6 +63,8 @@ import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -71,6 +73,8 @@ import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.TokenStateOverrideService;
+import com.petrick.vtt.feature.token.TokenStateAttachmentPreset;
+import com.petrick.vtt.feature.token.TokenStatePreset;
 import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
 import com.petrick.vtt.editor.catalog.SceneContextMenu;
 import com.petrick.vtt.editor.overlay.TokenCatalogContextMenuOverlay;
@@ -117,6 +121,7 @@ import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1466,6 +1471,13 @@ public final class VTTScreen extends Screen {
         String targetFolder = pendingTokenDefinitionTargetFolder;
         String message = pendingTokenDefinitionSuccessMessage;
         clearPendingTokenDefinitionRequest();
+        // The authority revision may arrive in the scene snapshot before the
+        // incremental asset transfer has refreshed the in-memory catalog. Read
+        // the completed server cache again so subsequent placements cannot keep
+        // using the TokenDefinition that existed before this edit.
+        if (session.isNetworkAuthorityActive()) {
+            session.reloadSyncedServerAssets();
+        }
         assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
         assetManagerOverlay.reconcileSelection(
                 session.getActiveTabletop(), mapDefinitionRegistry,
@@ -3496,6 +3508,7 @@ public final class VTTScreen extends Screen {
             }
             case SET_STATE -> setSelectedTokensActiveState(interaction.stringValue());
             case SAVE_STATE -> saveSelectedTokenState(token.id());
+            case SAVE_STATE_TO_TOKEN -> saveSelectedTokenStateToDefinition(token.id());
             case SET_COLOR -> {
                 mutateCanvasTokenMetadata(() -> sceneObject.getState()
                         .setTintColorRgb(interaction.intValue()));
@@ -3582,6 +3595,62 @@ public final class VTTScreen extends Screen {
         if (saved) {
             synchronizeTokenStateOverrides(tokenId, true);
             VttClientEditorNotice.show("State appearance saved for this token");
+        }
+        canvasTokenContextMenuOverlay.close();
+    }
+
+    private void saveSelectedTokenStateToDefinition(String tokenId) {
+        CanvasObject token = scene.findObjectById(tokenId);
+        if (token == null || !token.hasSourceTokenDefinition()
+                || !session.isLocalMaster()) {
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        TokenDefinition definition = tokenDefinitionRegistry
+                .findById(token.sourceTokenDefinitionId()).orElse(null);
+        if (definition == null || !CreatedTokenStorage.isUserCreatedToken(definition)) {
+            VttClientEditorNotice.show("Only created tokens can store state presets");
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        inputController.beginEditorAction();
+        TokenStatePreset preset;
+        try {
+            preset = tokenStateOverrideService.captureDefinitionPreset(
+                    session.getActiveScene(), scene, tokenId);
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (preset == null) {
+            VttClientEditorNotice.show("Could not capture the current token state");
+            canvasTokenContextMenuOverlay.close();
+            return;
+        }
+        synchronizeTokenStateOverrides(tokenId, true);
+        String stateId = token.activeStateId();
+        if (session.isNetworkAuthorityActive()) {
+            if (hasPendingAssetManagerOperation()) {
+                VttClientEditorNotice.show("Wait for the current Asset Manager operation");
+                return;
+            }
+            String json = CreatedTokenStorage.serializeTokenStatePreset(
+                    definition, session.getSyncedServerTokensFolder(), stateId, preset);
+            String requestId = beginPendingTokenDefinitionRequest(
+                    "saving token state preset", "Token state preset saved",
+                    definition.id(), definition.id(), null);
+            if (json == null || requestId == null || !VttClientTokenDefinitionSync.sendUpsert(
+                    requestId, session.getNetworkAuthorityRevision(), json)) {
+                clearPendingTokenDefinitionRequest();
+                VttClientEditorNotice.show("Could not send the token state preset to server");
+            } else {
+                VttClientEditorNotice.show("Token state preset sent to server");
+            }
+        } else {
+            TokenDefinition updated = CreatedTokenStorage.saveTokenStatePreset(
+                    definition, stateId, preset, tokenDefinitionRegistry, assetRegistry);
+            VttClientEditorNotice.show(updated == null
+                    ? "Could not save the token state preset"
+                    : "Token state preset saved");
         }
         canvasTokenContextMenuOverlay.close();
     }
@@ -5512,20 +5581,135 @@ public final class VTTScreen extends Screen {
             return;
         }
 
+        // Catalog rows and drag operations may retain the instance that was
+        // rendered before a server-side token edit finished synchronizing.
+        // Always resolve the latest definition by its stable id at placement.
+        TokenDefinition placementDefinition = tokenDefinitionRegistry
+                .findById(definition.id())
+                .orElse(definition);
+        VTT.LOGGER.info(
+                "Placing token definition {} with reusable state presets {}",
+                placementDefinition.id(), placementDefinition.statePresets().keySet());
+
         inputController.beginTokenLifecycleChange();
-        CanvasObject placedToken = tokenPlacementService.placeToken(definition, worldPosition);
-        if (definition.defaultOwnerId() != null && session.getActiveScene() != null) {
+        CanvasObject placedToken = tokenPlacementService.placeToken(
+                placementDefinition, worldPosition);
+        if (session.getActiveScene() != null) {
             session.saveCanvasSceneToActiveScene();
             session.getActiveScene().getObjects().stream()
                     .filter(object -> object != null && placedToken.id().equals(object.getId()))
                     .findFirst()
                     .ifPresent(object -> {
-                        object.setOwnerId(definition.defaultOwnerId());
-                        session.saveActiveTabletopAndScene();
+                        object.setOwnerId(placementDefinition.defaultOwnerId());
+                        object.setGlobalStateAppearance(
+                                new com.petrick.vtt.feature.tabletop.VttTokenStateAppearance());
+                        Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance>
+                                appearances = new LinkedHashMap<>();
+                        placementDefinition.statePresets().forEach((stateId, preset) ->
+                                appearances.put(stateId, preset.appearance().copy()));
+                        object.setStateAppearances(appearances);
+                        TokenStatePreset activePreset = placementDefinition.statePresets().get(
+                                placementDefinition.defaultStateId());
+                        if (activePreset != null) {
+                            object.getState().setTintColorRgb(
+                                    activePreset.appearance().getTintColorRgb());
+                        }
                     });
+            instantiateTokenStateAttachments(placedToken, placementDefinition);
         }
         inputController.endTokenLifecycleChange();
         inputController.selectSelectTool();
+    }
+
+    private void instantiateTokenStateAttachments(
+            CanvasObject placedToken, TokenDefinition definition
+    ) {
+        if (session.getActiveScene() == null || definition.statePresets().isEmpty()) return;
+        record PendingAttachment(String id, String stateId,
+                                 TokenStateAttachmentPreset preset) {}
+        List<PendingAttachment> pending = new ArrayList<>();
+        for (Map.Entry<String, TokenStatePreset> stateEntry
+                : definition.statePresets().entrySet()) {
+            for (TokenStateAttachmentPreset preset : stateEntry.getValue().attachments()) {
+                AttachmentDefinition attachmentDefinition = attachmentDefinitionRegistry
+                        .findById(preset.definitionId()).orElse(null);
+                if (attachmentDefinition == null) continue;
+                String attachmentId = scene.createUniqueObjectId("attachment");
+                CanvasObject attachment = AttachmentFactory.createCanvasObject(
+                        attachmentDefinition, attachmentId, placedToken.transform().position(),
+                        assetRegistry, session.getAssetThumbnailRegistry());
+                if (!preset.displayName().isBlank()) {
+                    attachment = attachment.withDisplayName(preset.displayName());
+                }
+                if (!preset.visible()) attachment = attachment.withVisible(false);
+                if (preset.flippedHorizontally()) attachment = attachment.withFlippedHorizontally(true);
+                scene.addObject(attachment);
+                pending.add(new PendingAttachment(attachmentId, stateEntry.getKey(), preset));
+            }
+        }
+        if (pending.isEmpty()) return;
+        session.saveCanvasSceneToActiveScene();
+        for (PendingAttachment item : pending) {
+            VttSceneObject metadata = AttachmentBindingService.find(
+                    session.getActiveScene(), item.id());
+            if (metadata == null) continue;
+            VttAttachmentBinding binding = createPresetBinding(
+                    placedToken.id(), item.stateId(), item.preset());
+            metadata.setAttachmentBinding(binding);
+            metadata.getState().setTintColorRgb(item.preset().tintColorRgb());
+            for (VttLight lightTemplate : item.preset().lights()) {
+                session.getActiveScene().addLight(copyPresetLight(
+                        lightTemplate, item.id(), nextPresetLightId()));
+            }
+        }
+        AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+        AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene, null);
+    }
+
+    private VttAttachmentBinding createPresetBinding(
+            String tokenId, String stateId, TokenStateAttachmentPreset preset
+    ) {
+        VttAttachmentBinding binding = new VttAttachmentBinding();
+        binding.setTargetObjectId(tokenId);
+        binding.setParentStateId(stateId);
+        binding.setFollowPosition(preset.followPosition());
+        binding.setFollowRotation(preset.followRotation());
+        binding.setFollowScale(preset.followScale());
+        binding.setFlipOffset(preset.flipOffset());
+        binding.setOffsetX(preset.offsetX());
+        binding.setOffsetY(preset.offsetY());
+        binding.setRotationOffsetDegrees(preset.rotationOffsetDegrees());
+        binding.setScaleMultiplierX(preset.scaleMultiplierX());
+        binding.setScaleMultiplierY(preset.scaleMultiplierY());
+        return binding;
+    }
+
+    private VttLight copyPresetLight(VttLight source, String attachmentId, String lightId) {
+        VttLight copy = new VttLight(lightId, 0.0, 0.0);
+        copy.setType(source.getType());
+        copy.setOuterRadius(source.getOuterRadius());
+        copy.setInnerRadius(source.getInnerRadius());
+        copy.setColorRgb(source.getColorRgb());
+        copy.setIntensity(source.getIntensity());
+        copy.setDirectionDegrees(source.getDirectionDegrees());
+        copy.setConeAngleDegrees(source.getConeAngleDegrees());
+        copy.setInnerConeAngleDegrees(source.getInnerConeAngleDegrees());
+        copy.setTintEnabled(source.isTintEnabled());
+        copy.setEnabled(source.isEnabled());
+        copy.setAttachedToObjectId(attachmentId);
+        copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
+        copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
+        copy.setAttachmentDirectionOffsetDegrees(
+                source.getAttachmentDirectionOffsetDegrees());
+        return copy;
+    }
+
+    private String nextPresetLightId() {
+        int suffix = 1;
+        Set<String> ids = session.getActiveScene().getLights().stream()
+                .map(VttLight::getId).collect(java.util.stream.Collectors.toSet());
+        while (ids.contains("light_" + suffix)) suffix++;
+        return "light_" + suffix;
     }
 
     private void beginRenameSelectedObject() {

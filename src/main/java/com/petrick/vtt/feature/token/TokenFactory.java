@@ -21,14 +21,18 @@ public final class TokenFactory {
             String objectId,
             Vec2d worldPosition
     ) {
+        TokenStatePreset preset = definition.statePresets().get(definition.defaultStateId());
+        double rotation = preset == null ? 0.0 : preset.appearance().getRotationDegrees();
+        Vec2d scale = preset == null ? new Vec2d(1.0, 1.0)
+                : new Vec2d(preset.appearance().getScaleX(), preset.appearance().getScaleY());
         return new CanvasObject(
                 objectId,
                 definition.displayName(),
                 definition.id(),
                 new Transform2D(
                         worldPosition,
-                        0.0,
-                        new Vec2d(1.0, 1.0)
+                        rotation,
+                        scale
                 ),
                 definition.defaultSize(),
                 definition.states(),
