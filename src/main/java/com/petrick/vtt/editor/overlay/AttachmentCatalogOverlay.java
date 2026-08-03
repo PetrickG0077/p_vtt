@@ -138,6 +138,19 @@ public final class AttachmentCatalogOverlay {
         return mouseX >= x && mouseX <= x + WIDTH && mouseY >= y && mouseY <= y + height;
     }
 
+    public void renderDragPreview(VRenderContext context, Font font,
+                                  AttachmentDefinition definition,
+                                  double mouseX, double mouseY) {
+        if (definition == null) return;
+        String label = "Place attachment: " + definition.displayName();
+        int x = (int) Math.round(mouseX) + 12;
+        int y = (int) Math.round(mouseY) + 12;
+        int width = font.width(label) + 12;
+        context.graphics().fill(x, y, x + width, y + 18, 0xEE08080C);
+        border(context, x, y, width, 18, EditorHudTheme.outline());
+        context.graphics().drawString(font, label, x + 6, y + 5, 0xFFFFFFFF, false);
+    }
+
     public int clamp(AttachmentDefinitionRegistry registry, int offset) {
         return Math.max(0, Math.min(offset,
                 Math.max(0, rows(registry).size() - MAX_VISIBLE)));

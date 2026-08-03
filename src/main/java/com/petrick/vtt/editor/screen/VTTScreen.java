@@ -45,6 +45,7 @@ import com.petrick.vtt.editor.token.VttPlayerOption;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.attachment.AttachmentDefinition;
 import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentFactory;
 import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
@@ -187,6 +188,9 @@ public final class VTTScreen extends Screen {
     private final AttachmentDefinitionDialog attachmentDefinitionDialog;
     private int mapCatalogScrollOffset;
     private int attachmentCatalogScrollOffset;
+    private AttachmentDefinition draggingAttachmentDefinition;
+    private double attachmentDragStartX;
+    private double attachmentDragStartY;
     private boolean draggingMapCatalogScrollbar;
     private MapDefinition draggingMapDefinition;
     private double mapDragStartX;
@@ -438,7 +442,9 @@ public final class VTTScreen extends Screen {
                 && session.isNetworkAuthorityActive();
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
                 masterView, !fullTabletopView, !inputController.isEditingCollisionBox(),
-                session.isLocalMaster(), panelVisibility.isDebugVisible(),
+                session.isLocalMaster(),
+                masterView && "select".equals(inputController.getActiveToolId()),
+                panelVisibility.isDebugVisible(),
                 session.isLocalMaster() ? null : session.getLocalPlayerId(),
                 authoritativePlayerView
                         ? session.getNetworkVisionRegions() : null,
@@ -532,6 +538,11 @@ public final class VTTScreen extends Screen {
                     context, this.font, attachmentDefinitionRegistry,
                     attachmentCatalogSelection, assetRegistry,
                     session.getAssetThumbnailRegistry(), attachmentCatalogScrollOffset);
+        }
+        if (draggingAttachmentDefinition != null
+                && attachmentDragDistance(mouseX, mouseY) >= 6.0) {
+            attachmentCatalogOverlay.renderDragPreview(
+                    context, this.font, draggingAttachmentDefinition, mouseX, mouseY);
         }
         if (mapPickerActive) {
             mapCatalogOverlay.render(
@@ -1697,6 +1708,8 @@ public final class VTTScreen extends Screen {
                         .findById(entry.id()).orElse(null);
                 if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) {
                     blocked.add("Attachment cannot be deleted: " + entry.id());
+                } else if (!findDefinitionUsages(section, entry.id()).isEmpty()) {
+                    blocked.add("Attachment is used in a scene: " + definition.displayName());
                 }
             } else if (!session.getActiveTabletop().getSceneIds().contains(entry.id())) {
                 blocked.add("Scene no longer exists: " + entry.id());
@@ -1803,6 +1816,11 @@ public final class VTTScreen extends Screen {
                 if (!CreatedAttachmentStorage.isUserCreatedAttachment(definition)) return null;
                 typeLabel = "Attachment";
                 displayName = definition.displayName();
+                usages = findDefinitionUsages(section, id);
+                if (!usages.isEmpty()) {
+                    blockedMessage =
+                            "Remove every placed attachment before deleting this definition.";
+                }
             }
             default -> {
                 return null;
@@ -1833,6 +1851,11 @@ public final class VTTScreen extends Screen {
                 count = candidate.getMaps().stream()
                         .filter(map -> map != null
                                 && definitionId.equals(map.getSourceMapDefinitionId()))
+                        .count();
+            } else if (section == AssetManagerOverlay.Section.ATTACHMENTS) {
+                count = candidate.getObjects().stream()
+                        .filter(object -> object != null && definitionId.equals(
+                                object.getSourceAttachmentDefinitionId()))
                         .count();
             } else if (section == AssetManagerOverlay.Section.TOKENS
                     && sceneId.equals(activeSceneId)) {
@@ -2702,7 +2725,12 @@ public final class VTTScreen extends Screen {
                     AttachmentDefinition definition = attachmentCatalogOverlay.findAt(
                             attachmentDefinitionRegistry, this.width, this.height,
                             mouseX, mouseY, attachmentCatalogScrollOffset);
-                    if (definition != null) attachmentCatalogSelection.select(definition.id());
+                    if (definition != null) {
+                        attachmentCatalogSelection.select(definition.id());
+                        draggingAttachmentDefinition = definition;
+                        attachmentDragStartX = mouseX;
+                        attachmentDragStartY = mouseY;
+                    }
                 }
                 return true;
             }
@@ -3367,6 +3395,12 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && draggingAttachmentDefinition != null) {
+            releaseAttachmentCatalogDrag(mouseX, mouseY);
+            return true;
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             TokenDefinition releasedTokenDefinition =
                     tokenCatalogController.mouseReleased(mouseX, mouseY);
@@ -3458,6 +3492,7 @@ public final class VTTScreen extends Screen {
             return true;
         }
         if (draggingMapDefinition != null) return true;
+        if (draggingAttachmentDefinition != null) return true;
         if (sceneOutlinerOverlay.mouseDraggedScrollbar(
                 scene, session.getActiveScene(), mouseY)) return true;
         if (backgroundImagePickerActive) {
@@ -5267,6 +5302,7 @@ public final class VTTScreen extends Screen {
                 return;
             }
             attachmentDefinitionRegistry.register(definition, folder);
+            if (existing != null) synchronizePlacedAttachments(definition);
             attachmentCatalogSelection.select(definition.id());
             VttClientEditorNotice.show((existing == null ? "Attachment created: "
                     : "Attachment updated: ") + definition.displayName());
@@ -5281,6 +5317,20 @@ public final class VTTScreen extends Screen {
         attachmentDefinitionDialog.close();
         closeBackgroundImagePicker();
         returnToAssetManagerIfRequested();
+    }
+
+    private void synchronizePlacedAttachments(AttachmentDefinition definition) {
+        for (CanvasObject object : List.copyOf(scene.getObjects())) {
+            if (!definition.id().equals(object.sourceAttachmentDefinitionId())) continue;
+            CanvasObject fresh = AttachmentFactory.createCanvasObject(
+                    definition, object.id(), object.transform().position(), assetRegistry,
+                    session.getAssetThumbnailRegistry());
+            scene.replaceObject(new CanvasObject(
+                    object.id(), object.displayName(), null, object.transform(), object.size(),
+                    fresh.states(), fresh.activeStateId(), object.visible(),
+                    object.flippedHorizontally(), definition.id()));
+        }
+        session.saveCanvasSceneToActiveScene();
     }
 
     private void duplicateAttachmentDefinition(AttachmentDefinition definition) {
@@ -5481,6 +5531,38 @@ public final class VTTScreen extends Screen {
 
     private double mapDragDistance(double mouseX, double mouseY) {
         return Math.hypot(mouseX - mapDragStartX, mouseY - mapDragStartY);
+    }
+
+    private double attachmentDragDistance(double mouseX, double mouseY) {
+        return Math.hypot(mouseX - attachmentDragStartX, mouseY - attachmentDragStartY);
+    }
+
+    private void releaseAttachmentCatalogDrag(double mouseX, double mouseY) {
+        AttachmentDefinition definition = draggingAttachmentDefinition;
+        boolean place = attachmentDragDistance(mouseX, mouseY) >= 6.0
+                && !attachmentCatalogOverlay.contains(
+                attachmentDefinitionRegistry, this.width, this.height, mouseX, mouseY)
+                && !editorHudOverlay.containsHud(
+                mouseX, mouseY, this.width, this.height, editorHudState());
+        draggingAttachmentDefinition = null;
+        if (!place || definition == null || renderState == null) return;
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEditorNotice.show(
+                    "Server attachment placement requires authoritative attachment lifecycle sync");
+            return;
+        }
+        Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+        inputController.beginEditorAction();
+        String objectId = scene.createUniqueObjectId("attachment");
+        CanvasObject attachment = AttachmentFactory.createCanvasObject(
+                definition, objectId, world, assetRegistry,
+                session.getAssetThumbnailRegistry());
+        scene.addObject(attachment);
+        selectionManager.selectOnly(objectId);
+        inputController.endEditorAction();
+        session.saveCanvasSceneToActiveScene();
+        inputController.selectSelectTool();
+        VttClientEditorNotice.show("Attachment placed: " + definition.displayName());
     }
 
     private boolean handleMapCatalogPlacementMouseClicked(

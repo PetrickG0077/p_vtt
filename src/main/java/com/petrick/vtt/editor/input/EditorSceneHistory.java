@@ -797,6 +797,7 @@ public final class EditorSceneHistory {
             String id,
             String displayName,
             String sourceTokenDefinitionId,
+            String sourceAttachmentDefinitionId,
             double x,
             double y,
             double scaleX,
@@ -823,6 +824,7 @@ public final class EditorSceneHistory {
                     box.getOffsetX(), box.getOffsetY(), box.getWidth(), box.getHeight());
             return new PersistentObject(
                     object.getId(), object.getDisplayName(), object.getSourceTokenDefinitionId(),
+                    object.getSourceAttachmentDefinitionId(),
                     object.getTransform().getX(), object.getTransform().getY(),
                     object.getTransform().getScaleX(), object.getTransform().getScaleY(),
                     object.getTransform().getRotationDegrees(),
@@ -836,6 +838,7 @@ public final class EditorSceneHistory {
 
         private VttSceneObject toSceneObject() {
             VttSceneObject object = new VttSceneObject(id, displayName, sourceTokenDefinitionId);
+            object.setSourceAttachmentDefinitionId(sourceAttachmentDefinitionId);
             object.setTransform(new VttSceneTransform(
                     x, y, scaleX, scaleY, rotationDegrees));
             object.setSize(new VttSceneSize(width, height));

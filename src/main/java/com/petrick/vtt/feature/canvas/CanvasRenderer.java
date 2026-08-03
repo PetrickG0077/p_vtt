@@ -84,6 +84,7 @@ public final class CanvasRenderer {
             boolean renderVisionMask,
             boolean editorSelectionVisible,
             boolean resizeHandlesVisible,
+            boolean attachmentMarkersVisible,
             boolean visionDebugVisible,
             String visionOwnerId,
             Collection<AuthoritativeVisionRegion> authoritativeVisionRegions,
@@ -94,7 +95,8 @@ public final class CanvasRenderer {
         if (grid != null && !grid.isTopLayer()) gridRenderer.render(context, grid);
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, tabletopScene, scene, selectionManager, editorSelectionVisible,
-                resizeHandlesVisible, masterView, authoritativeVisibleObjectIds);
+                resizeHandlesVisible, attachmentMarkersVisible,
+                masterView, authoritativeVisibleObjectIds);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         if (grid != null && grid.isTopLayer()) gridRenderer.render(context, grid);
@@ -116,6 +118,7 @@ public final class CanvasRenderer {
             SelectionManager selectionManager,
             boolean editorSelectionVisible,
             boolean resizeHandlesVisible,
+            boolean attachmentMarkersVisible,
             boolean masterView,
             Collection<String> authoritativeVisibleObjectIds
     ) {
@@ -134,12 +137,33 @@ public final class CanvasRenderer {
             renderObject(context, object, object.visible() ? 1.0F : 0.5F,
                     tintColors.getOrDefault(object.id(), 0xFFFFFF));
 
+            if (attachmentMarkersVisible && object.hasSourceAttachmentDefinition()
+                    && object.currentVisual() instanceof
+                    com.petrick.vtt.feature.canvas.visual.ColorVisual) {
+                renderAttachmentMarker(context, object);
+            }
+
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
                 renderSelectionBorder(context, object);
                 if (resizeHandlesVisible) renderSelectionHandles(context, object);
                 renderRotationHandle(context, object);
             }
         }
+    }
+
+    private void renderAttachmentMarker(VRenderContext context, CanvasObject object) {
+        Vec2d center = context.renderState().worldToScreen(object.transform().position());
+        PoseStack pose = context.graphics().pose();
+        pose.pushPose();
+        pose.translate(center.x(), center.y(), 0.0);
+        pose.mulPose(Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees()));
+        int half = 6;
+        context.graphics().fill(-half, -half, half, half, 0xDD278CFF);
+        context.graphics().hLine(-half, half, -half, 0xFF66CCFF);
+        context.graphics().hLine(-half, half, half, 0xFF66CCFF);
+        context.graphics().vLine(-half, -half, half, 0xFF66CCFF);
+        context.graphics().vLine(half, -half, half, 0xFF66CCFF);
+        pose.popPose();
     }
 
     private void renderObject(

@@ -31,7 +31,8 @@ public record CanvasObject(
         Map<String, CanvasObjectState> states,
         String activeStateId,
         boolean visible,
-        boolean flippedHorizontally
+        boolean flippedHorizontally,
+        String sourceAttachmentDefinitionId
 ) {
 
     public static final String DEFAULT_STATE_ID = "default";
@@ -80,6 +81,21 @@ public record CanvasObject(
             Vec2d size,
             Map<String, CanvasObjectState> states,
             String activeStateId,
+            boolean visible,
+            boolean flippedHorizontally
+    ) {
+        this(id, displayName, sourceTokenDefinitionId, transform, size, states,
+                activeStateId, visible, flippedHorizontally, null);
+    }
+
+    public CanvasObject(
+            String id,
+            String displayName,
+            String sourceTokenDefinitionId,
+            Transform2D transform,
+            Vec2d size,
+            Map<String, CanvasObjectState> states,
+            String activeStateId,
             boolean visible
     ) {
         this(
@@ -91,7 +107,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                false
+                false,
+                null
         );
     }
 
@@ -118,7 +135,8 @@ public record CanvasObject(
                 createSingleStateMap(visual),
                 DEFAULT_STATE_ID,
                 visible,
-                false
+                false,
+                null
         );
     }
 
@@ -163,7 +181,8 @@ public record CanvasObject(
                 states,
                 stateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -177,7 +196,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -215,7 +235,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -233,7 +254,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -247,7 +269,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -265,7 +288,8 @@ public record CanvasObject(
                 states,
                 activeStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -358,7 +382,8 @@ public record CanvasObject(
                 definition.states(),
                 newActiveStateId,
                 visible,
-                flippedHorizontally
+                flippedHorizontally,
+                sourceAttachmentDefinitionId
         );
     }
 
@@ -386,5 +411,10 @@ public record CanvasObject(
 
     public boolean hasSourceTokenDefinition() {
         return sourceTokenDefinitionId != null && !sourceTokenDefinitionId.isBlank();
+    }
+
+    public boolean hasSourceAttachmentDefinition() {
+        return sourceAttachmentDefinitionId != null
+                && !sourceAttachmentDefinitionId.isBlank();
     }
 }

@@ -44,6 +44,7 @@ public final class CanvasSceneToVttSceneMapper {
         Map<String, Integer> existingTintColors = new HashMap<>();
         Map<String, String> existingOwnerIds = new HashMap<>();
         Map<String, VttSceneCollisionBox> existingCollisionBoxes = new HashMap<>();
+        Map<String, String> existingAttachmentDefinitionIds = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
             if (existingObject != null && existingObject.getId() != null) {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
@@ -58,6 +59,11 @@ public final class CanvasSceneToVttSceneMapper {
                 }
                 if (existingObject.getCollisionBox() != null) {
                     existingCollisionBoxes.put(existingObject.getId(), existingObject.getCollisionBox());
+                }
+                if (existingObject.getSourceAttachmentDefinitionId() != null) {
+                    existingAttachmentDefinitionIds.put(
+                            existingObject.getId(),
+                            existingObject.getSourceAttachmentDefinitionId());
                 }
             }
         }
@@ -84,6 +90,10 @@ public final class CanvasSceneToVttSceneMapper {
                 sceneObject.setCollisionBox(new VttSceneCollisionBox(collisionBox.getOffsetX(),
                         collisionBox.getOffsetY(), collisionBox.getWidth(), collisionBox.getHeight()));
             }
+            sceneObject.setSourceAttachmentDefinitionId(
+                    canvasObject.sourceAttachmentDefinitionId() != null
+                            ? canvasObject.sourceAttachmentDefinitionId()
+                            : existingAttachmentDefinitionIds.get(metadataSourceId));
 
             targetScene.addObject(sceneObject);
 
@@ -117,6 +127,8 @@ public final class CanvasSceneToVttSceneMapper {
         sceneObject.setId(canvasObject.id());
         sceneObject.setDisplayName(canvasObject.displayName());
         sceneObject.setSourceTokenDefinitionId(canvasObject.sourceTokenDefinitionId());
+        sceneObject.setSourceAttachmentDefinitionId(
+                canvasObject.sourceAttachmentDefinitionId());
         sceneObject.setLayerIndex(layerIndex);
         sceneObject.setVisionRange(visionRange);
         sceneObject.setVisionInnerRadius(visionInnerRadius);

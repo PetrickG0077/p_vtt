@@ -3,9 +3,11 @@ package com.petrick.vtt.core.session;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentFactory;
 import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.DebugAssets;
 import com.petrick.vtt.feature.canvas.CanvasScene;
+import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.token.DebugTokenDefinitions;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
@@ -548,7 +550,8 @@ public final class VTTSession {
             visibleIds.add(spawned.getId());
             if (canvasScene.findObjectById(spawned.getId()) != null) continue;
             var canvasObject = VttSceneToCanvasSceneMapper.convertObject(
-                    spawned, tokenDefinitionRegistry);
+                    spawned, tokenDefinitionRegistry, attachmentDefinitionRegistry,
+                    assetRegistry, assetThumbnailRegistry);
             if (canvasObject == null) continue;
             canvasScene.addObject(canvasObject);
             canvasScene.moveObjectToLayer(canvasObject.id(), spawned.getLayerIndex());
@@ -961,7 +964,10 @@ public final class VTTSession {
         VttSceneToCanvasSceneMapper.copySceneObjectsToCanvas(
                 activeScene,
                 canvasScene,
-                tokenDefinitionRegistry
+                tokenDefinitionRegistry,
+                attachmentDefinitionRegistry,
+                assetRegistry,
+                assetThumbnailRegistry
         );
     }
 
@@ -1006,6 +1012,7 @@ public final class VTTSession {
         }
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
         loadAssetThumbnails();
+        refreshPlacedAttachmentVisuals();
     }
 
     public void reloadSyncedServerAssets() {
@@ -1031,6 +1038,7 @@ public final class VTTSession {
         attachmentDefinitionRegistry.clear();
         CreatedAttachmentStorage.loadCreatedAttachmentsFromFolder(
                 cacheRoot.resolve("attachments"), attachmentDefinitionRegistry);
+        refreshPlacedAttachmentVisuals();
         VTT.LOGGER.info("Loaded {} synchronized VTT assets from server", synced.totalCount());
     }
 
@@ -1105,6 +1113,27 @@ public final class VTTSession {
     private void loadAssetThumbnails() {
         for (var entry : assetLibraryScanResult.entries()) {
             assetThumbnailLoader.loadThumbnailIfNeeded(entry);
+        }
+    }
+
+    /**
+     * Rebuilds only attachment visuals after external textures become available.
+     * Transform, size, visibility and layer ordering remain untouched.
+     */
+    private void refreshPlacedAttachmentVisuals() {
+        if (canvasScene == null) return;
+        for (CanvasObject object : List.copyOf(canvasScene.getObjects())) {
+            if (!object.hasSourceAttachmentDefinition()) continue;
+            var definition = attachmentDefinitionRegistry
+                    .findById(object.sourceAttachmentDefinitionId()).orElse(null);
+            if (definition == null) continue;
+            CanvasObject fresh = AttachmentFactory.createCanvasObject(
+                    definition, object.id(), object.transform().position(),
+                    assetRegistry, assetThumbnailRegistry);
+            canvasScene.replaceObject(new CanvasObject(
+                    object.id(), object.displayName(), null, object.transform(), object.size(),
+                    fresh.states(), fresh.activeStateId(), object.visible(),
+                    object.flippedHorizontally(), definition.id()));
         }
     }
 

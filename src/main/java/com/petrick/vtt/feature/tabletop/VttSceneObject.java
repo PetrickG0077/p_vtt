@@ -24,6 +24,9 @@ public final class VttSceneObject {
      */
     private String sourceTokenDefinitionId;
 
+    /** AttachmentDefinition origin. Mutually exclusive with sourceTokenDefinitionId. */
+    private String sourceAttachmentDefinitionId;
+
     private VttSceneTransform transform = new VttSceneTransform();
 
     private VttSceneSize size = new VttSceneSize();
@@ -88,6 +91,20 @@ public final class VttSceneObject {
 
     public void setSourceTokenDefinitionId(String sourceTokenDefinitionId) {
         this.sourceTokenDefinitionId = sourceTokenDefinitionId;
+    }
+
+    public String getSourceAttachmentDefinitionId() {
+        return sourceAttachmentDefinitionId;
+    }
+
+    public void setSourceAttachmentDefinitionId(String sourceAttachmentDefinitionId) {
+        this.sourceAttachmentDefinitionId = sourceAttachmentDefinitionId == null
+                || sourceAttachmentDefinitionId.isBlank()
+                ? null : sourceAttachmentDefinitionId.trim();
+    }
+
+    public boolean isAttachment() {
+        return sourceAttachmentDefinitionId != null;
     }
 
     public VttSceneTransform getTransform() {

@@ -12,6 +12,11 @@ import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentDefinition;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentFactory;
+import com.petrick.vtt.feature.asset.AssetRegistry;
+import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnailRegistry;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,6 +39,18 @@ public final class VttSceneToCanvasSceneMapper {
             CanvasScene targetCanvasScene,
             TokenDefinitionRegistry tokenDefinitionRegistry
     ) {
+        copySceneObjectsToCanvas(sourceScene, targetCanvasScene,
+                tokenDefinitionRegistry, null, null, null);
+    }
+
+    public static void copySceneObjectsToCanvas(
+            VttScene sourceScene,
+            CanvasScene targetCanvasScene,
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            AttachmentDefinitionRegistry attachmentDefinitionRegistry,
+            AssetRegistry assetRegistry,
+            AssetThumbnailRegistry thumbnails
+    ) {
         if (sourceScene == null || targetCanvasScene == null || tokenDefinitionRegistry == null) {
             return;
         }
@@ -49,7 +66,10 @@ public final class VttSceneToCanvasSceneMapper {
         for (VttSceneObject sceneObject : sortedSceneObjects) {
             CanvasObject canvasObject = convertObject(
                     sceneObject,
-                    tokenDefinitionRegistry
+                    tokenDefinitionRegistry,
+                    attachmentDefinitionRegistry,
+                    assetRegistry,
+                    thumbnails
             );
 
             if (canvasObject != null) {
@@ -64,8 +84,49 @@ public final class VttSceneToCanvasSceneMapper {
             VttSceneObject sceneObject,
             TokenDefinitionRegistry tokenDefinitionRegistry
     ) {
+        return convertObject(sceneObject, tokenDefinitionRegistry, null, null, null);
+    }
+
+    public static CanvasObject convertObject(
+            VttSceneObject sceneObject,
+            TokenDefinitionRegistry tokenDefinitionRegistry,
+            AttachmentDefinitionRegistry attachmentDefinitionRegistry,
+            AssetRegistry assetRegistry,
+            AssetThumbnailRegistry thumbnails
+    ) {
         if (sceneObject == null) {
             return null;
+        }
+
+        String attachmentDefinitionId = sceneObject.getSourceAttachmentDefinitionId();
+        if (attachmentDefinitionId != null && !attachmentDefinitionId.isBlank()) {
+            AttachmentDefinition definition = attachmentDefinitionRegistry == null
+                    ? null : attachmentDefinitionRegistry.findById(attachmentDefinitionId)
+                    .orElse(null);
+            if (definition == null || assetRegistry == null || thumbnails == null) {
+                VTT.LOGGER.warn(
+                        "Skipped VTT scene attachment because its definition was not found: object={}, attachmentDefinition={}",
+                        sceneObject.getId(), attachmentDefinitionId);
+                return null;
+            }
+            VttSceneTransform attachmentTransform = sceneObject.getTransform();
+            CanvasObject attachment = AttachmentFactory.createCanvasObject(
+                    definition, resolveObjectId(sceneObject),
+                    attachmentTransform == null ? new Vec2d(0.0, 0.0)
+                            : new Vec2d(attachmentTransform.getX(),
+                            attachmentTransform.getY()),
+                    assetRegistry, thumbnails);
+            return new CanvasObject(
+                    attachment.id(),
+                    sceneObject.getDisplayName() == null || sceneObject.getDisplayName().isBlank()
+                            ? definition.displayName() : sceneObject.getDisplayName(),
+                    null,
+                    createTransform(sceneObject.getTransform()),
+                    createAttachmentSize(sceneObject.getSize(), definition),
+                    attachment.states(), attachment.activeStateId(),
+                    resolveVisible(sceneObject.getState()),
+                    resolveFlippedHorizontally(sceneObject.getState()),
+                    definition.id());
         }
 
         String tokenDefinitionId = sceneObject.getSourceTokenDefinitionId();
@@ -166,6 +227,17 @@ public final class VttSceneToCanvasSceneMapper {
                 : definition.defaultSize().y();
 
         return new Vec2d(width, height);
+    }
+
+    private static Vec2d createAttachmentSize(
+            VttSceneSize size, AttachmentDefinition definition
+    ) {
+        if (size == null) {
+            return new Vec2d(definition.defaultWidth(), definition.defaultHeight());
+        }
+        return new Vec2d(
+                size.getWidth() > 0.0 ? size.getWidth() : definition.defaultWidth(),
+                size.getHeight() > 0.0 ? size.getHeight() : definition.defaultHeight());
     }
 
     private static String resolveActiveStateId(

@@ -81,7 +81,9 @@ public final class VttClientTokenLifecycleSync {
             }
 
             CanvasObject canvasObject = VttSceneToCanvasSceneMapper.convertObject(
-                    sceneObject, session.getTokenDefinitionRegistry());
+                    sceneObject, session.getTokenDefinitionRegistry(),
+                    session.getAttachmentDefinitionRegistry(), session.getAssetRegistry(),
+                    session.getAssetThumbnailRegistry());
             if (canvasObject == null) return;
             if (session.getCanvasScene().findObjectById(canvasObject.id()) == null) {
                 session.getCanvasScene().addObject(canvasObject);
