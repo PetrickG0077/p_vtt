@@ -27,6 +27,7 @@ public record VttEnvironmentCommandPayload(
     public static final String VISION = "VISION";
     public static final String LIGHT = "LIGHT";
     public static final String ATTACHMENT_BINDING = "ATTACHMENT_BINDING";
+    public static final String TOKEN_STATE_OVERRIDE = "TOKEN_STATE_OVERRIDE";
     public static final int MAX_JSON_LENGTH = 65_536;
 
     public static final Type<VttEnvironmentCommandPayload> TYPE = new Type<>(

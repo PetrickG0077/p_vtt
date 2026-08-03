@@ -62,6 +62,7 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttSceneCameraView;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttScene;
+import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -69,6 +70,7 @@ import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
 import com.petrick.vtt.feature.selection.SelectionManager;
 import com.petrick.vtt.feature.token.TokenDefinition;
 import com.petrick.vtt.feature.token.TokenDefinitionRegistry;
+import com.petrick.vtt.feature.token.TokenStateOverrideService;
 import com.petrick.vtt.editor.catalog.TokenCatalogContextMenu;
 import com.petrick.vtt.editor.catalog.SceneContextMenu;
 import com.petrick.vtt.editor.overlay.TokenCatalogContextMenuOverlay;
@@ -226,6 +228,8 @@ public final class VTTScreen extends Screen {
 
     private final CanvasAttachmentContextMenuOverlay canvasAttachmentContextMenuOverlay =
             new CanvasAttachmentContextMenuOverlay();
+    private final TokenStateOverrideService tokenStateOverrideService =
+            new TokenStateOverrideService();
 
     private final SceneContextMenu sceneContextMenu = new SceneContextMenu();
 
@@ -464,6 +468,13 @@ public final class VTTScreen extends Screen {
                 && session.isNetworkAuthorityActive();
         AttachmentBindingService.captureSelectedOffsets(session.getActiveScene(), scene,
                 selectionManager.getSelectedObjectIds());
+        for (String selectedId : selectionManager.getSelectedObjectIds()) {
+            CanvasObject selected = scene.findObjectById(selectedId);
+            if (selected != null && selected.hasSourceTokenDefinition()) {
+                tokenStateOverrideService.beginEditing(
+                        session.getActiveScene(), scene, selectedId);
+            }
+        }
         AttachmentBindingService.synchronize(session.getActiveScene(), scene,
                 selectionManager.getSelectedObjectIds());
         AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene,
@@ -3483,10 +3494,8 @@ public final class VTTScreen extends Screen {
                         .ifPresent(this::beginEditTokenDefinition);
                 canvasTokenContextMenuOverlay.close();
             }
-            case SET_STATE -> {
-                selectionManager.selectOnly(token.id());
-                inputController.setSelectedObjectsActiveState(interaction.stringValue());
-            }
+            case SET_STATE -> setSelectedTokensActiveState(interaction.stringValue());
+            case SAVE_STATE -> saveSelectedTokenState(token.id());
             case SET_COLOR -> {
                 mutateCanvasTokenMetadata(() -> sceneObject.getState()
                         .setTintColorRgb(interaction.intValue()));
@@ -3544,6 +3553,55 @@ public final class VTTScreen extends Screen {
             mutation.run();
         } finally {
             inputController.endEditorAction();
+        }
+    }
+
+    private void setSelectedTokensActiveState(String stateId) {
+        inputController.beginEditorAction();
+        try {
+            for (String selectedId : List.copyOf(selectionManager.getSelectedObjectIds())) {
+                if (tokenStateOverrideService.switchState(
+                        session.getActiveScene(), scene, selectedId, stateId)) {
+                    synchronizeTokenStateOverrides(selectedId, false);
+                }
+            }
+        } finally {
+            inputController.endEditorAction();
+        }
+    }
+
+    private void saveSelectedTokenState(String tokenId) {
+        inputController.beginEditorAction();
+        boolean saved;
+        try {
+            saved = tokenStateOverrideService.saveCurrentState(
+                    session.getActiveScene(), scene, tokenId);
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (saved) {
+            synchronizeTokenStateOverrides(tokenId, true);
+            VttClientEditorNotice.show("State appearance saved for this token");
+        }
+        canvasTokenContextMenuOverlay.close();
+    }
+
+    private void synchronizeTokenStateOverrides(String tokenId, boolean includeAttachments) {
+        if (!session.isNetworkAuthorityActive() || !session.isLocalMaster()
+                || session.getActiveScene() == null || tokenId == null) return;
+        VttSceneObject token = session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && tokenId.equals(object.getId()))
+                .findFirst().orElse(null);
+        if (token == null) return;
+        VttClientEnvironmentCommandSync.sendTokenStateOverrides(session, tokenId,
+                token.getGlobalStateAppearance(), token.getStateAppearances());
+        if (!includeAttachments) return;
+        for (VttSceneObject attachment : session.getActiveScene().getObjects()) {
+            if (attachment == null || !attachment.isAttachment()
+                    || attachment.getAttachmentBinding() == null
+                    || !tokenId.equals(attachment.getAttachmentBinding().getTargetObjectId())) continue;
+            VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                    session, attachment.getId(), attachment.getAttachmentBinding());
         }
     }
 
@@ -4640,7 +4698,7 @@ public final class VTTScreen extends Screen {
 
         if (requestedStateId != null) {
             if (!canTransformSelectedTokens()) return true;
-            inputController.setSelectedObjectsActiveState(requestedStateId);
+            setSelectedTokensActiveState(requestedStateId);
             return true;
         }
 

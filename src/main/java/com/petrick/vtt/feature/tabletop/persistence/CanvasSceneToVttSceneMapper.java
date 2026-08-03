@@ -47,6 +47,10 @@ public final class CanvasSceneToVttSceneMapper {
         Map<String, VttSceneCollisionBox> existingCollisionBoxes = new HashMap<>();
         Map<String, String> existingAttachmentDefinitionIds = new HashMap<>();
         Map<String, VttAttachmentBinding> existingAttachmentBindings = new HashMap<>();
+        Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance>
+                existingGlobalAppearances = new HashMap<>();
+        Map<String, Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance>>
+                existingStateAppearances = new HashMap<>();
         for (VttSceneObject existingObject : targetScene.getObjects()) {
             if (existingObject != null && existingObject.getId() != null) {
                 existingVisionRanges.put(existingObject.getId(), existingObject.getVisionRange());
@@ -71,6 +75,15 @@ public final class CanvasSceneToVttSceneMapper {
                     existingAttachmentBindings.put(
                             existingObject.getId(), existingObject.getAttachmentBinding());
                 }
+                if (existingObject.getGlobalStateAppearance() != null) {
+                    existingGlobalAppearances.put(existingObject.getId(),
+                            existingObject.getGlobalStateAppearance().copy());
+                }
+                Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance> copies =
+                        new java.util.LinkedHashMap<>();
+                existingObject.getStateAppearances().forEach(
+                        (stateId, appearance) -> copies.put(stateId, appearance.copy()));
+                existingStateAppearances.put(existingObject.getId(), copies);
             }
         }
 
@@ -104,6 +117,8 @@ public final class CanvasSceneToVttSceneMapper {
             if (binding != null && canvasScene.findObjectById(binding.getTargetObjectId()) != null) {
                 sceneObject.setAttachmentBinding(copyBinding(binding));
             }
+            sceneObject.setGlobalStateAppearance(existingGlobalAppearances.get(metadataSourceId));
+            sceneObject.setStateAppearances(existingStateAppearances.get(metadataSourceId));
 
             targetScene.addObject(sceneObject);
 
@@ -177,6 +192,7 @@ public final class CanvasSceneToVttSceneMapper {
         copy.setFollowRotation(source.isFollowRotation());
         copy.setFollowScale(source.isFollowScale());
         copy.setFlipOffset(source.isFlipOffset());
+        copy.setParentStateId(source.getParentStateId());
         copy.setOffsetX(source.getOffsetX());
         copy.setOffsetY(source.getOffsetY());
         copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());

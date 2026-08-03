@@ -827,6 +827,8 @@ public final class EditorSceneHistory {
             boolean visionOwnLightEnabled,
             int tintColorRgb,
             String ownerId,
+            TokenAppearance globalStateAppearance,
+            Map<String, TokenAppearance> stateAppearances,
             boolean visionSource
     ) {
         private static PersistentObject capture(VttSceneObject object, boolean visionSource) {
@@ -845,7 +847,9 @@ public final class EditorSceneHistory {
                     object.getState().isFlippedHorizontally(), boxCopy, object.getLayerIndex(),
                     object.getVisionOuterRadius(), object.getVisionInnerRadius(),
                     object.isVisionEnabled(), object.isVisionOwnLightEnabled(),
-                    object.getState().getTintColorRgb(), object.getOwnerId(), visionSource);
+                    object.getState().getTintColorRgb(), object.getOwnerId(),
+                    TokenAppearance.capture(object.getGlobalStateAppearance()),
+                    TokenAppearance.captureAll(object.getStateAppearances()), visionSource);
         }
 
         private VttSceneObject toSceneObject() {
@@ -864,6 +868,13 @@ public final class EditorSceneHistory {
             object.setVisionOwnLightEnabled(visionOwnLightEnabled);
             object.getState().setTintColorRgb(tintColorRgb);
             object.setOwnerId(ownerId);
+            object.setGlobalStateAppearance(globalStateAppearance == null
+                    ? null : globalStateAppearance.restore());
+            Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance> restored =
+                    new LinkedHashMap<>();
+            stateAppearances.forEach((stateId, appearance) ->
+                    restored.put(stateId, appearance.restore()));
+            object.setStateAppearances(restored);
             if (collisionBox != null) {
                 object.setCollisionBox(new VttSceneCollisionBox(
                         collisionBox.offsetX(), collisionBox.offsetY(),
@@ -879,6 +890,7 @@ public final class EditorSceneHistory {
             boolean followRotation,
             boolean followScale,
             boolean flipOffset,
+            String parentStateId,
             double offsetX,
             double offsetY,
             double rotationOffsetDegrees,
@@ -891,7 +903,7 @@ public final class EditorSceneHistory {
             if (binding == null) return null;
             return new AttachmentBinding(binding.getTargetObjectId(),
                     binding.isFollowPosition(), binding.isFollowRotation(),
-                    binding.isFollowScale(), binding.isFlipOffset(),
+                    binding.isFollowScale(), binding.isFlipOffset(), binding.getParentStateId(),
                     binding.getOffsetX(), binding.getOffsetY(),
                     binding.getRotationOffsetDegrees(), binding.getScaleMultiplierX(),
                     binding.getScaleMultiplierY());
@@ -904,12 +916,39 @@ public final class EditorSceneHistory {
             binding.setFollowRotation(followRotation);
             binding.setFollowScale(followScale);
             binding.setFlipOffset(flipOffset);
+            binding.setParentStateId(parentStateId);
             binding.setOffsetX(offsetX);
             binding.setOffsetY(offsetY);
             binding.setRotationOffsetDegrees(rotationOffsetDegrees);
             binding.setScaleMultiplierX(scaleMultiplierX);
             binding.setScaleMultiplierY(scaleMultiplierY);
             return binding;
+        }
+    }
+
+    private record TokenAppearance(
+            double scaleX, double scaleY, double rotationDegrees, int tintColorRgb
+    ) {
+        private static TokenAppearance capture(
+                com.petrick.vtt.feature.tabletop.VttTokenStateAppearance appearance
+        ) {
+            return appearance == null ? null : new TokenAppearance(
+                    appearance.getScaleX(), appearance.getScaleY(),
+                    appearance.getRotationDegrees(), appearance.getTintColorRgb());
+        }
+
+        private static Map<String, TokenAppearance> captureAll(
+                Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance> appearances
+        ) {
+            Map<String, TokenAppearance> result = new LinkedHashMap<>();
+            appearances.forEach((stateId, appearance) ->
+                    result.put(stateId, capture(appearance)));
+            return result;
+        }
+
+        private com.petrick.vtt.feature.tabletop.VttTokenStateAppearance restore() {
+            return new com.petrick.vtt.feature.tabletop.VttTokenStateAppearance(
+                    scaleX, scaleY, rotationDegrees, tintColorRgb);
         }
     }
 

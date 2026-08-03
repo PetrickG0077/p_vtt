@@ -58,6 +58,7 @@ public final class VttSceneFingerprint {
             object.setVisionOwnLightEnabled(object.isVisionOwnLightEnabled());
             object.setOwnerId(object.getOwnerId());
             object.getState().setTintColorRgb(object.getState().getTintColorRgb());
+            object.getStateAppearances();
         }
         return scene;
     }

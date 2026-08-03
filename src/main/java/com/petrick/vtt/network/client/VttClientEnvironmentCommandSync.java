@@ -14,6 +14,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttWall;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttTokenStateAppearance;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandPayload;
 import com.petrick.vtt.network.payload.VttEnvironmentCommandUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -277,6 +278,19 @@ public final class VttClientEnvironmentCommandSync {
                                     ? null : GSON.fromJson(
                                     update.entityJson(), VttAttachmentBinding.class)));
                 }
+                case VttEnvironmentCommandPayload.TOKEN_STATE_OVERRIDE -> {
+                    TokenStateOverrideSnapshot snapshot = GSON.fromJson(
+                            update.entityJson(), TokenStateOverrideSnapshot.class);
+                    session.getActiveScene().getObjects().stream()
+                            .filter(object -> object != null
+                                    && update.entityId().equals(object.getId()))
+                            .findFirst().ifPresent(object -> {
+                                object.setGlobalStateAppearance(snapshot == null
+                                        ? null : snapshot.globalAppearance());
+                                object.setStateAppearances(snapshot == null
+                                        ? Map.of() : snapshot.stateAppearances());
+                            });
+                }
                 default -> VTT.LOGGER.warn("Ignored unknown VTT environment entity: {}", update.entityType());
             }
             if (acknowledgement) latestSentSequences.remove(revisionKey);
@@ -439,9 +453,29 @@ public final class VttClientEnvironmentCommandSync {
                 attachmentId, binding == null ? "" : GSON.toJson(binding));
     }
 
+    public static void sendTokenStateOverrides(
+            VTTSession session, String tokenId, VttTokenStateAppearance globalAppearance,
+            Map<String, VttTokenStateAppearance> stateAppearances
+    ) {
+        if (session == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null
+                || tokenId == null || tokenId.isBlank()) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        send(VttEnvironmentCommandPayload.UPSERT,
+                VttEnvironmentCommandPayload.TOKEN_STATE_OVERRIDE, tokenId,
+                GSON.toJson(new TokenStateOverrideSnapshot(
+                        globalAppearance, stateAppearances == null ? Map.of() : stateAppearances)));
+    }
+
     private static String entityKey(String entityType, String entityId) {
         return entityType + "\u0000" + entityId;
     }
+
+    private record TokenStateOverrideSnapshot(
+            VttTokenStateAppearance globalAppearance,
+            Map<String, VttTokenStateAppearance> stateAppearances
+    ) {}
 
     private static void finishEnvironmentConfirmationIfReady(VTTSession session) {
         if (!environmentConfirmationPending) return;

@@ -10,6 +10,8 @@ import com.petrick.vtt.feature.tabletop.VttSceneSize;
 import com.petrick.vtt.feature.tabletop.VttSceneState;
 import com.petrick.vtt.feature.tabletop.VttSceneTransform;
 import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttTokenStateAppearance;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
@@ -164,6 +166,13 @@ public final class VttClientTokenLifecycleSync {
             if (metadataSource.getState() != null) {
                 result.getState().setTintColorRgb(metadataSource.getState().getTintColorRgb());
             }
+            result.setGlobalStateAppearance(copyAppearance(
+                    metadataSource.getGlobalStateAppearance()));
+            Map<String, VttTokenStateAppearance> stateAppearances = new LinkedHashMap<>();
+            metadataSource.getStateAppearances().forEach((stateId, appearance) ->
+                    stateAppearances.put(stateId, copyAppearance(appearance)));
+            result.setStateAppearances(stateAppearances);
+            result.setAttachmentBinding(copyBinding(metadataSource.getAttachmentBinding()));
             VttSceneCollisionBox sourceBox = metadataSource.getCollisionBox();
             if (sourceBox != null) {
                 result.setCollisionBox(new VttSceneCollisionBox(sourceBox.getOffsetX(),
@@ -174,5 +183,26 @@ public final class VttClientTokenLifecycleSync {
                     .ifPresent(definition -> result.setOwnerId(definition.defaultOwnerId()));
         }
         return result;
+    }
+
+    private static VttTokenStateAppearance copyAppearance(VttTokenStateAppearance appearance) {
+        return appearance == null ? null : appearance.copy();
+    }
+
+    private static VttAttachmentBinding copyBinding(VttAttachmentBinding source) {
+        if (source == null || !source.isBound()) return null;
+        VttAttachmentBinding copy = new VttAttachmentBinding();
+        copy.setTargetObjectId(source.getTargetObjectId());
+        copy.setFollowPosition(source.isFollowPosition());
+        copy.setFollowRotation(source.isFollowRotation());
+        copy.setFollowScale(source.isFollowScale());
+        copy.setFlipOffset(source.isFlipOffset());
+        copy.setParentStateId(source.getParentStateId());
+        copy.setOffsetX(source.getOffsetX());
+        copy.setOffsetY(source.getOffsetY());
+        copy.setRotationOffsetDegrees(source.getRotationOffsetDegrees());
+        copy.setScaleMultiplierX(source.getScaleMultiplierX());
+        copy.setScaleMultiplierY(source.getScaleMultiplierY());
+        return copy;
     }
 }

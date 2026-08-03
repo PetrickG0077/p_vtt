@@ -30,6 +30,12 @@ public final class AttachmentVisibilityResolver {
             if (metadata == null || !metadata.isAttachment()
                     || metadata.getAttachmentBinding() == null
                     || !metadata.getAttachmentBinding().isBound()) return true;
+            String parentStateId = metadata.getAttachmentBinding().getParentStateId();
+            if (parentStateId != null) {
+                CanvasObject parent = canvasScene.findObjectById(
+                        metadata.getAttachmentBinding().getTargetObjectId());
+                if (parent == null || !parentStateId.equals(parent.activeStateId())) return false;
+            }
             currentId = metadata.getAttachmentBinding().getTargetObjectId();
         }
         // A cycle is invalid data; hiding it is safer than leaking a hidden parent.

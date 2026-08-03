@@ -8,6 +8,8 @@ public final class VttAttachmentBinding {
     private boolean followScale = true;
     /** Preserves an attachment's own orientation while the parent token flips. */
     private boolean flipOffset;
+    /** Optional parent token state in which this attachment exists. Null means global. */
+    private String parentStateId;
     private double offsetX;
     private double offsetY;
     private double rotationOffsetDegrees;
@@ -29,6 +31,10 @@ public final class VttAttachmentBinding {
     public void setFollowScale(boolean followScale) { this.followScale = followScale; }
     public boolean isFlipOffset() { return flipOffset; }
     public void setFlipOffset(boolean flipOffset) { this.flipOffset = flipOffset; }
+    public String getParentStateId() { return parentStateId; }
+    public void setParentStateId(String value) {
+        parentStateId = value == null || value.isBlank() ? null : value.trim();
+    }
     public double getOffsetX() { return offsetX; }
     public void setOffsetX(double offsetX) { this.offsetX = finite(offsetX, 0.0); }
     public double getOffsetY() { return offsetY; }

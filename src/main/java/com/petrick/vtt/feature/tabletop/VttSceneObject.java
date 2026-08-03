@@ -1,5 +1,8 @@
 package com.petrick.vtt.feature.tabletop;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Representa um objeto salvo dentro de uma cena.
  *
@@ -59,6 +62,12 @@ public final class VttSceneObject {
 
     /** Stable player identifier that owns this placed token. Null means unowned. */
     private String ownerId;
+
+    /** Global appearance used by states that do not have a saved override. */
+    private VttTokenStateAppearance globalStateAppearance;
+
+    /** Per-state instance overrides. Missing entries inherit globalStateAppearance. */
+    private Map<String, VttTokenStateAppearance> stateAppearances = new LinkedHashMap<>();
 
     public VttSceneObject() {}
 
@@ -211,5 +220,25 @@ public final class VttSceneObject {
 
     public void setOwnerId(String ownerId) {
         this.ownerId = ownerId == null || ownerId.isBlank() ? null : ownerId.trim();
+    }
+
+    public VttTokenStateAppearance getGlobalStateAppearance() {
+        return globalStateAppearance;
+    }
+
+    public void setGlobalStateAppearance(VttTokenStateAppearance appearance) {
+        globalStateAppearance = appearance;
+    }
+
+    public Map<String, VttTokenStateAppearance> getStateAppearances() {
+        if (stateAppearances == null) stateAppearances = new LinkedHashMap<>();
+        stateAppearances.entrySet().removeIf(entry -> entry.getKey() == null
+                || entry.getKey().isBlank() || entry.getValue() == null);
+        return stateAppearances;
+    }
+
+    public void setStateAppearances(Map<String, VttTokenStateAppearance> appearances) {
+        stateAppearances = appearances == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(appearances);
     }
 }

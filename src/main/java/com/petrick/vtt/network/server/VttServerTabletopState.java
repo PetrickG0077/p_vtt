@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1023,14 +1024,29 @@ public final class VttServerTabletopState {
         }
         boolean movementAccepted = allowedDelta.subtract(requestedDelta).lengthSquared() <= 0.0000001;
         int previousLayerIndex = currentLayerIndex(object);
+        boolean tokenStateChanged = !attachment
+                && !Objects.equals(object.getState().getActiveStateId(), request.activeStateId());
+        com.petrick.vtt.feature.tabletop.VttTokenStateAppearance stateAppearance = null;
+        if (tokenStateChanged) {
+            stateAppearance = object.getStateAppearances().get(request.activeStateId());
+            if (stateAppearance == null) stateAppearance = object.getGlobalStateAppearance();
+        }
+        double requestedScaleX = stateAppearance == null
+                ? request.scaleX() : stateAppearance.getScaleX();
+        double requestedScaleY = stateAppearance == null
+                ? request.scaleY() : stateAppearance.getScaleY();
+        int requestedTint = stateAppearance == null
+                ? request.tintColorRgb() : stateAppearance.getTintColorRgb();
         boolean masterFieldsAccepted = master
-                || (nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
-                && nearlyEqual(request.scaleY(), object.getTransform().getScaleY())
+                || (nearlyEqual(request.scaleX(), requestedScaleX)
+                && nearlyEqual(request.scaleY(), requestedScaleY)
                 && request.layerIndex() == previousLayerIndex
                 && request.visible() == object.getState().isVisible()
                 && Objects.equals(request.displayName(), object.getDisplayName()));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
-        double acceptedRotation = followsRotation && !editingAttachmentOffset
+        double acceptedRotation = stateAppearance != null
+                ? normalizeRotation(stateAppearance.getRotationDegrees())
+                : followsRotation && !editingAttachmentOffset
                 ? object.getTransform().getRotationDegrees()
                 : normalizeRotation(request.rotationDegrees());
         boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
@@ -1039,22 +1055,24 @@ public final class VttServerTabletopState {
                 || (!followsPosition || editingAttachmentOffset) && (object.getState().isFlippedHorizontally()
                 != request.flippedHorizontally())
                 || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
-                || object.getState().getTintColorRgb() != (request.tintColorRgb() & 0x00FFFFFF)
+                || object.getState().getTintColorRgb() != (requestedTint & 0x00FFFFFF)
                 || master && (
                 (!followsScale || editingAttachmentOffset)
-                && (!nearlyEqual(request.scaleX(), object.getTransform().getScaleX())
-                || !nearlyEqual(request.scaleY(), object.getTransform().getScaleY()))
+                && (!nearlyEqual(requestedScaleX, object.getTransform().getScaleX())
+                || !nearlyEqual(requestedScaleY, object.getTransform().getScaleY()))
                 || request.layerIndex() != previousLayerIndex
                 || request.visible() != object.getState().isVisible()
                 || !Objects.equals(request.displayName(), object.getDisplayName()));
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
         object.getTransform().setRotationDegrees(acceptedRotation);
-        if (master) {
+        if (master || stateAppearance != null) {
             if (!followsScale || editingAttachmentOffset) {
-                object.getTransform().setScaleX(request.scaleX());
-                object.getTransform().setScaleY(request.scaleY());
+                object.getTransform().setScaleX(requestedScaleX);
+                object.getTransform().setScaleY(requestedScaleY);
             }
+        }
+        if (master) {
             moveObjectToLayer(object, request.layerIndex());
             object.getState().setVisible(request.visible());
             object.setDisplayName(request.displayName());
@@ -1063,7 +1081,7 @@ public final class VttServerTabletopState {
             object.getState().setFlippedHorizontally(request.flippedHorizontally());
         }
         object.getState().setActiveStateId(request.activeStateId());
-        object.getState().setTintColorRgb(request.tintColorRgb());
+        object.getState().setTintColorRgb(requestedTint);
         if (editingAttachmentOffset) {
             captureAttachmentBindingFromTransform(object, binding);
         }
@@ -1528,6 +1546,8 @@ public final class VttServerTabletopState {
                 case VttEnvironmentCommandPayload.ATTACHMENT_BINDING -> delete
                         ? clearAttachmentBinding(command.entityId())
                         : applyAttachmentBinding(command.entityId(), command.entityJson());
+                case VttEnvironmentCommandPayload.TOKEN_STATE_OVERRIDE -> !delete
+                        && applyTokenStateOverrides(command.entityId(), command.entityJson());
                 default -> false;
             };
             if (!changed) return null;
@@ -1644,6 +1664,42 @@ public final class VttServerTabletopState {
                 || attachment.getAttachmentBinding() == null) return false;
         attachment.setAttachmentBinding(null);
         return true;
+    }
+
+    private boolean applyTokenStateOverrides(String tokenId, String json) {
+        VttSceneObject token = activeScene.getObjects().stream()
+                .filter(object -> object != null && tokenId.equals(object.getId())
+                        && object.getSourceTokenDefinitionId() != null)
+                .findFirst().orElse(null);
+        TokenStateOverrideSnapshot snapshot = GSON.fromJson(json, TokenStateOverrideSnapshot.class);
+        if (token == null || snapshot == null
+                || !validAppearance(snapshot.globalAppearance())
+                || snapshot.stateAppearances() == null
+                || snapshot.stateAppearances().size() > 64
+                || snapshot.stateAppearances().entrySet().stream().anyMatch(entry ->
+                entry.getKey() == null || entry.getKey().isBlank()
+                        || entry.getKey().length() > 128 || !validAppearance(entry.getValue()))) {
+            return false;
+        }
+        token.setGlobalStateAppearance(snapshot.globalAppearance().copy());
+        Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance> copies =
+                new LinkedHashMap<>();
+        snapshot.stateAppearances().forEach(
+                (stateId, appearance) -> copies.put(stateId, appearance.copy()));
+        token.setStateAppearances(copies);
+        return true;
+    }
+
+    private boolean validAppearance(
+            com.petrick.vtt.feature.tabletop.VttTokenStateAppearance appearance
+    ) {
+        return appearance != null && Double.isFinite(appearance.getScaleX())
+                && Double.isFinite(appearance.getScaleY())
+                && Double.isFinite(appearance.getRotationDegrees())
+                && appearance.getScaleX() >= 0.0001
+                && appearance.getScaleX() <= 1_000.0
+                && appearance.getScaleY() >= 0.0001
+                && appearance.getScaleY() <= 1_000.0;
     }
 
     private boolean upsertMap(String id, String json) {
@@ -1882,6 +1938,13 @@ public final class VttServerTabletopState {
                             .map(VttSceneObject::getAttachmentBinding)
                             .filter(java.util.Objects::nonNull)
                             .findFirst().orElseThrow());
+            case VttEnvironmentCommandPayload.TOKEN_STATE_OVERRIDE -> {
+                VttSceneObject object = activeScene.getObjects().stream()
+                        .filter(value -> value != null && id.equals(value.getId()))
+                        .findFirst().orElseThrow();
+                yield GSON.toJson(new TokenStateOverrideSnapshot(
+                        object.getGlobalStateAppearance(), object.getStateAppearances()));
+            }
             default -> throw new IllegalArgumentException("Unknown environment entity type");
         };
     }
@@ -1910,6 +1973,10 @@ public final class VttServerTabletopState {
     private record FogConfig(boolean enabled, boolean defaultHidden) {}
     private record LightingRaycastConfig(int visionRayCount) {}
     private record DarknessColorConfig(int darknessColorRgb) {}
+    private record TokenStateOverrideSnapshot(
+            com.petrick.vtt.feature.tabletop.VttTokenStateAppearance globalAppearance,
+            Map<String, com.petrick.vtt.feature.tabletop.VttTokenStateAppearance> stateAppearances
+    ) {}
 
     public synchronized VttEnvironmentStateUpdatePayload currentEnvironmentState() {
         return currentEnvironmentState(null);
