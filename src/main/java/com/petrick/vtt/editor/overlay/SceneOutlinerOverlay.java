@@ -8,6 +8,7 @@ import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneMap;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /** A selectable scene tree: token roots own their bound attachments and attached lights. */
 public final class SceneOutlinerOverlay {
@@ -38,6 +40,16 @@ public final class SceneOutlinerOverlay {
     private int entryScrollOffset;
     private final Set<String> collapsedObjectIds = new HashSet<>();
     private ScrollSection draggingScrollbar = ScrollSection.NONE;
+    private String hierarchyDragCandidateId;
+    private String hierarchyDraggedId;
+    private String hierarchyDropTargetId;
+    private boolean hierarchyDropTargetValid;
+    private long hierarchyDragPressedAt;
+    private double hierarchyDragStartX;
+    private double hierarchyDragStartY;
+
+    private static final long HIERARCHY_HOLD_MS = 500L;
+    private static final double HIERARCHY_DRAG_DISTANCE_SQUARED = 16.0;
 
     public void render(VRenderContext context, Font font, CanvasScene canvasScene, VttScene vttScene,
                        SelectionManager selectionManager, String selectedMapId, String selectedLightId) {
@@ -75,6 +87,14 @@ public final class SceneOutlinerOverlay {
         } else {
             for (int index = 0; index < layout.visibleEntries(); index++) {
                 TreeEntry entry = entries.get(entryScrollOffset + index);
+                int rowY = layout.firstEntryY() + index * LINE_HEIGHT;
+                if (hierarchyDraggedId != null && entry.object != null
+                        && entry.id.equals(hierarchyDropTargetId)) {
+                    int color = hierarchyDropTargetValid
+                            ? 0x8833AA66 : 0x88AA3333;
+                    context.graphics().fill(PANEL_X + 2, rowY - 1,
+                            PANEL_X + PANEL_WIDTH - 2, rowY + LINE_HEIGHT, color);
+                }
                 boolean selected = entry.object != null
                         ? selectionManager.isSelected(entry.id)
                         : entry.id.equals(selectedLightId);
@@ -83,7 +103,7 @@ public final class SceneOutlinerOverlay {
                 String expansion = entry.expandable
                         ? (collapsedObjectIds.contains(entry.id) ? "[+] " : "[-] ") : "    ";
                 String text = marker + "  ".repeat(entry.depth) + expansion + entry.label;
-                drawLine(context, font, text, textX, layout.firstEntryY() + index * LINE_HEIGHT,
+                drawLine(context, font, text, textX, rowY,
                         selected ? EditorHudTheme.opaqueSelection() : visible ? TEXT_COLOR : MUTED_TEXT_COLOR);
             }
             if (entries.size() > MAX_VISIBLE_ENTRIES) {
@@ -94,6 +114,82 @@ public final class SceneOutlinerOverlay {
                         entryScrollOffset, EditorHudTheme.outline());
             }
         }
+        if (hierarchyDraggedId != null) {
+            int detachY = layout.detachY();
+            int detachColor = isInsideDetachZone(lastHierarchyMouseX, lastHierarchyMouseY,
+                    layout) ? 0xAA9A3A3A : 0xAA351C1C;
+            context.graphics().fill(PANEL_X + 2, detachY,
+                    PANEL_X + PANEL_WIDTH - 2, detachY + 13, detachColor);
+            drawLine(context, font, "Detach attachment", textX + 4,
+                    detachY + 2, TITLE_COLOR);
+        }
+    }
+
+    private double lastHierarchyMouseX;
+    private double lastHierarchyMouseY;
+
+    /** Arms hierarchy dragging for attachment rows only. */
+    public boolean beginHierarchyDrag(CanvasScene canvasScene, VttScene scene,
+                                      double mouseX, double mouseY) {
+        TreeEntry entry = entryAt(canvasScene, scene, mouseX, mouseY);
+        if (entry == null || entry.object == null || !entry.attachment) return false;
+        hierarchyDragCandidateId = entry.id;
+        hierarchyDragPressedAt = System.currentTimeMillis();
+        hierarchyDragStartX = mouseX;
+        hierarchyDragStartY = mouseY;
+        lastHierarchyMouseX = mouseX;
+        lastHierarchyMouseY = mouseY;
+        return true;
+    }
+
+    public boolean mouseDraggedHierarchy(CanvasScene canvasScene, VttScene scene,
+                                         double mouseX, double mouseY,
+                                         Predicate<String> validTarget) {
+        if (hierarchyDragCandidateId == null && hierarchyDraggedId == null) return false;
+        lastHierarchyMouseX = mouseX;
+        lastHierarchyMouseY = mouseY;
+        if (hierarchyDraggedId == null) {
+            double dx = mouseX - hierarchyDragStartX;
+            double dy = mouseY - hierarchyDragStartY;
+            boolean held = System.currentTimeMillis() - hierarchyDragPressedAt >= HIERARCHY_HOLD_MS;
+            boolean moved = dx * dx + dy * dy >= HIERARCHY_DRAG_DISTANCE_SQUARED;
+            if (!held && !moved) return true;
+            hierarchyDraggedId = hierarchyDragCandidateId;
+        }
+        TreeEntry target = entryAt(canvasScene, scene, mouseX, mouseY);
+        hierarchyDropTargetId = target != null && target.object != null ? target.id : null;
+        hierarchyDropTargetValid = hierarchyDropTargetId != null
+                && validTarget.test(hierarchyDropTargetId);
+        return true;
+    }
+
+    public HierarchyDrop mouseReleasedHierarchy(CanvasScene canvasScene, VttScene scene,
+                                                 double mouseX, double mouseY) {
+        boolean consumed = hierarchyDragCandidateId != null || hierarchyDraggedId != null;
+        if (!consumed) return HierarchyDrop.none();
+        String attachmentId = hierarchyDraggedId;
+        Layout layout = layout(sortedMaps(scene).size(), treeEntries(canvasScene, scene).size());
+        boolean detach = attachmentId != null && isInsideDetachZone(mouseX, mouseY, layout);
+        String targetId = attachmentId != null && hierarchyDropTargetValid
+                ? hierarchyDropTargetId : null;
+        clearHierarchyDrag();
+        return new HierarchyDrop(true, attachmentId, targetId, detach);
+    }
+
+    public void clearHierarchyDrag() {
+        hierarchyDragCandidateId = null;
+        hierarchyDraggedId = null;
+        hierarchyDropTargetId = null;
+        hierarchyDropTargetValid = false;
+    }
+
+    public String hierarchyDraggedId() {
+        return hierarchyDraggedId != null ? hierarchyDraggedId : hierarchyDragCandidateId;
+    }
+
+    private boolean isInsideDetachZone(double mouseX, double mouseY, Layout layout) {
+        return mouseX >= PANEL_X + 2 && mouseX <= PANEL_X + PANEL_WIDTH - 2
+                && mouseY >= layout.detachY() && mouseY <= layout.detachY() + 13;
     }
 
     public Optional<String> findMapIdAt(VttScene scene, CanvasScene canvasScene, double mouseX, double mouseY) {
@@ -259,7 +355,10 @@ public final class SceneOutlinerOverlay {
         boolean hasAttachedLights = scene != null && scene.getLights().stream()
                 .anyMatch(light -> light != null && object.id().equals(light.getAttachedToObjectId()));
         boolean expandable = !childObjects.isEmpty() || hasAttachedLights;
-        entries.add(TreeEntry.object(object, depth, expandable));
+        VttSceneObject metadata = scene == null ? null : scene.getObjects().stream()
+                .filter(value -> value != null && object.id().equals(value.getId()))
+                .findFirst().orElse(null);
+        entries.add(TreeEntry.object(object, metadata, depth, expandable));
         if (expandable && collapsedObjectIds.contains(object.id())) return;
         for (CanvasObject child : childObjects) {
             appendObject(entries, child, depth + 1, children, scene, renderedObjects, renderedLights);
@@ -285,8 +384,11 @@ public final class SceneOutlinerOverlay {
         int firstEntryY = entriesTitleY + LINE_HEIGHT + 2;
         int entryRangeY = firstEntryY + Math.max(1, visibleEntries) * LINE_HEIGHT;
         int bottom = entryRangeY + (entryCount > MAX_VISIBLE_ENTRIES ? LINE_HEIGHT : 0);
+        int detachY = bottom + 3;
+        if (hierarchyDraggedId != null) bottom = detachY + 13;
         return new Layout(visibleMaps, visibleEntries, mapsTitleY, firstMapY, mapRangeY,
-                entriesTitleY, firstEntryY, entryRangeY, bottom - PANEL_Y + PADDING);
+                entriesTitleY, firstEntryY, entryRangeY, detachY,
+                bottom - PANEL_Y + PADDING);
     }
 
     private List<VttSceneMap> sortedMaps(VttScene scene) {
@@ -322,20 +424,46 @@ public final class SceneOutlinerOverlay {
     private enum ScrollSection { NONE, MAPS, ENTRIES }
 
     private record TreeEntry(
-            String id, CanvasObject object, VttLight light, int depth, String label, boolean expandable
+            String id, CanvasObject object, VttLight light, int depth, String label,
+            boolean expandable, boolean attachment
     ) {
-        private static TreeEntry object(CanvasObject object, int depth, boolean expandable) {
+        private static TreeEntry object(CanvasObject object, VttSceneObject metadata,
+                                        int depth, boolean expandable) {
+            boolean attachment = metadata != null && metadata.isAttachment();
+            String badge = "";
+            if (attachment) {
+                VttAttachmentBinding binding = metadata.getAttachmentBinding();
+                if (binding != null) {
+                    String scope = binding.getParentStateId() == null
+                            ? "G" : "S:" + binding.getParentStateId();
+                    badge = " [" + binding.getAnchor().name() + "][" + scope + "]";
+                } else {
+                    badge = " [DETACHED]";
+                }
+            }
             return new TreeEntry(object.id(), object, null, depth,
-                    (object.visible() ? "[V] " : "[H] ") + object.displayName(), expandable);
+                    (object.visible() ? "[V] " : "[H] ") + object.displayName() + badge,
+                    expandable, attachment);
         }
 
         private static TreeEntry light(VttLight light, int depth) {
             return new TreeEntry(light.getId(), null, light, depth,
-                    (light.isEnabled() ? "[V] " : "[H] ") + "Light: " + light.getType().name(), false);
+                    (light.isEnabled() ? "[V] " : "[H] ") + "Light: " + light.getType().name(),
+                    false, false);
+        }
+    }
+
+    public record HierarchyDrop(boolean consumed, String attachmentId,
+                                String targetId, boolean detach) {
+        private static HierarchyDrop none() {
+            return new HierarchyDrop(false, null, null, false);
+        }
+        public boolean hasAction() {
+            return attachmentId != null && (targetId != null || detach);
         }
     }
 
     private record Layout(int visibleMaps, int visibleEntries, int mapsTitleY, int firstMapY,
                           int mapRangeY, int entriesTitleY, int firstEntryY, int entryRangeY,
-                          int panelHeight) {}
+                          int detachY, int panelHeight) {}
 }

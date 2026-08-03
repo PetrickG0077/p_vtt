@@ -2983,6 +2983,17 @@ public final class VTTScreen extends Screen {
                 );
 
                 if (clickedObjectId.isPresent()) {
+                    CanvasObject clickedOutlinerObject = scene.findObjectById(
+                            clickedObjectId.get());
+                    if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT
+                            && openCanvasAttachmentContext(
+                            clickedOutlinerObject, mouseX, mouseY)) {
+                        return true;
+                    }
+                    if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && session.isLocalMaster()) {
+                        sceneOutlinerOverlay.beginHierarchyDrag(
+                                scene, session.getActiveScene(), mouseX, mouseY);
+                    }
                     if ((getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
                         selectionManager.toggle(clickedObjectId.get());
                     } else {
@@ -3384,6 +3395,46 @@ public final class VTTScreen extends Screen {
         draggedPlacedAttachmentId = null;
         draggedPlacedAttachmentMoved = false;
         attachmentDropTarget = null;
+    }
+
+    private void handleSceneOutlinerHierarchyDrop(
+            SceneOutlinerOverlay.HierarchyDrop drop
+    ) {
+        if (!drop.hasAction() || !session.isLocalMaster()
+                || session.getActiveScene() == null) return;
+        boolean changed;
+        inputController.beginEditorAction();
+        try {
+            changed = drop.detach()
+                    ? AttachmentBindingService.detach(
+                    session.getActiveScene(), drop.attachmentId())
+                    : AttachmentBindingService.bind(
+                    session.getActiveScene(), scene,
+                    drop.attachmentId(), drop.targetId());
+            if (changed) {
+                AttachmentBindingService.synchronize(
+                        session.getActiveScene(), scene, Set.of());
+                selectionManager.selectOnly(drop.attachmentId());
+            }
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (!changed) {
+            VttClientEditorNotice.show("Invalid attachment hierarchy change");
+            return;
+        }
+        VttSceneObject attachment = AttachmentBindingService.find(
+                session.getActiveScene(), drop.attachmentId());
+        if (session.isNetworkAuthorityActive()) {
+            VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                    session, drop.attachmentId(),
+                    attachment == null ? null : attachment.getAttachmentBinding());
+        } else {
+            saveCanvasSceneWithAttachmentBindings();
+        }
+        VttClientEditorNotice.show(drop.detach()
+                ? "Attachment detached"
+                : "Attachment hierarchy updated");
     }
 
     private boolean handleCanvasAttachmentContextClick(
@@ -4051,6 +4102,15 @@ public final class VTTScreen extends Screen {
         if (tokenCreationDialog.mouseReleased()) return true;
         if (tokenCatalogController.releaseScrollbar()) return true;
         if (releaseMapCatalogInteraction(mouseX, mouseY, button)) return true;
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            SceneOutlinerOverlay.HierarchyDrop hierarchyDrop =
+                    sceneOutlinerOverlay.mouseReleasedHierarchy(
+                            scene, session.getActiveScene(), mouseX, mouseY);
+            if (hierarchyDrop.consumed()) {
+                handleSceneOutlinerHierarchyDrop(hierarchyDrop);
+                return true;
+            }
+        }
         if (sceneOutlinerOverlay.mouseReleasedScrollbar()) return true;
         if (backgroundImagePickerActive) {
             return true;
@@ -4159,6 +4219,14 @@ public final class VTTScreen extends Screen {
         }
         if (draggingMapDefinition != null) return true;
         if (draggingAttachmentDefinition != null) return true;
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && sceneOutlinerOverlay.mouseDraggedHierarchy(
+                scene, session.getActiveScene(), mouseX, mouseY,
+                targetId -> {
+                    String attachmentId = sceneOutlinerOverlay.hierarchyDraggedId();
+                    return attachmentId != null && AttachmentBindingService.canBind(
+                            session.getActiveScene(), attachmentId, targetId);
+                })) return true;
         if (sceneOutlinerOverlay.mouseDraggedScrollbar(
                 scene, session.getActiveScene(), mouseY)) return true;
         if (backgroundImagePickerActive) {

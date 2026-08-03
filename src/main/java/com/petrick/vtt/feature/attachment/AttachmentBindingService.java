@@ -29,12 +29,15 @@ public final class AttachmentBindingService {
                 || !canBind(scene, attachmentId, targetTokenId)) {
             return false;
         }
-        VttAttachmentBinding binding = new VttAttachmentBinding();
+        VttAttachmentBinding binding = attachment.getAttachmentBinding();
+        boolean newBinding = binding == null;
+        if (newBinding) binding = new VttAttachmentBinding();
         binding.setTargetObjectId(targetTokenId);
         attachment.setAttachmentBinding(binding);
         captureCurrentTransform(binding, child, parent);
-        // A newly created binding follows the token's flip by default.
-        binding.setFlipOffset(false);
+        // A newly created binding follows the token's flip by default. Reparenting
+        // retains the attachment's anchor, scope and follow settings.
+        if (newBinding) binding.setFlipOffset(false);
         return true;
     }
 
