@@ -50,11 +50,21 @@ public final class VttServerTokenTransformHandler {
             }
             return;
         }
+        var dependencies = state.synchronizeAttachmentDependencies(update.objectId());
         VttServerVisionSourceSync.afterTokenTransform(
                 player.getServer(), state, update.objectId());
         for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
             if (VttServerVisionSourceSync.canReceiveObject(connected, state, update.objectId())) {
                 PacketDistributor.sendToPlayer(connected, update);
+            }
+            for (var attachmentUpdate : dependencies.transforms()) {
+                if (VttServerVisionSourceSync.canReceiveObject(
+                        connected, state, attachmentUpdate.objectId())) {
+                    PacketDistributor.sendToPlayer(connected, attachmentUpdate);
+                }
+            }
+            for (var lightUpdate : dependencies.lights()) {
+                PacketDistributor.sendToPlayer(connected, lightUpdate);
             }
         }
     }

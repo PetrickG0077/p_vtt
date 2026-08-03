@@ -12,6 +12,7 @@ import com.petrick.vtt.feature.tabletop.persistence.VttSceneDuplicator;
 import net.neoforged.fml.loading.FMLPaths;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.network.payload.VttTokenTransformRequestPayload;
 import com.petrick.vtt.network.payload.VttTokenTransformUpdatePayload;
 import com.google.gson.reflect.TypeToken;
@@ -1088,6 +1089,144 @@ public final class VttServerTabletopState {
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
                 object.getDisplayName(), object.getState().getActiveStateId(),
                 object.getState().getTintColorRgb(), playerId, false);
+    }
+
+    /** Resolves bound attachments and attachment-owned lights after a token/attachment changes. */
+    public synchronized AttachmentDependencyUpdates synchronizeAttachmentDependencies(
+            String changedObjectId
+    ) {
+        if (activeScene == null || changedObjectId == null || changedObjectId.isBlank()) {
+            return AttachmentDependencyUpdates.EMPTY;
+        }
+        VttSceneObject parent = activeScene.getObjects().stream()
+                .filter(object -> object != null && changedObjectId.equals(object.getId()))
+                .findFirst().orElse(null);
+        List<VttTokenTransformUpdatePayload> transforms = new ArrayList<>();
+        Set<String> attachmentIds = new HashSet<>();
+        if (parent != null && parent.isAttachment()) attachmentIds.add(parent.getId());
+        if (parent != null) {
+            for (VttSceneObject child : activeScene.getObjects()) {
+                if (child == null || !child.isAttachment()) continue;
+                VttAttachmentBinding binding = child.getAttachmentBinding();
+                if (binding == null || !binding.isBound()
+                        || !parent.getId().equals(binding.getTargetObjectId())) continue;
+                if (resolveBoundAttachment(child, parent, binding)) {
+                    objectSpatialIndex.addOrUpdate(child);
+                    attachmentIds.add(child.getId());
+                    transforms.add(transformUpdate(child,
+                            nextRevision(tokenTransformRevisions, child.getId())));
+                }
+            }
+        }
+        List<VttEnvironmentCommandUpdatePayload> lights = new ArrayList<>();
+        for (VttLight light : activeScene.getLights()) {
+            if (light == null || !light.isAttached()
+                    || !attachmentIds.contains(light.getAttachedToObjectId())) continue;
+            VttSceneObject attachment = activeScene.getObjects().stream()
+                    .filter(object -> object != null
+                            && light.getAttachedToObjectId().equals(object.getId()))
+                    .findFirst().orElse(null);
+            if (attachment == null || !resolveAttachedLight(light, attachment)) continue;
+            String key = VttEnvironmentCommandPayload.LIGHT + "\u0000" + light.getId();
+            lights.add(new VttEnvironmentCommandUpdatePayload(authorityRevision,
+                    nextRevision(environmentRevisions, key), 0L,
+                    VttEnvironmentCommandPayload.UPSERT, activeScene.getId(),
+                    VttEnvironmentCommandPayload.LIGHT, light.getId(), GSON.toJson(light), "server"));
+        }
+        if (!transforms.isEmpty() || !lights.isEmpty()) markActiveSceneDirty();
+        return transforms.isEmpty() && lights.isEmpty() ? AttachmentDependencyUpdates.EMPTY
+                : new AttachmentDependencyUpdates(List.copyOf(transforms), List.copyOf(lights));
+    }
+
+    private boolean resolveBoundAttachment(
+            VttSceneObject child, VttSceneObject parent, VttAttachmentBinding binding
+    ) {
+        var childTransform = child.getTransform();
+        var parentTransform = parent.getTransform();
+        double x = childTransform.getX();
+        double y = childTransform.getY();
+        if (binding.isFollowPosition()) {
+            double offsetX = parent.getState().isFlippedHorizontally()
+                    ? -binding.getOffsetX() : binding.getOffsetX();
+            double offsetY = binding.getOffsetY();
+            if (binding.isFollowScale()) {
+                offsetX *= parentTransform.getScaleX();
+                offsetY *= parentTransform.getScaleY();
+            }
+            if (binding.isFollowRotation()) {
+                double radians = Math.toRadians(parentTransform.getRotationDegrees());
+                double rotatedX = offsetX * Math.cos(radians) - offsetY * Math.sin(radians);
+                offsetY = offsetX * Math.sin(radians) + offsetY * Math.cos(radians);
+                offsetX = rotatedX;
+            }
+            x = parentTransform.getX() + offsetX;
+            y = parentTransform.getY() + offsetY;
+        }
+        double rotation = binding.isFollowRotation()
+                ? normalizeRotation(parentTransform.getRotationDegrees()
+                + binding.getRotationOffsetDegrees()) : childTransform.getRotationDegrees();
+        double scaleX = binding.isFollowScale()
+                ? parentTransform.getScaleX() * binding.getScaleMultiplierX()
+                : childTransform.getScaleX();
+        double scaleY = binding.isFollowScale()
+                ? parentTransform.getScaleY() * binding.getScaleMultiplierY()
+                : childTransform.getScaleY();
+        boolean flipped = parent.getState().isFlippedHorizontally() ^ binding.isFlipOffset();
+        boolean changed = !nearlyEqual(x, childTransform.getX()) || !nearlyEqual(y, childTransform.getY())
+                || !nearlyEqual(rotation, childTransform.getRotationDegrees())
+                || !nearlyEqual(scaleX, childTransform.getScaleX())
+                || !nearlyEqual(scaleY, childTransform.getScaleY())
+                || child.getState().isFlippedHorizontally() != flipped;
+        if (!changed) return false;
+        childTransform.setX(x); childTransform.setY(y);
+        childTransform.setRotationDegrees(rotation);
+        childTransform.setScaleX(scaleX); childTransform.setScaleY(scaleY);
+        child.getState().setFlippedHorizontally(flipped);
+        return true;
+    }
+
+    private boolean resolveAttachedLight(VttLight light, VttSceneObject attachment) {
+        var transform = attachment.getTransform();
+        double localX = attachment.getState().isFlippedHorizontally()
+                ? -light.getAttachmentOffsetX() : light.getAttachmentOffsetX();
+        double localY = light.getAttachmentOffsetY();
+        double radians = Math.toRadians(transform.getRotationDegrees());
+        double x = transform.getX() + localX * transform.getScaleX() * Math.cos(radians)
+                - localY * transform.getScaleY() * Math.sin(radians);
+        double y = transform.getY() + localX * transform.getScaleX() * Math.sin(radians)
+                + localY * transform.getScaleY() * Math.cos(radians);
+        double localDirection = attachment.getState().isFlippedHorizontally()
+                ? mirrorAttachmentDirection(light.getAttachmentDirectionOffsetDegrees())
+                : light.getAttachmentDirectionOffsetDegrees();
+        double direction = normalizeRotation(transform.getRotationDegrees() + localDirection);
+        if (nearlyEqual(x, light.getX()) && nearlyEqual(y, light.getY())
+                && nearlyEqual(direction, light.getDirectionDegrees())) return false;
+        light.setX(x); light.setY(y); light.setDirectionDegrees(direction);
+        return true;
+    }
+
+    private VttTokenTransformUpdatePayload transformUpdate(VttSceneObject object, long revision) {
+        return new VttTokenTransformUpdatePayload(authorityRevision, revision, 0L,
+                activeScene.getId(), object.getId(), object.getTransform().getX(),
+                object.getTransform().getY(), object.getTransform().getRotationDegrees(),
+                object.getTransform().getScaleX(), object.getTransform().getScaleY(),
+                currentLayerIndex(object), object.getState().isFlippedHorizontally(),
+                object.getState().isVisible(), object.getDisplayName(),
+                object.getState().getActiveStateId(), object.getState().getTintColorRgb(),
+                "server", true);
+    }
+
+    private static double mirrorAttachmentDirection(double degrees) {
+        double value = (180.0 - degrees) % 360.0;
+        return value < 0.0 ? value + 360.0 : value;
+    }
+
+    public record AttachmentDependencyUpdates(
+            List<VttTokenTransformUpdatePayload> transforms,
+            List<VttEnvironmentCommandUpdatePayload> lights
+    ) {
+        private static final AttachmentDependencyUpdates EMPTY =
+                new AttachmentDependencyUpdates(List.of(), List.of());
     }
 
     public synchronized VttTokenLifecycleUpdatePayload applyTokenLifecycle(
