@@ -49,6 +49,11 @@ public final class VttSceneDuplicator {
             if (remappedTarget == null) object.setAttachmentBinding(null);
             else object.getAttachmentBinding().setTargetObjectId(remappedTarget);
         }
+        copy.getLights().forEach(light -> {
+            if (light == null || !light.isAttached()) return;
+            String remapped = objectIds.get(light.getAttachedToObjectId());
+            light.setAttachedToObjectId(remapped);
+        });
         List<String> visionSources = new ArrayList<>(copy.getVisionSourceObjectIds());
         copy.clearVisionSourceObjectIds();
         for (String sourceId : visionSources) {

@@ -30,6 +30,11 @@ public final class VttLight {
     /** False means reveal-only: the light removes darkness without tinting the scene. */
     private boolean tintEnabled = true;
     private boolean enabled = true;
+    /** Optional placed attachment that owns this light's local transform. */
+    private String attachedToObjectId;
+    private double attachmentOffsetX;
+    private double attachmentOffsetY;
+    private double attachmentDirectionOffsetDegrees;
 
     public VttLight() { this("light_1", 0.0, 0.0); }
 
@@ -88,6 +93,25 @@ public final class VttLight {
                     Math.min(getConeAngleDegrees(), innerConeAngleDegrees));
         }
     }
+    public String getAttachedToObjectId() { return attachedToObjectId; }
+    public void setAttachedToObjectId(String value) {
+        attachedToObjectId = value == null || value.isBlank() ? null : value.trim();
+    }
+    public double getAttachmentOffsetX() { return attachmentOffsetX; }
+    public void setAttachmentOffsetX(double value) {
+        if (Double.isFinite(value)) attachmentOffsetX = value;
+    }
+    public double getAttachmentOffsetY() { return attachmentOffsetY; }
+    public void setAttachmentOffsetY(double value) {
+        if (Double.isFinite(value)) attachmentOffsetY = value;
+    }
+    public double getAttachmentDirectionOffsetDegrees() {
+        return attachmentDirectionOffsetDegrees;
+    }
+    public void setAttachmentDirectionOffsetDegrees(double value) {
+        if (Double.isFinite(value)) attachmentDirectionOffsetDegrees = value;
+    }
+    public boolean isAttached() { return attachedToObjectId != null; }
 
     public void normalize() {
         id = normalizeId(id);
@@ -103,6 +127,7 @@ public final class VttLight {
                     coneAngleDegrees);
         }
         setInnerConeAngleDegrees(innerConeAngleDegrees);
+        setAttachedToObjectId(attachedToObjectId);
     }
 
     private String normalizeId(String value) {

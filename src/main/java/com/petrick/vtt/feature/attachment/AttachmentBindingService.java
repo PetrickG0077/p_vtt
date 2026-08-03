@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import com.petrick.vtt.feature.tabletop.VttSceneObject;
+import com.petrick.vtt.feature.tabletop.VttLight;
 
 import java.util.Set;
 
@@ -81,6 +82,61 @@ public final class AttachmentBindingService {
         }
     }
 
+    public static boolean bindLight(VttScene scene, CanvasScene canvas,
+                                    String lightId, String attachmentId) {
+        VttLight light = findLight(scene, lightId);
+        CanvasObject attachment = canvas == null ? null : canvas.findObjectById(attachmentId);
+        if (light == null || attachment == null
+                || !attachment.hasSourceAttachmentDefinition()) return false;
+        light.setAttachedToObjectId(attachmentId);
+        captureLightTransform(light, attachment);
+        return true;
+    }
+
+    public static boolean detachLight(VttScene scene, String lightId) {
+        VttLight light = findLight(scene, lightId);
+        if (light == null || !light.isAttached()) return false;
+        light.setAttachedToObjectId(null);
+        return true;
+    }
+
+    public static void recaptureLight(VttScene scene, CanvasScene canvas, String lightId) {
+        VttLight light = findLight(scene, lightId);
+        if (light == null || canvas == null || !light.isAttached()) return;
+        CanvasObject attachment = canvas.findObjectById(light.getAttachedToObjectId());
+        if (attachment != null) captureLightTransform(light, attachment);
+    }
+
+    public static void synchronizeLights(VttScene scene, CanvasScene canvas,
+                                         String ignoredLightId) {
+        if (scene == null || canvas == null) return;
+        for (VttLight light : scene.getLights()) {
+            if (light == null || !light.isAttached()
+                    || light.getId().equals(ignoredLightId)) continue;
+            CanvasObject attachment = canvas.findObjectById(light.getAttachedToObjectId());
+            if (attachment == null || !attachment.hasSourceAttachmentDefinition()) {
+                light.setAttachedToObjectId(null);
+                continue;
+            }
+            Vec2d offset = new Vec2d(
+                    light.getAttachmentOffsetX() * attachment.transform().scale().x(),
+                    light.getAttachmentOffsetY() * attachment.transform().scale().y());
+            offset = rotate(offset, attachment.transform().rotationDegrees());
+            Vec2d position = attachment.transform().position().add(offset);
+            light.setX(position.x());
+            light.setY(position.y());
+            light.setDirectionDegrees(attachment.transform().rotationDegrees()
+                    + light.getAttachmentDirectionOffsetDegrees());
+        }
+    }
+
+    public static VttLight findLight(VttScene scene, String lightId) {
+        if (scene == null || lightId == null) return null;
+        return scene.getLights().stream()
+                .filter(light -> light != null && lightId.equals(light.getId()))
+                .findFirst().orElse(null);
+    }
+
     public static VttSceneObject find(VttScene scene, String objectId) {
         if (scene == null || objectId == null) return null;
         return scene.getObjects().stream()
@@ -106,6 +162,19 @@ public final class AttachmentBindingService {
                 / safeScale(parent.transform().scale().x()));
         binding.setScaleMultiplierY(child.transform().scale().y()
                 / safeScale(parent.transform().scale().y()));
+    }
+
+    private static void captureLightTransform(VttLight light, CanvasObject attachment) {
+        Vec2d offset = new Vec2d(light.getX(), light.getY())
+                .subtract(attachment.transform().position());
+        offset = rotate(offset, -attachment.transform().rotationDegrees());
+        offset = new Vec2d(
+                offset.x() / safeScale(attachment.transform().scale().x()),
+                offset.y() / safeScale(attachment.transform().scale().y()));
+        light.setAttachmentOffsetX(offset.x());
+        light.setAttachmentOffsetY(offset.y());
+        light.setAttachmentDirectionOffsetDegrees(light.getDirectionDegrees()
+                - attachment.transform().rotationDegrees());
     }
 
     private static Transform2D resolve(VttAttachmentBinding binding, Transform2D child,

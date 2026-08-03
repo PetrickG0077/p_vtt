@@ -449,6 +449,8 @@ public final class VTTScreen extends Screen {
                 selectionManager.getSelectedObjectIds());
         AttachmentBindingService.synchronize(session.getActiveScene(), scene,
                 selectionManager.getSelectedObjectIds());
+        AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene,
+                inputController.getSelectedLightId());
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
                 masterView, !fullTabletopView, !inputController.isEditingCollisionBox(),
                 session.isLocalMaster(),
@@ -3332,6 +3334,9 @@ public final class VTTScreen extends Screen {
         AttachmentBindingService.captureSelectedOffsets(
                 session.getActiveScene(), scene, selectionManager.getSelectedObjectIds());
         AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+        AttachmentBindingService.recaptureLight(session.getActiveScene(), scene,
+                inputController.getSelectedLightId());
+        AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene, null);
         session.saveCanvasSceneToActiveScene();
     }
 

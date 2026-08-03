@@ -9,6 +9,9 @@ import com.petrick.vtt.editor.hud.HexColorFormat;
 import com.petrick.vtt.editor.hud.EditorColorPickerOverlay;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionGeometry;
 import com.petrick.vtt.feature.tabletop.vision.SceneVisionRaycaster;
+import com.petrick.vtt.feature.attachment.AttachmentBindingService;
+import com.petrick.vtt.feature.canvas.CanvasObject;
+import com.petrick.vtt.feature.canvas.CanvasScene;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.Minecraft;
@@ -58,6 +61,8 @@ public final class LightTool implements Tool {
     private boolean replaceFieldOnType;
     private boolean draggingIntensity;
     private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
+    private CanvasScene lastCanvasScene;
+    private boolean attachmentTargetsOpen;
 
     public LightTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
         this.sceneSupplier = sceneSupplier;
@@ -70,6 +75,7 @@ public final class LightTool implements Tool {
     public boolean mouseClicked(
             ToolContext context, double mouseX, double mouseY, int button, int modifiers
     ) {
+        lastCanvasScene = context.scene();
         if (colorPicker.isOpen()) {
             return colorPicker.mouseClicked(
                     mouseX, mouseY, button,
@@ -174,6 +180,8 @@ public final class LightTool implements Tool {
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !moving && editHandle == null) return false;
         mouseDragged(context, mouseX, mouseY, button, 0.0, 0.0, modifiers);
+        AttachmentBindingService.recaptureLight(
+                sceneSupplier.get(), context.scene(), selectedId);
         moving = false;
         editHandle = null;
         dragOffset = null;
@@ -183,6 +191,7 @@ public final class LightTool implements Tool {
 
     @Override
     public void render(VRenderContext context, ToolContext toolContext) {
+        lastCanvasScene = toolContext.scene();
         VttScene scene = sceneSupplier.get();
         if (scene == null) return;
         for (VttLight light : scene.getLights()) renderCenter(context, light);
@@ -406,6 +415,12 @@ public final class LightTool implements Tool {
         context.graphics().fill(knobX - 2, trackY - 3, knobX + 3, trackY + 8, CYAN);
         popupRow(context, font, duplicateRow(), "Duplicate", true);
         popupRow(context, font, deleteRow(), "Delete", true);
+        VttLight selected = selectedLight();
+        popupRow(context, font, attachRow(), selected != null && selected.isAttached()
+                ? "Attached to  >" : "Attach to  >", true);
+        popupRow(context, font, detachRow(), "Detach",
+                selected != null && selected.isAttached());
+        if (attachmentTargetsOpen) renderAttachmentTargets(context, font);
     }
 
     private void popupRow(VRenderContext context, Font font, int row, String label, boolean enabled) {
@@ -434,6 +449,7 @@ public final class LightTool implements Tool {
             }
             return true;
         }
+        if (attachmentTargetsOpen && clickAttachmentTarget(mouseX, mouseY)) return true;
         for (Field field : Field.values()) {
             if (!fieldVisible(field)) continue;
             int y = popupY + fieldOffset(field);
@@ -485,7 +501,9 @@ public final class LightTool implements Tool {
         }
         if (mouseX >= popupX && mouseX <= popupX + 154) {
             int row = (int) ((mouseY - popupY - 5) / 19);
-            if (row == duplicateRow()) duplicateSelected();
+            if (row == attachRow()) attachmentTargetsOpen = !attachmentTargetsOpen;
+            else if (row == detachRow()) detachSelectedLight();
+            else if (row == duplicateRow()) duplicateSelected();
             else if (row == deleteRow()) deleteSelected();
         }
         return true;
@@ -506,8 +524,14 @@ public final class LightTool implements Tool {
         copy.setInnerConeAngleDegrees(source.getInnerConeAngleDegrees());
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
+        copy.setAttachedToObjectId(source.getAttachedToObjectId());
+        copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
+        copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
+        copy.setAttachmentDirectionOffsetDegrees(
+                source.getAttachmentDirectionOffsetDegrees());
         scene.addLight(copy);
         selectedId = copy.getId();
+        AttachmentBindingService.recaptureLight(scene, lastCanvasScene, selectedId);
         closePopup();
         saveAction.run();
         return true;
@@ -607,6 +631,71 @@ public final class LightTool implements Tool {
         border(context, left, top, 12, 12, CYAN);
     }
 
+    private void renderAttachmentTargets(VRenderContext context, Font font) {
+        List<CanvasObject> targets = attachmentTargets();
+        int width = 154;
+        int height = Math.max(24, 10 + targets.size() * 18);
+        int x = attachmentPopupX(width);
+        context.graphics().fill(x, popupY, x + width, popupY + height, PANEL);
+        border(context, x, popupY, width, height, CYAN);
+        if (targets.isEmpty()) {
+            context.graphics().drawString(font, "No attachments in scene",
+                    x + 7, popupY + 8, MUTED, false);
+            return;
+        }
+        VttLight light = selectedLight();
+        for (int i = 0; i < targets.size(); i++) {
+            CanvasObject target = targets.get(i);
+            boolean current = light != null
+                    && target.id().equals(light.getAttachedToObjectId());
+            String name = target.displayName();
+            if (name.length() > 19) name = name.substring(0, 16) + "...";
+            context.graphics().drawString(font,
+                    name + (current ? "  Attached" : ""),
+                    x + 7, popupY + 7 + i * 18, current ? CYAN : TEXT, false);
+        }
+    }
+
+    private boolean clickAttachmentTarget(double mouseX, double mouseY) {
+        List<CanvasObject> targets = attachmentTargets();
+        int width = 154;
+        int height = Math.max(24, 10 + targets.size() * 18);
+        int x = attachmentPopupX(width);
+        if (mouseX < x || mouseX > x + width
+                || mouseY < popupY || mouseY > popupY + height) return false;
+        int index = (int) ((mouseY - popupY - 5) / 18);
+        if (index >= 0 && index < targets.size()) {
+            VttLight light = selectedLight();
+            if (light != null && AttachmentBindingService.bindLight(
+                    sceneSupplier.get(), lastCanvasScene, light.getId(),
+                    targets.get(index).id())) {
+                saveAction.run();
+            }
+        }
+        return true;
+    }
+
+    private void detachSelectedLight() {
+        VttLight light = selectedLight();
+        if (light != null && AttachmentBindingService.detachLight(
+                sceneSupplier.get(), light.getId())) {
+            attachmentTargetsOpen = false;
+            saveAction.run();
+        }
+    }
+
+    private List<CanvasObject> attachmentTargets() {
+        if (lastCanvasScene == null) return List.of();
+        return lastCanvasScene.getObjects().stream()
+                .filter(CanvasObject::hasSourceAttachmentDefinition)
+                .toList();
+    }
+
+    private int attachmentPopupX(int width) {
+        int right = popupX + 157;
+        return right + width <= screenWidth() - 4 ? right : popupX - width - 3;
+    }
+
     private int screenWidth() {
         return Minecraft.getInstance().getWindow().getGuiScaledWidth();
     }
@@ -695,6 +784,7 @@ public final class LightTool implements Tool {
         popupY = Math.max(4, (int) Math.round(mouseY) - popupHeight());
         focusedField = null;
         draggingIntensity = false;
+        attachmentTargetsOpen = false;
     }
 
     private void updateIntensity(double mouseX) {
@@ -731,11 +821,13 @@ public final class LightTool implements Tool {
     private int paletteY() { return popupY + (isSpot() ? 157 : 91); }
     private int intensityLabelY() { return popupY + (isSpot() ? 177 : 111); }
     private int intensityTrackY() { return popupY + (isSpot() ? 192 : 126); }
-    private int duplicateRow() { return isSpot() ? 11 : 8; }
-    private int deleteRow() { return isSpot() ? 12 : 9; }
+    private int attachRow() { return isSpot() ? 11 : 8; }
+    private int detachRow() { return isSpot() ? 12 : 9; }
+    private int duplicateRow() { return isSpot() ? 13 : 10; }
+    private int deleteRow() { return isSpot() ? 14 : 11; }
     private int popupHeight() {
         if (popup == Popup.CREATE) return 64;
-        return isSpot() ? 261 : 198;
+        return isSpot() ? 299 : 236;
     }
 
     private void closePopup() {
@@ -745,6 +837,7 @@ public final class LightTool implements Tool {
         fieldBuffer = "";
         replaceFieldOnType = false;
         draggingIntensity = false;
+        attachmentTargetsOpen = false;
     }
 
     private void border(VRenderContext context, int x, int y, int w, int h, int color) {

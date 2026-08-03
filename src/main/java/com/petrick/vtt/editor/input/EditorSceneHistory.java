@@ -611,14 +611,20 @@ public final class EditorSceneHistory {
             double innerRadius, double outerRadius,
             int colorRgb, double intensity, boolean tintEnabled, boolean enabled,
             double directionDegrees, double outerConeAngleDegrees,
-            double innerConeAngleDegrees
+            double innerConeAngleDegrees,
+            String attachedToObjectId,
+            double attachmentOffsetX,
+            double attachmentOffsetY,
+            double attachmentDirectionOffsetDegrees
     ) {
         private static Light capture(VttLight light) {
             return new Light(light.getId(), light.getType(), light.getX(), light.getY(),
                     light.getInnerRadius(), light.getOuterRadius(), light.getColorRgb(),
                     light.getIntensity(), light.isTintEnabled(), light.isEnabled(),
                     light.getDirectionDegrees(), light.getConeAngleDegrees(),
-                    light.getInnerConeAngleDegrees());
+                    light.getInnerConeAngleDegrees(), light.getAttachedToObjectId(),
+                    light.getAttachmentOffsetX(), light.getAttachmentOffsetY(),
+                    light.getAttachmentDirectionOffsetDegrees());
         }
 
         private VttLight restore() {
@@ -633,6 +639,10 @@ public final class EditorSceneHistory {
             light.setDirectionDegrees(directionDegrees);
             light.setConeAngleDegrees(outerConeAngleDegrees);
             light.setInnerConeAngleDegrees(innerConeAngleDegrees);
+            light.setAttachedToObjectId(attachedToObjectId);
+            light.setAttachmentOffsetX(attachmentOffsetX);
+            light.setAttachmentOffsetY(attachmentOffsetY);
+            light.setAttachmentDirectionOffsetDegrees(attachmentDirectionOffsetDegrees);
             return light;
         }
     }
