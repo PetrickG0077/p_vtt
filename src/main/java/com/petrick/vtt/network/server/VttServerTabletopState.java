@@ -1143,24 +1143,40 @@ public final class VttServerTabletopState {
         if (activeScene == null || changedObjectId == null || changedObjectId.isBlank()) {
             return AttachmentDependencyUpdates.EMPTY;
         }
-        VttSceneObject parent = activeScene.getObjects().stream()
+        VttSceneObject root = activeScene.getObjects().stream()
                 .filter(object -> object != null && changedObjectId.equals(object.getId()))
                 .findFirst().orElse(null);
         List<VttTokenTransformUpdatePayload> transforms = new ArrayList<>();
         Set<String> attachmentIds = new HashSet<>();
-        if (parent != null && parent.isAttachment()) attachmentIds.add(parent.getId());
-        if (parent != null) {
-            for (VttSceneObject child : activeScene.getObjects()) {
-                if (child == null || !child.isAttachment()) continue;
-                VttAttachmentBinding binding = child.getAttachmentBinding();
-                if (binding == null || !binding.isBound()
-                        || !parent.getId().equals(binding.getTargetObjectId())) continue;
-                if (resolveBoundAttachment(child, parent, binding)) {
-                    objectSpatialIndex.addOrUpdate(child);
-                    attachmentIds.add(child.getId());
-                    transforms.add(transformUpdate(child,
-                            nextRevision(tokenTransformRevisions, child.getId())));
+        if (root != null && root.isAttachment()) attachmentIds.add(root.getId());
+        if (root != null) {
+            List<VttSceneObject> level = List.of(root);
+            Set<String> visited = new HashSet<>();
+            visited.add(root.getId());
+            for (int depth = 0;
+                 depth < com.petrick.vtt.feature.attachment.AttachmentBindingService.MAX_BINDING_DEPTH
+                         && !level.isEmpty(); depth++) {
+                List<VttSceneObject> next = new ArrayList<>();
+                for (VttSceneObject parent : level) {
+                    for (VttSceneObject child : activeScene.getObjects()) {
+                        if (child == null || !child.isAttachment()
+                                || !visited.add(child.getId())) continue;
+                        VttAttachmentBinding binding = child.getAttachmentBinding();
+                        if (binding == null || !binding.isBound()
+                                || !parent.getId().equals(binding.getTargetObjectId())) {
+                            visited.remove(child.getId());
+                            continue;
+                        }
+                        attachmentIds.add(child.getId());
+                        next.add(child);
+                        if (resolveBoundAttachment(child, parent, binding)) {
+                            objectSpatialIndex.addOrUpdate(child);
+                            transforms.add(transformUpdate(child,
+                                    nextRevision(tokenTransformRevisions, child.getId())));
+                        }
+                    }
                 }
+                level = next;
             }
         }
         List<VttEnvironmentCommandUpdatePayload> lights = new ArrayList<>();
@@ -1659,13 +1675,30 @@ public final class VttServerTabletopState {
         if (attachment == null || !attachment.isAttachment() || binding == null
                 || !binding.isBound() || binding.getTargetObjectId() == null
                 || attachmentId.equals(binding.getTargetObjectId())) return false;
-        boolean targetIsToken = activeScene.getObjects().stream().anyMatch(object -> object != null
-                && binding.getTargetObjectId().equals(object.getId())
-                && object.getSourceTokenDefinitionId() != null
-                && !object.getSourceTokenDefinitionId().isBlank());
-        if (!targetIsToken) return false;
+        if (!validAttachmentBindingChain(attachmentId, binding.getTargetObjectId())) return false;
         attachment.setAttachmentBinding(binding);
         return true;
+    }
+
+    private boolean validAttachmentBindingChain(String attachmentId, String targetId) {
+        String current = targetId;
+        Set<String> visited = new HashSet<>();
+        for (int depth = 0;
+             depth < com.petrick.vtt.feature.attachment.AttachmentBindingService.MAX_BINDING_DEPTH;
+             depth++) {
+            if (current == null || attachmentId.equals(current) || !visited.add(current)) return false;
+            String lookupId = current;
+            VttSceneObject target = activeScene.getObjects().stream()
+                    .filter(object -> object != null && lookupId.equals(object.getId()))
+                    .findFirst().orElse(null);
+            if (target == null) return false;
+            if (target.getSourceTokenDefinitionId() != null
+                    && !target.getSourceTokenDefinitionId().isBlank()) return true;
+            if (!target.isAttachment() || target.getAttachmentBinding() == null
+                    || !target.getAttachmentBinding().isBound()) return true;
+            current = target.getAttachmentBinding().getTargetObjectId();
+        }
+        return false;
     }
 
     private boolean clearAttachmentBinding(String attachmentId) {

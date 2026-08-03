@@ -15,6 +15,7 @@ import java.util.Set;
 /** Resolves per-instance attachment bindings without coupling them to token definitions. */
 public final class AttachmentBindingService {
     private static final double MIN_SCALE = 0.0001;
+    public static final int MAX_BINDING_DEPTH = 16;
 
     private AttachmentBindingService() {}
 
@@ -24,7 +25,8 @@ public final class AttachmentBindingService {
         CanvasObject child = canvas == null ? null : canvas.findObjectById(attachmentId);
         CanvasObject parent = canvas == null ? null : canvas.findObjectById(targetTokenId);
         if (attachment == null || !attachment.isAttachment() || child == null || parent == null
-                || !parent.hasSourceTokenDefinition() || attachmentId.equals(targetTokenId)) {
+                || !(parent.hasSourceTokenDefinition() || parent.hasSourceAttachmentDefinition())
+                || !canBind(scene, attachmentId, targetTokenId)) {
             return false;
         }
         VttAttachmentBinding binding = new VttAttachmentBinding();
@@ -34,6 +36,26 @@ public final class AttachmentBindingService {
         // A newly created binding follows the token's flip by default.
         binding.setFlipOffset(false);
         return true;
+    }
+
+    public static boolean canBind(VttScene scene, String attachmentId, String targetId) {
+        if (scene == null || attachmentId == null || targetId == null
+                || attachmentId.equals(targetId)) return false;
+        VttSceneObject target = find(scene, targetId);
+        if (target == null || (!target.isAttachment()
+                && (target.getSourceTokenDefinitionId() == null
+                || target.getSourceTokenDefinitionId().isBlank()))) return false;
+        String current = targetId;
+        Set<String> visited = new java.util.HashSet<>();
+        for (int depth = 0; depth < MAX_BINDING_DEPTH; depth++) {
+            if (!visited.add(current) || attachmentId.equals(current)) return false;
+            VttSceneObject object = find(scene, current);
+            if (object == null || !object.isAttachment()
+                    || object.getAttachmentBinding() == null
+                    || !object.getAttachmentBinding().isBound()) return true;
+            current = object.getAttachmentBinding().getTargetObjectId();
+        }
+        return false;
     }
 
     public static boolean detach(VttScene scene, String attachmentId) {
@@ -88,20 +110,28 @@ public final class AttachmentBindingService {
     public static void synchronize(VttScene scene, CanvasScene canvas, Set<String> ignoredIds) {
         if (scene == null || canvas == null) return;
         Set<String> ignored = ignoredIds == null ? Set.of() : ignoredIds;
-        for (VttSceneObject sceneObject : scene.getObjects()) {
-            if (sceneObject == null || !sceneObject.isAttachment()
-                    || ignored.contains(sceneObject.getId())) continue;
-            VttAttachmentBinding binding = sceneObject.getAttachmentBinding();
-            if (binding == null || !binding.isBound()) continue;
-            CanvasObject child = canvas.findObjectById(sceneObject.getId());
-            CanvasObject parent = canvas.findObjectById(binding.getTargetObjectId());
-            if (child == null || parent == null || !parent.hasSourceTokenDefinition()) continue;
-            Transform2D resolved = resolve(binding, child.transform(), parent.transform(),
-                    parent.flippedHorizontally());
-            boolean flipped = parent.flippedHorizontally() ^ binding.isFlipOffset();
-            if (!same(child.transform(), resolved) || child.flippedHorizontally() != flipped) {
-                canvas.replaceObject(child.withTransform(resolved).withFlippedHorizontally(flipped));
+        // Resolve parents before descendants. Repeated passes are bounded by
+        // MAX_BINDING_DEPTH and make scene-list order irrelevant.
+        for (int pass = 0; pass < MAX_BINDING_DEPTH; pass++) {
+            boolean changed = false;
+            for (VttSceneObject sceneObject : scene.getObjects()) {
+                if (sceneObject == null || !sceneObject.isAttachment()
+                        || ignored.contains(sceneObject.getId())) continue;
+                VttAttachmentBinding binding = sceneObject.getAttachmentBinding();
+                if (binding == null || !binding.isBound()) continue;
+                CanvasObject child = canvas.findObjectById(sceneObject.getId());
+                CanvasObject parent = canvas.findObjectById(binding.getTargetObjectId());
+                if (child == null || parent == null) continue;
+                Transform2D resolved = resolve(binding, child.transform(), parent.transform(),
+                        parent.flippedHorizontally());
+                boolean flipped = parent.flippedHorizontally() ^ binding.isFlipOffset();
+                if (!same(child.transform(), resolved) || child.flippedHorizontally() != flipped) {
+                    canvas.replaceObject(child.withTransform(resolved)
+                            .withFlippedHorizontally(flipped));
+                    changed = true;
+                }
             }
+            if (!changed) break;
         }
     }
 

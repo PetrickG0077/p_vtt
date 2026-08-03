@@ -22,7 +22,9 @@ public record TokenStateAttachmentPreset(
         double rotationOffsetDegrees,
         double scaleMultiplierX,
         double scaleMultiplierY,
-        List<VttLight> lights
+        List<VttLight> lights,
+        String templateId,
+        String parentTemplateId
 ) {
     public TokenStateAttachmentPreset {
         if (definitionId == null || definitionId.isBlank()) {
@@ -33,5 +35,9 @@ public record TokenStateAttachmentPreset(
         tintColorRgb &= 0x00FFFFFF;
         anchor = anchor == null ? VttAttachmentAnchor.CUSTOM : anchor;
         lights = lights == null ? List.of() : List.copyOf(lights);
+        templateId = templateId == null || templateId.isBlank()
+                ? definitionId : templateId;
+        parentTemplateId = parentTemplateId == null || parentTemplateId.isBlank()
+                ? null : parentTemplateId;
     }
 }

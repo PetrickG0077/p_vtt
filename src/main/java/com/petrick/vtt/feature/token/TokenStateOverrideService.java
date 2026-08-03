@@ -84,8 +84,8 @@ public final class TokenStateOverrideService {
             if (attachment == null || !attachment.isAttachment()) continue;
             VttAttachmentBinding binding = attachment.getAttachmentBinding();
             if (binding == null || !binding.isBound()
-                    || !tokenId.equals(binding.getTargetObjectId())
-                    || !stateId.equals(binding.getParentStateId())) continue;
+                    || !tokenId.equals(rootTokenId(scene, attachment))
+                    || !stateId.equals(effectiveStateId(scene, attachment))) continue;
             AttachmentBindingService.recapture(scene, canvas, attachment.getId());
             CanvasObject canvasAttachment = canvas.findObjectById(attachment.getId());
             List<VttLight> lights = scene.getLights().stream()
@@ -100,7 +100,10 @@ public final class TokenStateOverrideService {
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
                     binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
-                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights));
+                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights,
+                    attachment.getId(), find(scene, binding.getTargetObjectId()) != null
+                            && find(scene, binding.getTargetObjectId()).isAttachment()
+                            ? binding.getTargetObjectId() : null));
         }
         VttTokenStateAppearance appearance = metadata.getStateAppearances().get(stateId);
         return appearance == null ? null
@@ -134,8 +137,8 @@ public final class TokenStateOverrideService {
             VttAttachmentBinding binding = attachment == null
                     ? null : attachment.getAttachmentBinding();
             if (attachment != null && attachment.isAttachment() && binding != null
-                    && tokenId.equals(binding.getTargetObjectId())
-                    && stateId.equals(binding.getParentStateId())) {
+                    && tokenId.equals(rootTokenId(scene, attachment))
+                    && stateId.equals(effectiveStateId(scene, attachment))) {
                 stateAttachmentIds.add(attachment.getId());
             }
         }
@@ -165,8 +168,8 @@ public final class TokenStateOverrideService {
             if (attachment == null || !attachment.isAttachment()) continue;
             VttAttachmentBinding binding = attachment.getAttachmentBinding();
             if (binding == null || !binding.isBound()
-                    || !tokenId.equals(binding.getTargetObjectId())
-                    || !stateId.equals(binding.getParentStateId())) continue;
+                    || !tokenId.equals(rootTokenId(scene, attachment))
+                    || !stateId.equals(effectiveStateId(scene, attachment))) continue;
             AttachmentBindingService.recapture(scene, canvas, attachment.getId());
             CanvasObject canvasAttachment = canvas.findObjectById(attachment.getId());
             List<VttLight> lights = scene.getLights().stream()
@@ -181,7 +184,10 @@ public final class TokenStateOverrideService {
                     binding.isFollowRotation(), binding.isFollowScale(), binding.isFlipOffset(),
                     binding.getAnchor(),
                     binding.getOffsetX(), binding.getOffsetY(), binding.getRotationOffsetDegrees(),
-                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights));
+                    binding.getScaleMultiplierX(), binding.getScaleMultiplierY(), lights,
+                    attachment.getId(), find(scene, binding.getTargetObjectId()) != null
+                            && find(scene, binding.getTargetObjectId()).isAttachment()
+                            ? binding.getTargetObjectId() : null));
         }
         return new TokenStatePreset(appearance.copy(), attachments);
     }
@@ -245,6 +251,39 @@ public final class TokenStateOverrideService {
         return scene.getObjects().stream().filter(object -> object != null
                         && tokenId.equals(object.getId())
                         && object.getSourceTokenDefinitionId() != null)
+                .findFirst().orElse(null);
+    }
+
+    private String rootTokenId(VttScene scene, VttSceneObject attachment) {
+        VttSceneObject current = attachment;
+        Set<String> visited = new HashSet<>();
+        while (current != null && current.isAttachment()
+                && current.getAttachmentBinding() != null
+                && current.getAttachmentBinding().isBound()
+                && visited.add(current.getId())) {
+            current = find(scene, current.getAttachmentBinding().getTargetObjectId());
+        }
+        return current == null ? null : current.getId();
+    }
+
+    private String effectiveStateId(VttScene scene, VttSceneObject attachment) {
+        VttSceneObject current = attachment;
+        Set<String> visited = new HashSet<>();
+        while (current != null && current.isAttachment()
+                && current.getAttachmentBinding() != null
+                && current.getAttachmentBinding().isBound()
+                && visited.add(current.getId())) {
+            String stateId = current.getAttachmentBinding().getParentStateId();
+            if (stateId != null) return stateId;
+            current = find(scene, current.getAttachmentBinding().getTargetObjectId());
+        }
+        return null;
+    }
+
+    private VttSceneObject find(VttScene scene, String id) {
+        if (scene == null || id == null) return null;
+        return scene.getObjects().stream()
+                .filter(object -> object != null && id.equals(object.getId()))
                 .findFirst().orElse(null);
     }
 

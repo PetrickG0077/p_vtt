@@ -32,9 +32,12 @@ public final class AttachmentVisibilityResolver {
                     || !metadata.getAttachmentBinding().isBound()) return true;
             String parentStateId = metadata.getAttachmentBinding().getParentStateId();
             if (parentStateId != null) {
-                CanvasObject parent = canvasScene.findObjectById(
+                CanvasObject stateOwner = findRootToken(
+                        tabletopScene, canvasScene,
                         metadata.getAttachmentBinding().getTargetObjectId());
-                if (parent == null || !parentStateId.equals(parent.activeStateId())) return false;
+                if (stateOwner == null || !parentStateId.equals(stateOwner.activeStateId())) {
+                    return false;
+                }
             }
             currentId = metadata.getAttachmentBinding().getTargetObjectId();
         }
@@ -64,9 +67,30 @@ public final class AttachmentVisibilityResolver {
         if (metadata == null || metadata.getAttachmentBinding() == null
                 || !metadata.getAttachmentBinding().isBound()
                 || metadata.getAttachmentBinding().getParentStateId() == null) return false;
-        CanvasObject parent = canvasScene.findObjectById(
+        CanvasObject stateOwner = findRootToken(tabletopScene, canvasScene,
                 metadata.getAttachmentBinding().getTargetObjectId());
-        return parent == null || !metadata.getAttachmentBinding().getParentStateId()
-                .equals(parent.activeStateId());
+        return stateOwner == null || !metadata.getAttachmentBinding().getParentStateId()
+                .equals(stateOwner.activeStateId());
+    }
+
+    private static CanvasObject findRootToken(
+            VttScene scene, CanvasScene canvas, String objectId
+    ) {
+        Set<String> visited = new HashSet<>();
+        String currentId = objectId;
+        while (currentId != null && visited.add(currentId)) {
+            CanvasObject current = canvas.findObjectById(currentId);
+            if (current == null) return null;
+            if (current.hasSourceTokenDefinition()) return current;
+            String lookupId = currentId;
+            VttSceneObject metadata = scene.getObjects().stream()
+                    .filter(candidate -> candidate != null
+                            && lookupId.equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            if (metadata == null || metadata.getAttachmentBinding() == null
+                    || !metadata.getAttachmentBinding().isBound()) return null;
+            currentId = metadata.getAttachmentBinding().getTargetObjectId();
+        }
+        return null;
     }
 }

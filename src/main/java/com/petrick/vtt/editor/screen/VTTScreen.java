@@ -3281,9 +3281,22 @@ public final class VTTScreen extends Screen {
         for (VttSceneObject object : session.getActiveScene().getObjects()) {
             VttAttachmentBinding binding = object == null ? null : object.getAttachmentBinding();
             if (object == null || !object.isAttachment() || binding == null
-                    || !tokenId.equals(binding.getTargetObjectId())
-                    || binding.getParentStateId() == null) continue;
-            counts.merge(binding.getParentStateId(), 1, Integer::sum);
+                    || !binding.isBound()) continue;
+            String currentId = object.getId();
+            String stateId = null;
+            Set<String> visited = new HashSet<>();
+            while (currentId != null && visited.add(currentId)) {
+                VttSceneObject current = AttachmentBindingService.find(
+                        session.getActiveScene(), currentId);
+                if (current == null || !current.isAttachment()
+                        || current.getAttachmentBinding() == null
+                        || !current.getAttachmentBinding().isBound()) break;
+                if (stateId == null) stateId = current.getAttachmentBinding().getParentStateId();
+                currentId = current.getAttachmentBinding().getTargetObjectId();
+            }
+            if (tokenId.equals(currentId) && stateId != null) {
+                counts.merge(stateId, 1, Integer::sum);
+            }
         }
         return counts;
     }
@@ -3296,7 +3309,7 @@ public final class VTTScreen extends Screen {
             return;
         }
         canvasAttachmentContextMenuOverlay.render(context, this.font,
-                sceneObject.getAttachmentBinding(), attachmentTargetTokens());
+                sceneObject.getAttachmentBinding(), attachmentTargets());
     }
 
     private void beginPlacedAttachmentDragCandidate(double mouseX, double mouseY, int button) {
@@ -3381,7 +3394,7 @@ public final class VTTScreen extends Screen {
         var interaction = canvasAttachmentContextMenuOverlay.mouseClicked(
                 mouseX, mouseY, button,
                 sceneObject == null ? null : sceneObject.getAttachmentBinding(),
-                attachmentTargetTokens(), this.width);
+                attachmentTargets(), this.width);
         if (interaction.action() != CanvasAttachmentContextMenuOverlay.Action.NONE) {
             handleCanvasAttachmentContextAction(interaction);
         }
@@ -3408,9 +3421,13 @@ public final class VTTScreen extends Screen {
                 canvasAttachmentContextMenuOverlay.objectId());
     }
 
-    private List<CanvasObject> attachmentTargetTokens() {
+    private List<CanvasObject> attachmentTargets() {
+        String attachmentId = canvasAttachmentContextMenuOverlay.objectId();
         return scene.getObjects().stream()
-                .filter(CanvasObject::hasSourceTokenDefinition)
+                .filter(object -> object.hasSourceTokenDefinition()
+                        || object.hasSourceAttachmentDefinition())
+                .filter(object -> AttachmentBindingService.canBind(
+                        session.getActiveScene(), attachmentId, object.id()))
                 .toList();
     }
 
@@ -3481,11 +3498,13 @@ public final class VTTScreen extends Screen {
                             binding.setParentStateId(null);
                             VttClientEditorNotice.show("Attachment is now global");
                         } else {
-                            CanvasObject parent = scene.findObjectById(binding.getTargetObjectId());
-                            if (parent != null && parent.hasSourceTokenDefinition()) {
-                                binding.setParentStateId(parent.activeStateId());
+                            CanvasObject stateOwner = attachmentRootToken(
+                                    binding.getTargetObjectId());
+                            if (stateOwner != null) {
+                                binding.setParentStateId(stateOwner.activeStateId());
                                 VttClientEditorNotice.show(
-                                        "Attachment assigned to state " + parent.activeStateId());
+                                        "Attachment assigned to state "
+                                                + stateOwner.activeStateId());
                             }
                         }
                     }
@@ -3518,6 +3537,22 @@ public final class VTTScreen extends Screen {
         } else {
             saveCanvasSceneWithAttachmentBindings();
         }
+    }
+
+    private CanvasObject attachmentRootToken(String objectId) {
+        Set<String> visited = new HashSet<>();
+        String currentId = objectId;
+        while (currentId != null && visited.add(currentId)) {
+            CanvasObject current = scene.findObjectById(currentId);
+            if (current == null) return null;
+            if (current.hasSourceTokenDefinition()) return current;
+            VttSceneObject metadata = AttachmentBindingService.find(
+                    session.getActiveScene(), currentId);
+            if (metadata == null || metadata.getAttachmentBinding() == null
+                    || !metadata.getAttachmentBinding().isBound()) return null;
+            currentId = metadata.getAttachmentBinding().getTargetObjectId();
+        }
+        return null;
     }
 
     private CanvasObject canvasTokenContextToken() {
@@ -5763,6 +5798,7 @@ public final class VTTScreen extends Screen {
         record PendingAttachment(String id, String stateId,
                                  TokenStateAttachmentPreset preset) {}
         List<PendingAttachment> pending = new ArrayList<>();
+        Map<String, String> instantiatedIds = new HashMap<>();
         for (Map.Entry<String, TokenStatePreset> stateEntry
                 : definition.statePresets().entrySet()) {
             for (TokenStateAttachmentPreset preset : stateEntry.getValue().attachments()) {
@@ -5780,6 +5816,8 @@ public final class VTTScreen extends Screen {
                 if (preset.flippedHorizontally()) attachment = attachment.withFlippedHorizontally(true);
                 scene.addObject(attachment);
                 pending.add(new PendingAttachment(attachmentId, stateEntry.getKey(), preset));
+                instantiatedIds.put(stateEntry.getKey() + "\u0000" + preset.templateId(),
+                        attachmentId);
             }
         }
         if (pending.isEmpty()) return;
@@ -5788,8 +5826,13 @@ public final class VTTScreen extends Screen {
             VttSceneObject metadata = AttachmentBindingService.find(
                     session.getActiveScene(), item.id());
             if (metadata == null) continue;
+            String parentId = item.preset().parentTemplateId() == null
+                    ? placedToken.id() : instantiatedIds.get(
+                    item.stateId() + "\u0000" + item.preset().parentTemplateId());
+            if (parentId == null) parentId = placedToken.id();
             VttAttachmentBinding binding = createPresetBinding(
-                    placedToken.id(), item.stateId(), item.preset());
+                    parentId, item.preset().parentTemplateId() == null
+                            ? item.stateId() : null, item.preset());
             metadata.setAttachmentBinding(binding);
             metadata.getState().setTintColorRgb(item.preset().tintColorRgb());
             for (VttLight lightTemplate : item.preset().lights()) {
@@ -5802,10 +5845,10 @@ public final class VTTScreen extends Screen {
     }
 
     private VttAttachmentBinding createPresetBinding(
-            String tokenId, String stateId, TokenStateAttachmentPreset preset
+            String parentId, String stateId, TokenStateAttachmentPreset preset
     ) {
         VttAttachmentBinding binding = new VttAttachmentBinding();
-        binding.setTargetObjectId(tokenId);
+        binding.setTargetObjectId(parentId);
         binding.setParentStateId(stateId);
         binding.setFollowPosition(preset.followPosition());
         binding.setFollowRotation(preset.followRotation());
