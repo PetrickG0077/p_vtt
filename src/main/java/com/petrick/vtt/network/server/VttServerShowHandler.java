@@ -84,7 +84,7 @@ public final class VttServerShowHandler {
         if (!lower.startsWith("shows/") || normalized.contains("../")) return null;
         if (!(lower.endsWith(".png") || lower.endsWith(".jpg")
                 || lower.endsWith(".jpeg") || lower.endsWith(".gif")
-                || lower.endsWith(".webp"))) return null;
+                || lower.endsWith(".webp") || lower.endsWith(".mp4"))) return null;
         Path assetsRoot = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets/assets")
                 .toAbsolutePath().normalize();
         Path file = assetsRoot.resolve(normalized).toAbsolutePath().normalize();

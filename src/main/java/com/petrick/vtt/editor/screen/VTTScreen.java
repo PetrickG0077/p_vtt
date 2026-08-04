@@ -78,6 +78,7 @@ import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.feature.media.VttVideoFrameService;
 import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -763,6 +764,12 @@ public final class VTTScreen extends Screen {
                 ? null : thumbnail.texture();
         int sourceWidth = thumbnail == null ? 0 : thumbnail.width();
         int sourceHeight = thumbnail == null ? 0 : thumbnail.height();
+        if (entry != null && entry.fileType() == AssetLibraryFileType.VIDEO) {
+            VttVideoFrameService.Frame frame = VttVideoFrameService.frame(entry.absolutePath());
+            showTexture = frame.texture();
+            sourceWidth = frame.width();
+            sourceHeight = frame.height();
+        }
         if (entry != null && thumbnail != null
                 && entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE) {
             AnimatedTextureFrame frame = session.getAnimatedTextureService().getCurrentFrame(

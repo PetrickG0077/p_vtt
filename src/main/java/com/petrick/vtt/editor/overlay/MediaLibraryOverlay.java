@@ -224,7 +224,8 @@ public final class MediaLibraryOverlay {
             if (tab == Tab.MUSICS) return path.startsWith("musics/")
                     && entry.fileType() == AssetLibraryFileType.AUDIO;
             return path.startsWith("shows/") && (entry.fileType() == AssetLibraryFileType.IMAGE
-                    || entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE);
+                    || entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE
+                    || entry.fileType() == AssetLibraryFileType.VIDEO);
         }).sorted(Comparator.comparing(AssetLibraryEntry::relativePath)).toList();
     }
 

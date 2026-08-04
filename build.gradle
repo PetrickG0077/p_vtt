@@ -27,6 +27,7 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
+    mavenCentral()
 }
 
 base {
@@ -125,6 +126,16 @@ dependencies {
     localRuntime "javazoom:jlayer:1.0.1"
     jarJar("javazoom:jlayer:[1.0.1]") {
         version { prefer "1.0.1" }
+    }
+    implementation "org.jcodec:jcodec:0.2.5"
+    implementation "org.jcodec:jcodec-javase:0.2.5"
+    localRuntime "org.jcodec:jcodec:0.2.5"
+    localRuntime "org.jcodec:jcodec-javase:0.2.5"
+    jarJar("org.jcodec:jcodec:[0.2.5]") {
+        version { prefer "0.2.5" }
+    }
+    jarJar("org.jcodec:jcodec-javase:[0.2.5]") {
+        version { prefer "0.2.5" }
     }
 
     // Example optional mod dependency with JEI
