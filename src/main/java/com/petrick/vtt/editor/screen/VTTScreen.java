@@ -2718,14 +2718,6 @@ public final class VTTScreen extends Screen {
     private void renderTitle(VRenderContext context) {
         GuiGraphics graphics = context.graphics();
 
-        graphics.drawCenteredString(
-                this.font,
-                this.title,
-                this.width / 2,
-                this.height / 2 - 20,
-                0xFFFFFFFF
-        );
-
         if (playerViewPreview) {
             graphics.drawCenteredString(this.font, "PLAYER PREVIEW - Ctrl+P to exit",
                     this.width / 2, 70, 0xFFFF6666);

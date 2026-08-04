@@ -1,8 +1,10 @@
 package com.petrick.vtt.network.client;
 
 import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.editor.screen.VTTScreen;
 import com.petrick.vtt.network.payload.VttShowCommandPayload;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
+import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /** Client presentation state with local fade timing. */
@@ -40,6 +42,12 @@ public final class VttClientShowState {
         transitionStartAlpha = current;
         targetActive = update.active();
         transitionStartedAt = System.currentTimeMillis();
+        if (targetActive) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (!(minecraft.screen instanceof VTTScreen)) {
+                minecraft.setScreen(new VTTScreen());
+            }
+        }
     }
 
     public static synchronized float alpha() {
