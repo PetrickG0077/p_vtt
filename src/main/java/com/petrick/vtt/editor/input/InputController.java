@@ -278,6 +278,7 @@ public final class InputController {
     public boolean selectLight(String lightId) { return toolController.selectLight(lightId); }
     public String getSelectedLightId() { return toolController.getSelectedLightId(); }
     public boolean consumeLightCopyRequest() { return toolController.consumeLightCopyRequest(); }
+    public boolean consumeLightCutRequest() { return toolController.consumeLightCutRequest(); }
 
     public void selectMeasureTool() { toolController.selectMeasureTool(); }
 

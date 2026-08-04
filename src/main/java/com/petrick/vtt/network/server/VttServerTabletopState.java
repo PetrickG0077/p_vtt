@@ -1638,6 +1638,70 @@ public final class VttServerTabletopState {
                 List.copyOf(objectUpdates), List.copyOf(lightUpdates));
     }
 
+    public synchronized CompositeAttachmentPlacementResult applySceneClipboardCut(
+            Set<String> requestedObjectIds, Set<String> requestedLightIds, String playerId
+    ) {
+        if (activeScene == null || playerId == null || requestedObjectIds == null
+                || requestedLightIds == null
+                || requestedObjectIds.isEmpty() && requestedLightIds.isEmpty()
+                || requestedObjectIds.size() > 256 || requestedLightIds.size() > 2_048
+                || requestedObjectIds.stream().anyMatch(id -> id == null || id.isBlank())
+                || requestedLightIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            return null;
+        }
+        Set<String> existingObjects = activeScene.getObjects().stream()
+                .filter(java.util.Objects::nonNull).map(VttSceneObject::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> existingLights = activeScene.getLights().stream()
+                .filter(java.util.Objects::nonNull).map(VttLight::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!existingObjects.containsAll(requestedObjectIds)
+                || !existingLights.containsAll(requestedLightIds)) return null;
+
+        Set<String> objectIds = new java.util.LinkedHashSet<>(requestedObjectIds);
+        boolean changed;
+        do {
+            changed = false;
+            for (VttSceneObject object : activeScene.getObjects()) {
+                if (object == null || objectIds.contains(object.getId())) continue;
+                VttAttachmentBinding binding = object.getAttachmentBinding();
+                if (binding != null && binding.isBound()
+                        && objectIds.contains(binding.getTargetObjectId())) {
+                    changed |= objectIds.add(object.getId());
+                }
+            }
+        } while (changed);
+        Set<String> lightIds = new java.util.LinkedHashSet<>(requestedLightIds);
+        for (VttLight light : activeScene.getLights()) {
+            if (light != null && objectIds.contains(light.getAttachedToObjectId())) {
+                lightIds.add(light.getId());
+            }
+        }
+
+        List<VttTokenLifecycleUpdatePayload> objectUpdates = new ArrayList<>();
+        for (String objectId : objectIds) {
+            activeScene.removeObject(objectId);
+            objectSpatialIndex.remove(objectId);
+            activeScene.removeVisionSourceObjectId(objectId);
+            objectUpdates.add(new VttTokenLifecycleUpdatePayload(
+                    "DELETE", objectId, objectId, "", playerId));
+        }
+        List<VttEnvironmentCommandUpdatePayload> lightUpdates = new ArrayList<>();
+        for (String lightId : lightIds) {
+            activeScene.removeLight(lightId);
+            String key = VttEnvironmentCommandPayload.LIGHT + "\u0000" + lightId;
+            lightUpdates.add(new VttEnvironmentCommandUpdatePayload(
+                    authorityRevision, nextRevision(environmentRevisions, key), 0L,
+                    VttEnvironmentCommandPayload.DELETE, activeScene.getId(),
+                    VttEnvironmentCommandPayload.LIGHT, lightId, "", playerId));
+        }
+        normalizeLayerIndices();
+        markActiveSceneDirty();
+        flushActiveSceneNow("scene clipboard cut");
+        return new CompositeAttachmentPlacementResult(
+                List.copyOf(objectUpdates), List.copyOf(lightUpdates));
+    }
+
     private String createUniqueClipboardLightId(Set<String> reservedIds) {
         while (true) {
             String candidate = "light_" + UUID.randomUUID().toString()

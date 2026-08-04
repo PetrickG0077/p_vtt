@@ -93,8 +93,9 @@ public final class CanvasTokenContextMenuOverlay {
             row(context, font, 4, "Vision  >", true);
             row(context, font, 5, "Owner  >", true);
             row(context, font, 6, "Copy", true);
-            row(context, font, 7, "Duplicate", true);
-            row(context, font, 8, "Delete", true);
+            row(context, font, 7, "Cut", true);
+            row(context, font, 8, "Duplicate", true);
+            row(context, font, 9, "Delete", true);
         } else {
             row(context, font, 0, "States  >", true);
             row(context, font, 1, "Color  >", true);
@@ -165,8 +166,9 @@ public final class CanvasTokenContextMenuOverlay {
                 case 4 -> openSubmenu(Submenu.VISION);
                 case 5 -> openSubmenu(Submenu.OWNER);
                 case 6 -> new Interaction(Action.COPY, null, 0, true);
-                case 7 -> new Interaction(Action.DUPLICATE, null, 0, true);
-                case 8 -> new Interaction(Action.DELETE, null, 0, true);
+                case 7 -> new Interaction(Action.CUT, null, 0, true);
+                case 8 -> new Interaction(Action.DUPLICATE, null, 0, true);
+                case 9 -> new Interaction(Action.DELETE, null, 0, true);
                 default -> Interaction.handled();
             };
         }
@@ -596,7 +598,7 @@ public final class CanvasTokenContextMenuOverlay {
         return colorPicker.mouseReleased();
     }
 
-    private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 9 : 3); }
+    private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 10 : 3); }
 
     private void fillPanel(VRenderContext context, int px, int py, int width, int height) {
         context.graphics().fill(px, py, px + width, py + height, PANEL);
@@ -621,7 +623,7 @@ public final class CanvasTokenContextMenuOverlay {
         SAVE_ALL_STATES_TO_TOKEN, REMOVE_STATE_FROM_TOKEN, RESET_INSTANCE_STATE, SET_COLOR,
         TOGGLE_VISIBLE, TOGGLE_VISION,
         TOGGLE_OWN_LIGHT, SET_VISION_INNER, SET_VISION_OUTER, SET_OWNER,
-        COPY, DUPLICATE, DELETE
+        COPY, CUT, DUPLICATE, DELETE
     }
 
     public record Interaction(Action action, String stringValue, int intValue, boolean consumed) {

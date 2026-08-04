@@ -59,6 +59,8 @@ import com.petrick.vtt.network.server.VttServerCompositeAttachmentPlacementHandl
 import com.petrick.vtt.network.payload.VttSceneClipboardPastePayload;
 import com.petrick.vtt.network.server.VttServerSceneClipboardPasteHandler;
 import com.petrick.vtt.network.payload.VttSceneClipboardPasteResultPayload;
+import com.petrick.vtt.network.payload.VttSceneClipboardCutPayload;
+import com.petrick.vtt.network.server.VttServerSceneClipboardCutHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -146,6 +148,9 @@ public final class VttNetwork {
         registrar.playToClient(VttSceneClipboardPasteResultPayload.TYPE,
                 VttSceneClipboardPasteResultPayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleSceneClipboardPasteResult);
+        registrar.playToServer(VttSceneClipboardCutPayload.TYPE,
+                VttSceneClipboardCutPayload.STREAM_CODEC,
+                VttServerSceneClipboardCutHandler::handle);
         registrar.playToServer(VttSceneCommandPayload.TYPE, VttSceneCommandPayload.STREAM_CODEC,
                 VttServerSceneCommandHandler::handle);
         registrar.playToClient(VttSceneCommandResultPayload.TYPE,

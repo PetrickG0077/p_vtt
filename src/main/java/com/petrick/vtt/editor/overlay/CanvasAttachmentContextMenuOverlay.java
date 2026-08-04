@@ -15,7 +15,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 19;
+    private static final int ROWS = 20;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -83,21 +83,22 @@ public final class CanvasAttachmentContextMenuOverlay {
         row(context, font, 8, "Transform constraints  >", bound);
         row(context, font, 9, "Detach", bound);
         row(context, font, 10, "Copy", true);
-        row(context, font, 11, "Duplicate", true);
-        row(context, font, 12, "Duplicate subtree (" + subtreeObjects + "/"
+        row(context, font, 11, "Cut", true);
+        row(context, font, 12, "Duplicate", true);
+        row(context, font, 13, "Duplicate subtree (" + subtreeObjects + "/"
                 + subtreeLights + ")", true);
-        row(context, font, 13, "Detach children (" + directChildren + ")",
+        row(context, font, 14, "Detach children (" + directChildren + ")",
                 directChildren > 0);
-        row(context, font, 14, "Delete", true);
-        row(context, font, 15, confirmDeleteSubtree
+        row(context, font, 15, "Delete", true);
+        row(context, font, 16, confirmDeleteSubtree
                 ? "Confirm delete subtree" : "Delete subtree (" + subtreeObjects + "/"
                 + subtreeLights + ")", true);
-        row(context, font, 16, "State: " + trim(object.activeStateId(), 14) + "  >",
+        row(context, font, 17, "State: " + trim(object.activeStateId(), 14) + "  >",
                 object.states().size() > 1);
-        row(context, font, 17, binding != null && binding.isStateMappingEnabled()
+        row(context, font, 18, binding != null && binding.isStateMappingEnabled()
                 ? "State mapping: AUTO  >" : "State mapping: Independent  >",
                 binding != null && binding.isBound() && rootToken != null);
-        row(context, font, 18, "Save as Template", true);
+        row(context, font, 19, "Save as Template", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
@@ -201,11 +202,12 @@ public final class CanvasAttachmentContextMenuOverlay {
                 case 9 -> bound ? new Interaction(Action.DETACH, null, true)
                         : Interaction.handled();
                 case 10 -> new Interaction(Action.COPY, null, true);
-                case 11 -> new Interaction(Action.DUPLICATE, null, true);
-                case 12 -> new Interaction(Action.DUPLICATE_SUBTREE, null, true);
-                case 13 -> new Interaction(Action.DETACH_CHILDREN, null, true);
-                case 14 -> new Interaction(Action.DELETE, null, true);
-                case 15 -> {
+                case 11 -> new Interaction(Action.CUT, null, true);
+                case 12 -> new Interaction(Action.DUPLICATE, null, true);
+                case 13 -> new Interaction(Action.DUPLICATE_SUBTREE, null, true);
+                case 14 -> new Interaction(Action.DETACH_CHILDREN, null, true);
+                case 15 -> new Interaction(Action.DELETE, null, true);
+                case 16 -> {
                     if (!confirmDeleteSubtree) {
                         confirmDeleteSubtree = true;
                         targetsOpen = false;
@@ -214,18 +216,18 @@ public final class CanvasAttachmentContextMenuOverlay {
                     }
                     yield new Interaction(Action.DELETE_SUBTREE, null, true);
                 }
-                case 16 -> {
+                case 17 -> {
                     statesOpen = !statesOpen;
                     targetsOpen = anchorsOpen = constraintsOpen = stateMappingOpen = false;
                     yield Interaction.handled();
                 }
-                case 17 -> {
+                case 18 -> {
                     if (!bound || rootToken == null) yield Interaction.handled();
                     stateMappingOpen = !stateMappingOpen;
                     targetsOpen = anchorsOpen = constraintsOpen = statesOpen = false;
                     yield Interaction.handled();
                 }
-                case 18 -> new Interaction(Action.SAVE_AS_TEMPLATE, null, true);
+                case 19 -> new Interaction(Action.SAVE_AS_TEMPLATE, null, true);
                 default -> Interaction.handled();
             };
         }
@@ -459,7 +461,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         SET_STATE,
         TOGGLE_STATE_MAPPING, CYCLE_STATE_MAPPING, CYCLE_STATE_FALLBACK,
         SAVE_AS_TEMPLATE,
-        DETACH, COPY, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
+        DETACH, COPY, CUT, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 
     public record Interaction(Action action, String targetObjectId, boolean consumed) {

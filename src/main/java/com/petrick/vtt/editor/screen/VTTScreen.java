@@ -118,6 +118,7 @@ import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementData;
 import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementPayload;
 import com.petrick.vtt.network.payload.VttSceneClipboardPastePayload;
+import com.petrick.vtt.network.payload.VttSceneClipboardCutPayload;
 import com.google.gson.Gson;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
@@ -3135,6 +3136,10 @@ public final class VTTScreen extends Screen {
                 copyCurrentSelection();
                 return true;
             }
+            if (inputController.consumeLightCutRequest()) {
+                cutCurrentSelection();
+                return true;
+            }
             beginPlacedAttachmentDragCandidate(mouseX, mouseY, button);
             return true;
         }
@@ -3609,6 +3614,14 @@ public final class VTTScreen extends Screen {
             canvasAttachmentContextMenuOverlay.close();
             return;
         }
+        if (interaction.action() == CanvasAttachmentContextMenuOverlay.Action.CUT) {
+            if (!selectionManager.isSelected(attachmentId)) {
+                selectionManager.selectOnly(attachmentId);
+            }
+            cutCurrentSelection();
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
         if (interaction.action() == CanvasAttachmentContextMenuOverlay.Action.DUPLICATE) {
             selectionManager.selectOnly(attachmentId);
             inputController.duplicateSelectedObjects();
@@ -3831,7 +3844,7 @@ public final class VTTScreen extends Screen {
                 }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
-                case COPY, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
+                case COPY, CUT, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
                         SAVE_AS_TEMPLATE -> {
                 }
                 case NONE -> {
@@ -4205,8 +4218,8 @@ public final class VTTScreen extends Screen {
         return copy;
     }
 
-    private void copyCurrentSelection() {
-        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+    private boolean copyCurrentSelection() {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return false;
         session.saveCanvasSceneToActiveScene();
         String selectedLightId = inputController.getSelectedLightId();
         VttLight selectedLight = selectedLightId == null ? null
@@ -4219,7 +4232,7 @@ public final class VTTScreen extends Screen {
             sceneClipboard = new SceneClipboard(List.of(), List.of(copy),
                     new Vec2d(copy.getX(), copy.getY()));
             VttClientEditorNotice.show("Light copied");
-            return;
+            return true;
         }
         Set<String> selected = new LinkedHashSet<>(selectionManager.getSelectedObjectIds());
         selected.removeIf(id -> AttachmentBindingService.find(session.getActiveScene(), id) == null);
@@ -4247,8 +4260,54 @@ public final class VTTScreen extends Screen {
             sceneClipboard = new SceneClipboard(objects, lights, clipboardCenter(objects, lights));
             VttClientEditorNotice.show("Copied " + objects.size() + " object(s) and "
                     + lights.size() + " light(s)");
+            return true;
+        }
+        return false;
+    }
+
+    private void cutCurrentSelection() {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        if (pendingClipboardPasteRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current clipboard operation");
             return;
         }
+        if (!copyCurrentSelection()) return;
+        Set<String> objectIds = sceneClipboard.objects().stream()
+                .map(VttSceneObject::getId).collect(java.util.stream.Collectors.toCollection(
+                        LinkedHashSet::new));
+        Set<String> lightIds = sceneClipboard.lights().stream()
+                .map(VttLight::getId).collect(java.util.stream.Collectors.toCollection(
+                        LinkedHashSet::new));
+        if (session.isNetworkAuthorityActive()) {
+            String objectsJson = NETWORK_GSON.toJson(objectIds);
+            String lightsJson = NETWORK_GSON.toJson(lightIds);
+            if (objectsJson.length() > VttSceneClipboardCutPayload.MAX_IDS_JSON_LENGTH
+                    || lightsJson.length() > VttSceneClipboardCutPayload.MAX_IDS_JSON_LENGTH) {
+                VttClientEditorNotice.show("Clipboard selection is too large to cut");
+                return;
+            }
+            pendingClipboardPasteRequestId = UUID.randomUUID().toString();
+            pendingClipboardPasteRequestUntil = System.currentTimeMillis() + 30_000L;
+            inputController.beginTokenLifecycleChange();
+            PacketDistributor.sendToServer(new VttSceneClipboardCutPayload(
+                    pendingClipboardPasteRequestId, session.getNetworkAuthorityRevision(),
+                    session.getActiveScene().getId(), objectsJson, lightsJson));
+            VttClientEditorNotice.show("Cut sent to server");
+            return;
+        }
+        inputController.beginTokenLifecycleChange();
+        try {
+            selectionManager.clearSelection();
+            scene.removeObjects(objectIds);
+            objectIds.forEach(session.getActiveScene()::removeObject);
+            lightIds.forEach(session.getActiveScene()::removeLight);
+            AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+            AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene, null);
+        } finally {
+            inputController.endTokenLifecycleChange();
+        }
+        VttClientEditorNotice.show("Cut " + objectIds.size() + " object(s) and "
+                + lightIds.size() + " light(s)");
     }
 
     private void pasteClipboard(Vec2d target) {
@@ -4491,6 +4550,13 @@ public final class VTTScreen extends Screen {
                     selectionManager.selectOnly(token.id());
                 }
                 copyCurrentSelection();
+                canvasTokenContextMenuOverlay.close();
+            }
+            case CUT -> {
+                if (!selectionManager.isSelected(token.id())) {
+                    selectionManager.selectOnly(token.id());
+                }
+                cutCurrentSelection();
                 canvasTokenContextMenuOverlay.close();
             }
             case DUPLICATE -> {
@@ -5621,6 +5687,11 @@ public final class VTTScreen extends Screen {
 
         if (controlDown && keyCode == GLFW.GLFW_KEY_C) {
             if (session.isLocalMaster()) copyCurrentSelection();
+            return true;
+        }
+
+        if (controlDown && keyCode == GLFW.GLFW_KEY_X) {
+            if (session.isLocalMaster()) cutCurrentSelection();
             return true;
         }
 

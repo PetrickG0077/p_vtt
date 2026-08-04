@@ -143,6 +143,10 @@ public final class ToolController {
         return lightTool.consumeCopyRequest();
     }
 
+    public boolean consumeLightCutRequest() {
+        return lightTool.consumeCutRequest();
+    }
+
     public void selectMeasureTool() {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();
