@@ -2,10 +2,8 @@ package com.petrick.vtt.feature.media;
 
 import com.petrick.vtt.VTT;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.PointerBuffer;
 import org.lwjgl.stb.STBVorbis;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -161,22 +159,32 @@ public final class VttAudioPlayerService implements AutoCloseable {
 
     private DecodedAudio decodeOgg(Path file) throws Exception {
         byte[] bytes = Files.readAllBytes(file);
-        ByteBuffer encoded = BufferUtils.createByteBuffer(bytes.length).put(bytes).flip();
+        if (bytes.length == 0) {
+            throw new IllegalArgumentException("OGG/Vorbis file is empty");
+        }
+        ByteBuffer encoded = BufferUtils.createByteBuffer(bytes.length);
+        encoded.put(bytes).flip();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer channels = stack.mallocInt(1);
             IntBuffer rate = stack.mallocInt(1);
-            PointerBuffer output = stack.mallocPointer(1);
-            int samplesPerChannel = STBVorbis.stb_vorbis_decode_memory(
-                    encoded, channels, rate, output);
-            if (samplesPerChannel <= 0 || output.get(0) == MemoryUtil.NULL) {
+            ShortBuffer samples = STBVorbis.stb_vorbis_decode_memory(encoded, channels, rate);
+            if (samples == null) {
                 throw new IllegalArgumentException("OGG/Vorbis decoding failed");
             }
-            int sampleCount = samplesPerChannel * channels.get(0);
-            ShortBuffer samples = MemoryUtil.memShortBuffer(output.get(0), sampleCount);
-            byte[] pcm = new byte[sampleCount * 2];
-            ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(samples);
-            free(samples);
-            return decoded(pcm, rate.get(0), channels.get(0));
+            try {
+                int channelCount = channels.get(0);
+                int sampleRate = rate.get(0);
+                if (channelCount < 1 || channelCount > 2 || sampleRate <= 0) {
+                    throw new IllegalArgumentException("Unsupported OGG/Vorbis format: "
+                            + channelCount + " channels at " + sampleRate + " Hz");
+                }
+                byte[] pcm = new byte[Math.multiplyExact(samples.remaining(), Short.BYTES)];
+                ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+                        .asShortBuffer().put(samples.duplicate());
+                return decoded(pcm, sampleRate, channelCount);
+            } finally {
+                free(samples);
+            }
         }
     }
 
