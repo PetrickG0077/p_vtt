@@ -19,6 +19,7 @@ import com.petrick.vtt.network.client.VttClientAssetCache;
 import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
 import com.petrick.vtt.network.client.VttClientMusicSync;
+import com.petrick.vtt.network.client.VttClientShowState;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -63,6 +64,7 @@ public final class ClientGameEvents {
         VttClientPresentationState.reset();
         VttClientSceneHistorySync.reset();
         VttClientMusicSync.reset();
+        VttClientShowState.reset();
         var session = VTT.getApplication().getActiveSession();
         if (!session.isNetworkAuthorityActive()) return;
         VttClientTokenTransformSync.reset();

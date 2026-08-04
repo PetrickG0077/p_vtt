@@ -7,6 +7,7 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.network.client.VttClientMusicSync;
+import com.petrick.vtt.network.client.VttClientShowState;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -55,13 +56,18 @@ public final class MediaLibraryOverlay {
                     rowY + 21, ROW);
             context.graphics().drawString(font, entry.relativePath(), bounds.x + 15,
                     rowY + 7, TEXT, false);
-            boolean active = entry.absolutePath().equals(audio.track());
+            boolean active = tab == Tab.MUSICS
+                    ? entry.absolutePath().equals(audio.track())
+                    : entry.relativePath().equals(VttClientShowState.relativePath())
+                    && VttClientShowState.isActive();
             int buttonX = bounds.right() - 78;
             context.graphics().fill(buttonX, rowY + 2, bounds.right() - 12,
                     rowY + 19, active ? EditorHudTheme.selection() : 0xE038383F);
             border(context, buttonX, rowY + 2, 66, 17, EditorHudTheme.outline());
-            context.graphics().drawCenteredString(font, active && audio.isPlaying()
-                            ? audio.isPaused() ? "Resume" : "Pause" : "Play",
+            String action = tab == Tab.SHOWS ? active ? "Showing" : "Show"
+                    : active && audio.isPlaying()
+                    ? audio.isPaused() ? "Resume" : "Pause" : "Play";
+            context.graphics().drawCenteredString(font, action,
                     buttonX + 33, rowY + 6, TEXT);
             rowY += 23;
         }
@@ -69,6 +75,8 @@ public final class MediaLibraryOverlay {
                 bounds.right() - 8, bounds.bottom() - 8, HEADER);
         context.graphics().drawString(font,
                 tab == Tab.MUSICS ? playerText(audio)
+                        : VttClientShowState.isActive()
+                        ? "Presentation active: " + VttClientShowState.relativePath()
                         : "Presentation: inactive",
                 bounds.x + 17, bounds.bottom() - 31, TEXT, false);
         if (tab == Tab.MUSICS) {
@@ -154,6 +162,15 @@ public final class MediaLibraryOverlay {
                     VttClientMusicSync.toggleLoop(session);
                 }
             }
+        } else {
+            List<AssetLibraryEntry> entries = entries(scan);
+            int row = (int) Math.floor((mouseY - bounds.y - 45) / 23.0);
+            if (row >= 0 && row < Math.min(entries.size(), 10)
+                    && inside(mouseX, mouseY, bounds.right() - 78,
+                    bounds.y + 47 + row * 23, 66, 17)) {
+                AssetLibraryEntry entry = entries.get(row);
+                VttClientShowState.show(session, entry.relativePath());
+            }
         }
         return true;
     }
@@ -207,8 +224,7 @@ public final class MediaLibraryOverlay {
             if (tab == Tab.MUSICS) return path.startsWith("musics/")
                     && entry.fileType() == AssetLibraryFileType.AUDIO;
             return path.startsWith("shows/") && (entry.fileType() == AssetLibraryFileType.IMAGE
-                    || entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE
-                    || entry.fileType() == AssetLibraryFileType.VIDEO);
+                    || entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE);
         }).sorted(Comparator.comparing(AssetLibraryEntry::relativePath)).toList();
     }
 
