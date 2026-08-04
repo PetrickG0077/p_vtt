@@ -15,7 +15,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 15;
+    private static final int ROWS = 16;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -26,6 +26,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private boolean targetsOpen;
     private boolean anchorsOpen;
     private boolean constraintsOpen;
+    private boolean statesOpen;
     private boolean confirmDeleteSubtree;
 
     public void open(String objectId, int mouseX, int mouseY,
@@ -37,6 +38,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         this.targetsOpen = false;
         this.anchorsOpen = false;
         this.constraintsOpen = false;
+        this.statesOpen = false;
         this.confirmDeleteSubtree = false;
     }
 
@@ -45,13 +47,15 @@ public final class CanvasAttachmentContextMenuOverlay {
         targetsOpen = false;
         anchorsOpen = false;
         constraintsOpen = false;
+        statesOpen = false;
         confirmDeleteSubtree = false;
     }
 
     public boolean isOpen() { return objectId != null; }
     public String objectId() { return objectId; }
 
-    public void render(VRenderContext context, Font font, VttAttachmentBinding binding,
+    public void render(VRenderContext context, Font font, CanvasObject object,
+                       VttAttachmentBinding binding,
                        List<CanvasObject> targets, int subtreeObjects, int subtreeLights,
                        int directChildren) {
         if (!isOpen()) return;
@@ -83,18 +87,31 @@ public final class CanvasAttachmentContextMenuOverlay {
         row(context, font, 14, confirmDeleteSubtree
                 ? "Confirm delete subtree" : "Delete subtree (" + subtreeObjects + "/"
                 + subtreeLights + ")", true);
+        row(context, font, 15, "State: " + trim(object.activeStateId(), 14) + "  >",
+                object.states().size() > 1);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
         if (constraintsOpen) renderConstraints(context, font, binding);
+        if (statesOpen) renderStates(context, font, object);
     }
 
     public Interaction mouseClicked(double mouseX, double mouseY, int button,
-                                    VttAttachmentBinding binding,
+                                    CanvasObject object, VttAttachmentBinding binding,
                                     List<CanvasObject> targets, int screenWidth) {
         if (!isOpen()) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
         int targetX = targetX(screenWidth);
+        if (statesOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
+                stateHeight(object))) {
+            int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+            if (object != null && index >= 0 && index < object.states().size()) {
+                String stateId = object.states().keySet().stream().skip(index)
+                        .findFirst().orElse(null);
+                return new Interaction(Action.SET_STATE, stateId, true);
+            }
+            return Interaction.handled();
+        }
         if (constraintsOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
                 constraintsHeight())) {
             return clickConstraints(mouseX, mouseY, targetX, binding);
@@ -123,6 +140,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     targetsOpen = !targetsOpen;
                     anchorsOpen = false;
                     constraintsOpen = false;
+                    statesOpen = false;
                     yield Interaction.handled();
                 }
                 case 1 -> bound ? new Interaction(Action.TOGGLE_POSITION, null, true)
@@ -142,6 +160,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     anchorsOpen = !anchorsOpen;
                     targetsOpen = false;
                     constraintsOpen = false;
+                    statesOpen = false;
                     yield Interaction.handled();
                 }
                 case 8 -> {
@@ -149,6 +168,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     constraintsOpen = !constraintsOpen;
                     targetsOpen = false;
                     anchorsOpen = false;
+                    statesOpen = false;
                     yield Interaction.handled();
                 }
                 case 9 -> bound ? new Interaction(Action.DETACH, null, true)
@@ -165,6 +185,11 @@ public final class CanvasAttachmentContextMenuOverlay {
                         yield Interaction.handled();
                     }
                     yield new Interaction(Action.DELETE_SUBTREE, null, true);
+                }
+                case 15 -> {
+                    statesOpen = !statesOpen;
+                    targetsOpen = anchorsOpen = constraintsOpen = false;
+                    yield Interaction.handled();
                 }
                 default -> Interaction.handled();
             };
@@ -293,6 +318,23 @@ public final class CanvasAttachmentContextMenuOverlay {
 
     private int constraintsHeight() { return 10 + 10 * ROW_HEIGHT; }
 
+    private void renderStates(VRenderContext context, Font font, CanvasObject object) {
+        int left = targetX(context.screenWidth());
+        panel(context, left, y, TARGET_WIDTH,
+                Math.max(24, 10 + object.states().size() * ROW_HEIGHT));
+        int index = 0;
+        for (var state : object.states().values()) {
+            context.graphics().drawString(font, state.displayName(), left + 7,
+                    y + 7 + index++ * ROW_HEIGHT,
+                    state.id().equals(object.activeStateId())
+                            ? EditorHudTheme.selection() : TEXT, false);
+        }
+    }
+
+    private int stateHeight(CanvasObject object) {
+        return Math.max(24, 10 + (object == null ? 1 : object.states().size()) * ROW_HEIGHT);
+    }
+
     private int anchorHeight() {
         return 10 + VttAttachmentAnchor.values().length * ROW_HEIGHT;
     }
@@ -350,6 +392,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         TOGGLE_LOCK_OFFSET_X, TOGGLE_LOCK_OFFSET_Y,
         ADJUST_OFFSET_X, ADJUST_OFFSET_Y, ADJUST_ROTATION_OFFSET,
         ADJUST_MIN_SCALE, ADJUST_MAX_SCALE, RESET_OFFSET,
+        SET_STATE,
         DETACH, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 

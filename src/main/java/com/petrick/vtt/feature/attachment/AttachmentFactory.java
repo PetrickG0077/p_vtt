@@ -14,6 +14,7 @@ import com.petrick.vtt.feature.canvas.visual.CanvasVisual;
 import com.petrick.vtt.feature.canvas.visual.ColorVisual;
 import com.petrick.vtt.feature.canvas.visual.TextureVisual;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Creates placed canvas instances from attachment definitions. */
@@ -27,24 +28,26 @@ public final class AttachmentFactory {
             AssetRegistry assets,
             AssetThumbnailRegistry thumbnails
     ) {
-        CanvasVisual visual = resolveVisual(definition, assets, thumbnails);
-        Map<String, CanvasObjectState> states = Map.of(
-                CanvasObject.DEFAULT_STATE_ID,
-                new CanvasObjectState(CanvasObject.DEFAULT_STATE_ID, "Default", visual));
+        Map<String, CanvasObjectState> states = new LinkedHashMap<>();
+        definition.states().values().forEach(state -> states.put(state.id(),
+                new CanvasObjectState(state.id(), state.displayName(),
+                        resolveVisual(state.assetId(), assets, thumbnails))));
         return new CanvasObject(
                 objectId, definition.displayName(), null,
                 new Transform2D(position, 0.0, new Vec2d(1.0, 1.0)),
                 new Vec2d(definition.defaultWidth(), definition.defaultHeight()),
-                states, CanvasObject.DEFAULT_STATE_ID, true, false, definition.id());
+                states, definition.defaultStateId(),
+                definition.states().get(definition.defaultStateId()).visible(),
+                false, definition.id());
     }
 
     private static CanvasVisual resolveVisual(
-            AttachmentDefinition definition,
+            String assetId,
             AssetRegistry assets,
             AssetThumbnailRegistry thumbnails
     ) {
-        if (!definition.hasImage()) return new ColorVisual(0x00000000);
-        AssetRef asset = resolveAsset(definition.assetId(), assets, thumbnails);
+        if (assetId == null) return new ColorVisual(0x00000000);
+        AssetRef asset = resolveAsset(assetId, assets, thumbnails);
         return asset == null ? new ColorVisual(0x00000000) : new TextureVisual(asset);
     }
 

@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.feature.attachment.AttachmentDefinition;
 import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
+import com.petrick.vtt.feature.attachment.AttachmentStateDefinition;
 import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /** Persistence for definitions under config/vtt_assets/created/attachments. */
@@ -38,6 +40,15 @@ public final class CreatedAttachmentStorage {
                 normalized, assetId, width, height);
     }
 
+    public static AttachmentDefinition createDefinition(
+            String name, String assetId, double width, double height,
+            Map<String, AttachmentStateDefinition> states, String defaultStateId
+    ) {
+        AttachmentDefinition base = createDefinition(name, assetId, width, height);
+        return new AttachmentDefinition(base.id(), base.displayName(), assetId,
+                width, height, states, defaultStateId);
+    }
+
     public static AttachmentDefinition updateDefinition(
             AttachmentDefinition existing, String name, String assetId,
             double width, double height
@@ -46,7 +57,20 @@ public final class CreatedAttachmentStorage {
             throw new IllegalArgumentException("Only user attachments can be edited");
         }
         return new AttachmentDefinition(
-                existing.id(), normalizeName(name), assetId, width, height);
+                existing.id(), normalizeName(name), assetId, width, height,
+                existing.states(), existing.defaultStateId());
+    }
+
+    public static AttachmentDefinition updateDefinition(
+            AttachmentDefinition existing, String name, String assetId,
+            double width, double height, Map<String, AttachmentStateDefinition> states,
+            String defaultStateId
+    ) {
+        if (!isUserCreatedAttachment(existing)) {
+            throw new IllegalArgumentException("Only user attachments can be edited");
+        }
+        return new AttachmentDefinition(existing.id(), normalizeName(name), assetId,
+                width, height, states, defaultStateId);
     }
 
     public static boolean save(AttachmentDefinition definition) {
@@ -63,7 +87,8 @@ public final class CreatedAttachmentStorage {
             var data = new CreatedAttachmentSaveData(
                     CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION,
                     definition.id(), definition.displayName(), definition.assetId(),
-                    definition.defaultWidth(), definition.defaultHeight());
+                    definition.defaultWidth(), definition.defaultHeight(),
+                    definition.states(), definition.defaultStateId());
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 GSON.toJson(data, writer);
             }
@@ -86,6 +111,9 @@ public final class CreatedAttachmentStorage {
         AttachmentDefinition copy = createDefinition(
                 source.displayName() + " Copy", source.assetId(),
                 source.defaultWidth(), source.defaultHeight());
+        copy = new AttachmentDefinition(copy.id(), copy.displayName(), source.assetId(),
+                source.defaultWidth(), source.defaultHeight(), source.states(),
+                source.defaultStateId());
         Path sourceFile = findFile(source);
         Path folder = sourceFile == null ? getAttachmentsFolder() : sourceFile.getParent();
         if (!save(copy, folder)) throw new IllegalStateException("Could not duplicate attachment");
@@ -138,7 +166,8 @@ public final class CreatedAttachmentStorage {
             }
             registry.register(new AttachmentDefinition(
                     data.attachmentDefinitionId(), data.displayName(), data.assetId(),
-                    data.defaultWidth(), data.defaultHeight()),
+                    data.defaultWidth(), data.defaultHeight(), data.states(),
+                    data.defaultStateId()),
                     relativeFolder(root, file.getParent()));
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Failed to load VTT attachment: {}", file, exception);
@@ -146,7 +175,8 @@ public final class CreatedAttachmentStorage {
     }
 
     private static boolean valid(CreatedAttachmentSaveData data) {
-        return data != null && data.schemaVersion() == CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION
+        return data != null && (data.schemaVersion() == 1
+                || data.schemaVersion() == CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION)
                 && data.attachmentDefinitionId() != null
                 && data.attachmentDefinitionId().startsWith(ID_PREFIX)
                 && data.displayName() != null && !data.displayName().isBlank()

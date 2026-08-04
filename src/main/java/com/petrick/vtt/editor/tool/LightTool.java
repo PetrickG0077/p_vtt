@@ -549,6 +549,7 @@ public final class LightTool implements Tool {
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         copy.setAttachedToObjectId(source.getAttachedToObjectId());
+        copy.setAttachmentStateId(source.getAttachmentStateId());
         copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
         copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
         copy.setAttachmentDirectionOffsetDegrees(

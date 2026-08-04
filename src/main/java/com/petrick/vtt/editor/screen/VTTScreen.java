@@ -3320,8 +3320,14 @@ public final class VTTScreen extends Screen {
             canvasAttachmentContextMenuOverlay.close();
             return;
         }
+        CanvasObject canvasAttachment = scene.findObjectById(sceneObject.getId());
+        if (canvasAttachment == null) {
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
         AttachmentSubtree subtree = attachmentSubtree(sceneObject.getId());
         canvasAttachmentContextMenuOverlay.render(context, this.font,
+                canvasAttachment,
                 sceneObject.getAttachmentBinding(), attachmentTargets(),
                 subtree.objectIds().size(), subtree.lightIds().size(),
                 attachmentDirectChildren(sceneObject.getId()).size());
@@ -3448,6 +3454,7 @@ public final class VTTScreen extends Screen {
         var sceneObject = canvasAttachmentContextSceneObject();
         var interaction = canvasAttachmentContextMenuOverlay.mouseClicked(
                 mouseX, mouseY, button,
+                sceneObject == null ? null : scene.findObjectById(sceneObject.getId()),
                 sceneObject == null ? null : sceneObject.getAttachmentBinding(),
                 attachmentTargets(), this.width);
         if (interaction.action() != CanvasAttachmentContextMenuOverlay.Action.NONE) {
@@ -3651,6 +3658,25 @@ public final class VTTScreen extends Screen {
                         binding.setRotationOffsetDegrees(0.0);
                     }
                 }
+                case SET_STATE -> {
+                    String stateId = interaction.targetObjectId();
+                    CanvasObject canvasAttachment = scene.findObjectById(attachmentId);
+                    if (canvasAttachment != null && stateId != null
+                            && canvasAttachment.states().containsKey(stateId)) {
+                        scene.replaceObject(canvasAttachment.withActiveState(stateId));
+                        attachment.getState().setActiveStateId(stateId);
+                        attachmentDefinitionRegistry.findById(
+                                attachment.getSourceAttachmentDefinitionId())
+                                .map(definition -> definition.states().get(stateId))
+                                .ifPresent(state -> {
+                                    CanvasObject current = scene.findObjectById(attachmentId);
+                                    if (current != null) scene.replaceObject(
+                                            current.withVisible(state.visible()));
+                                    attachment.getState().setVisible(state.visible());
+                                    attachment.getState().setTintColorRgb(state.tintColorRgb());
+                                });
+                    }
+                }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE -> {
@@ -3822,6 +3848,7 @@ public final class VTTScreen extends Screen {
                 duplicate.setY(source.getY() + 32.0);
                 duplicate.setAttachedToObjectId(remappedIds.get(
                         source.getAttachedToObjectId()));
+                duplicate.setAttachmentStateId(source.getAttachmentStateId());
                 session.getActiveScene().addLight(duplicate);
             }
             AttachmentBindingService.synchronize(
@@ -3875,6 +3902,7 @@ public final class VTTScreen extends Screen {
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         copy.setAttachedToObjectId(source.getAttachedToObjectId());
+        copy.setAttachmentStateId(source.getAttachmentStateId());
         copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
         copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
         copy.setAttachmentDirectionOffsetDegrees(
@@ -6240,6 +6268,7 @@ public final class VTTScreen extends Screen {
         copy.setTintEnabled(source.isTintEnabled());
         copy.setEnabled(source.isEnabled());
         copy.setAttachedToObjectId(attachmentId);
+        copy.setAttachmentStateId(source.getAttachmentStateId());
         copy.setAttachmentOffsetX(source.getAttachmentOffsetX());
         copy.setAttachmentOffsetY(source.getAttachmentOffsetY());
         copy.setAttachmentDirectionOffsetDegrees(
@@ -6433,12 +6462,16 @@ public final class VTTScreen extends Screen {
                     ? CreatedAttachmentStorage.createDefinition(
                     attachmentDefinitionDialog.name(), attachmentDefinitionDialog.assetId(),
                     attachmentDefinitionDialog.parsedWidth(),
-                    attachmentDefinitionDialog.parsedHeight())
+                    attachmentDefinitionDialog.parsedHeight(),
+                    attachmentDefinitionDialog.states(),
+                    attachmentDefinitionDialog.defaultStateId())
                     : CreatedAttachmentStorage.updateDefinition(
                     existing, attachmentDefinitionDialog.name(),
                     attachmentDefinitionDialog.assetId(),
                     attachmentDefinitionDialog.parsedWidth(),
-                    attachmentDefinitionDialog.parsedHeight());
+                    attachmentDefinitionDialog.parsedHeight(),
+                    attachmentDefinitionDialog.states(),
+                    attachmentDefinitionDialog.defaultStateId());
             String folder = existing == null
                     ? assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS)
                     : attachmentDefinitionRegistry.folderOf(existing.id());
@@ -6488,9 +6521,11 @@ public final class VTTScreen extends Screen {
             CanvasObject fresh = AttachmentFactory.createCanvasObject(
                     definition, object.id(), object.transform().position(), assetRegistry,
                     session.getAssetThumbnailRegistry());
+            String activeStateId = fresh.states().containsKey(object.activeStateId())
+                    ? object.activeStateId() : definition.defaultStateId();
             scene.replaceObject(new CanvasObject(
                     object.id(), object.displayName(), null, object.transform(), object.size(),
-                    fresh.states(), fresh.activeStateId(), object.visible(),
+                    fresh.states(), activeStateId, object.visible(),
                     object.flippedHorizontally(), definition.id()));
         }
         session.saveCanvasSceneToActiveScene();
@@ -6747,6 +6782,15 @@ public final class VTTScreen extends Screen {
         selectionManager.selectOnly(objectId);
         inputController.endEditorAction();
         session.saveCanvasSceneToActiveScene();
+        VttSceneObject placedMetadata = AttachmentBindingService.find(
+                session.getActiveScene(), objectId);
+        var defaultAttachmentState = definition.states().get(definition.defaultStateId());
+        if (placedMetadata != null && defaultAttachmentState != null) {
+            placedMetadata.getState().setActiveStateId(definition.defaultStateId());
+            placedMetadata.getState().setVisible(defaultAttachmentState.visible());
+            placedMetadata.getState().setTintColorRgb(defaultAttachmentState.tintColorRgb());
+            session.saveCanvasSceneToActiveScene();
+        }
         inputController.selectSelectTool();
         VttClientEditorNotice.show("Attachment placed: " + definition.displayName());
     }

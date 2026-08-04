@@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 public record VttAttachmentDefinitionUpsertPayload(
         String requestId, long authorityRevision, String attachmentJson, String folder)
         implements CustomPacketPayload {
-    public static final int MAX_JSON_LENGTH = 4_096;
+    public static final int MAX_JSON_LENGTH = 65_536;
     public static final Type<VttAttachmentDefinitionUpsertPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "attachment_definition_upsert"));
     public static final StreamCodec<ByteBuf, VttAttachmentDefinitionUpsertPayload> STREAM_CODEC =

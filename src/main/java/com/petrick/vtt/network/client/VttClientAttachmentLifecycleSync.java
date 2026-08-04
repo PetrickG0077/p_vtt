@@ -34,7 +34,11 @@ public final class VttClientAttachmentLifecycleSync {
         object.setTransform(new VttSceneTransform(
                 worldPosition.x(), worldPosition.y(), 1.0, 1.0, 0.0));
         object.setSize(new VttSceneSize(definition.defaultWidth(), definition.defaultHeight()));
-        object.setState(new VttSceneState("default", true, false));
+        var defaultState = definition.states().get(definition.defaultStateId());
+        VttSceneState state = new VttSceneState(definition.defaultStateId(),
+                defaultState == null || defaultState.visible(), false);
+        if (defaultState != null) state.setTintColorRgb(defaultState.tintColorRgb());
+        object.setState(state);
         object.setLayerIndex(session.getActiveScene() == null
                 ? 0 : session.getActiveScene().getObjects().size());
         PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(

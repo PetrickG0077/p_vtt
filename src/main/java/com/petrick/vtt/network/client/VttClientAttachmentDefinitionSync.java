@@ -22,7 +22,8 @@ public final class VttClientAttachmentDefinitionSync {
         CreatedAttachmentSaveData data = new CreatedAttachmentSaveData(
                 CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION, definition.id(),
                 definition.displayName(), definition.assetId(),
-                definition.defaultWidth(), definition.defaultHeight());
+                definition.defaultWidth(), definition.defaultHeight(),
+                definition.states(), definition.defaultStateId());
         String json = GSON.toJson(data);
         if (json.length() > VttAttachmentDefinitionUpsertPayload.MAX_JSON_LENGTH) {
             VTT.LOGGER.warn("Could not send VTT attachment definition: JSON is too large");

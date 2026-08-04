@@ -32,6 +32,8 @@ public final class VttLight {
     private boolean enabled = true;
     /** Optional placed attachment that owns this light's local transform. */
     private String attachedToObjectId;
+    /** Optional attachment state that enables this light; null keeps legacy lights global. */
+    private String attachmentStateId;
     private double attachmentOffsetX;
     private double attachmentOffsetY;
     private double attachmentDirectionOffsetDegrees;
@@ -112,6 +114,10 @@ public final class VttLight {
         if (Double.isFinite(value)) attachmentDirectionOffsetDegrees = value;
     }
     public boolean isAttached() { return attachedToObjectId != null; }
+    public String getAttachmentStateId() { return attachmentStateId; }
+    public void setAttachmentStateId(String value) {
+        attachmentStateId = value == null || value.isBlank() ? null : value.trim();
+    }
 
     public void normalize() {
         id = normalizeId(id);
@@ -128,6 +134,7 @@ public final class VttLight {
         }
         setInnerConeAngleDegrees(innerConeAngleDegrees);
         setAttachedToObjectId(attachedToObjectId);
+        setAttachmentStateId(attachmentStateId);
     }
 
     private String normalizeId(String value) {

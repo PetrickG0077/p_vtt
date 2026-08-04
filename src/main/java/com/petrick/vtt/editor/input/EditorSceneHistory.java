@@ -613,6 +613,7 @@ public final class EditorSceneHistory {
             double directionDegrees, double outerConeAngleDegrees,
             double innerConeAngleDegrees,
             String attachedToObjectId,
+            String attachmentStateId,
             double attachmentOffsetX,
             double attachmentOffsetY,
             double attachmentDirectionOffsetDegrees
@@ -623,6 +624,7 @@ public final class EditorSceneHistory {
                     light.getIntensity(), light.isTintEnabled(), light.isEnabled(),
                     light.getDirectionDegrees(), light.getConeAngleDegrees(),
                     light.getInnerConeAngleDegrees(), light.getAttachedToObjectId(),
+                    light.getAttachmentStateId(),
                     light.getAttachmentOffsetX(), light.getAttachmentOffsetY(),
                     light.getAttachmentDirectionOffsetDegrees());
         }
@@ -640,6 +642,7 @@ public final class EditorSceneHistory {
             light.setConeAngleDegrees(outerConeAngleDegrees);
             light.setInnerConeAngleDegrees(innerConeAngleDegrees);
             light.setAttachedToObjectId(attachedToObjectId);
+            light.setAttachmentStateId(attachmentStateId);
             light.setAttachmentOffsetX(attachmentOffsetX);
             light.setAttachmentOffsetY(attachmentOffsetY);
             light.setAttachmentDirectionOffsetDegrees(attachmentDirectionOffsetDegrees);

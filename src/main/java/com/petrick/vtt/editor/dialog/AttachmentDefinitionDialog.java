@@ -2,10 +2,13 @@ package com.petrick.vtt.editor.dialog;
 
 import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.attachment.AttachmentDefinition;
+import com.petrick.vtt.feature.attachment.AttachmentStateDefinition;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Small create/edit dialog for image-optional attachment definitions. */
 public final class AttachmentDefinitionDialog {
@@ -20,6 +23,12 @@ public final class AttachmentDefinitionDialog {
     private int previewHeight;
     private Field focused = Field.NAME;
     private boolean open;
+    private final LinkedHashMap<String, AttachmentStateDefinition> states = new LinkedHashMap<>();
+    private String selectedStateId = "default";
+    private String defaultStateId = "default";
+    private String stateName = "Default";
+    private String stateColor = "#FFFFFF";
+    private boolean stateVisible = true;
 
     public void openNew() {
         editingId = null;
@@ -27,6 +36,13 @@ public final class AttachmentDefinitionDialog {
         width = "32";
         height = "32";
         clearImage();
+        states.clear();
+        states.put("default", new AttachmentStateDefinition(
+                "default", "Default", null, true, 0xFFFFFF));
+        selectedStateId = defaultStateId = "default";
+        stateName = "Default";
+        stateColor = "#FFFFFF";
+        stateVisible = true;
         focused = Field.NAME;
         open = true;
     }
@@ -42,6 +58,12 @@ public final class AttachmentDefinitionDialog {
         preview = texture;
         previewWidth = textureWidth;
         previewHeight = textureHeight;
+        states.clear();
+        states.putAll(definition.states());
+        selectedStateId = defaultStateId = definition.defaultStateId();
+        stateName = states.get(selectedStateId).displayName();
+        stateColor = formatColor(states.get(selectedStateId).tintColorRgb());
+        stateVisible = states.get(selectedStateId).visible();
         focused = Field.NAME;
         open = true;
     }
@@ -68,6 +90,11 @@ public final class AttachmentDefinitionDialog {
     public String editingId() { return editingId; }
     public String name() { return name.trim(); }
     public String assetId() { return assetId; }
+    public Map<String, AttachmentStateDefinition> states() {
+        saveCurrentState();
+        return new LinkedHashMap<>(states);
+    }
+    public String defaultStateId() { return defaultStateId; }
 
     public double parsedWidth() { return parseSize(width); }
     public double parsedHeight() { return parseSize(height); }
@@ -79,8 +106,8 @@ public final class AttachmentDefinitionDialog {
     }
 
     public void render(VRenderContext context, Font font, String targetFolder) {
-        int dialogWidth = 390;
-        int dialogHeight = 210;
+        int dialogWidth = 430;
+        int dialogHeight = 330;
         int x = (context.screenWidth() - dialogWidth) / 2;
         int y = (context.screenHeight() - dialogHeight) / 2;
         context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(), 0x99000000);
@@ -129,16 +156,43 @@ public final class AttachmentDefinitionDialog {
         context.graphics().drawString(font,
                 "Without an image it uses a master-only blue marker.",
                 x + 116, y + 124, 0xFF88888E, false);
-        button(context, font, x + 116, y + 169, 105, 24,
+        context.graphics().drawString(font, "States", x + 116, y + 143,
+                0xFFFFFFFF, false);
+        button(context, font, x + 382, y + 136, 30, 20, "+", true);
+        int stateIndex = 0;
+        for (AttachmentStateDefinition state : states.values()) {
+            if (stateIndex >= 4) break;
+            int rowY = y + 162 + stateIndex * 18;
+            boolean selected = state.id().equals(selectedStateId);
+            context.graphics().fill(x + 116, rowY, x + 412, rowY + 16,
+                    selected ? EditorHudTheme.selection() : 0xCC17171D);
+            context.graphics().drawString(font,
+                    (state.id().equals(defaultStateId) ? "* " : "  ")
+                            + trim(state.displayName(), 29),
+                    x + 121, rowY + 4, 0xFFFFFFFF, false);
+            stateIndex++;
+        }
+        label(context, font, "State name:", x + 116, y + 246);
+        field(context, font, x + 200, y + 238, 128, 22,
+                stateName, Field.STATE_NAME);
+        button(context, font, x + 334, y + 238, 78, 22,
+                selectedStateId.equals(defaultStateId) ? "Default" : "Set default", true);
+        button(context, font, x + 116, y + 268, 82, 20, "Delete state", states.size() > 1);
+        label(context, font, "Color:", x + 207, y + 276);
+        field(context, font, x + 250, y + 266, 76, 22,
+                stateColor, Field.STATE_COLOR);
+        button(context, font, x + 334, y + 266, 78, 22,
+                stateVisible ? "Visible" : "Hidden", true);
+        button(context, font, x + 216, y + 291, 90, 24,
                 editingId == null ? "Create" : "Save", valid());
-        button(context, font, x + 265, y + 169, 105, 24, "Cancel", true);
+        button(context, font, x + 322, y + 291, 90, 24, "Cancel", true);
     }
 
     public Action mouseClicked(double mouseX, double mouseY, int button,
                                int screenWidth, int screenHeight) {
         if (!open || button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Action.NONE;
-        int x = (screenWidth - 390) / 2;
-        int y = (screenHeight - 210) / 2;
+        int x = (screenWidth - 430) / 2;
+        int y = (screenHeight - 330) / 2;
         if (inside(mouseX, mouseY, x + 16, y + 126, 82, 20)) return Action.CHOOSE_IMAGE;
         if (inside(mouseX, mouseY, x + 16, y + 151, 82, 20)) {
             if (assetId != null) clearImage();
@@ -147,8 +201,22 @@ public final class AttachmentDefinitionDialog {
         if (inside(mouseX, mouseY, x + 170, y + 39, 200, 22)) focused = Field.NAME;
         else if (inside(mouseX, mouseY, x + 170, y + 72, 82, 22)) focused = Field.WIDTH;
         else if (inside(mouseX, mouseY, x + 310, y + 72, 60, 22)) focused = Field.HEIGHT;
-        else if (inside(mouseX, mouseY, x + 116, y + 169, 105, 24) && valid()) return Action.SAVE;
-        else if (inside(mouseX, mouseY, x + 265, y + 169, 105, 24)) return Action.CANCEL;
+        else if (inside(mouseX, mouseY, x + 382, y + 136, 30, 20)) addState();
+        else if (mouseX >= x + 116 && mouseX <= x + 412
+                && mouseY >= y + 162 && mouseY < y + 234) {
+            int index = (int) ((mouseY - y - 162) / 18);
+            if (index < states.size()) selectState(states.keySet().stream().skip(index)
+                    .findFirst().orElse(selectedStateId));
+        }
+        else if (inside(mouseX, mouseY, x + 200, y + 238, 128, 22)) focused = Field.STATE_NAME;
+        else if (inside(mouseX, mouseY, x + 334, y + 238, 78, 22)) {
+            saveCurrentState(); defaultStateId = selectedStateId;
+        }
+        else if (inside(mouseX, mouseY, x + 116, y + 268, 82, 20)) deleteState();
+        else if (inside(mouseX, mouseY, x + 250, y + 266, 76, 22)) focused = Field.STATE_COLOR;
+        else if (inside(mouseX, mouseY, x + 334, y + 266, 78, 22)) stateVisible = !stateVisible;
+        else if (inside(mouseX, mouseY, x + 216, y + 291, 90, 24) && valid()) return Action.SAVE;
+        else if (inside(mouseX, mouseY, x + 322, y + 291, 90, 24)) return Action.CANCEL;
         return Action.NONE;
     }
 
@@ -163,6 +231,8 @@ public final class AttachmentDefinitionDialog {
                 case NAME -> name = removeLast(name);
                 case WIDTH -> width = removeLast(width);
                 case HEIGHT -> height = removeLast(height);
+                case STATE_NAME -> stateName = removeLast(stateName);
+                case STATE_COLOR -> stateColor = removeLast(stateColor);
             }
         }
         return Action.NONE;
@@ -172,6 +242,16 @@ public final class AttachmentDefinitionDialog {
         if (!open) return false;
         if (focused == Field.NAME) {
             if (!Character.isISOControl(character) && name.length() < 64) name += character;
+            return true;
+        }
+        if (focused == Field.STATE_NAME) {
+            if (!Character.isISOControl(character) && stateName.length() < 64) stateName += character;
+            return true;
+        }
+        if (focused == Field.STATE_COLOR) {
+            char upper = Character.toUpperCase(character);
+            if ((Character.digit(upper, 16) >= 0 || upper == '#') && stateColor.length() < 7
+                    && (upper != '#' || stateColor.isEmpty())) stateColor += upper;
             return true;
         }
         String current = focused == Field.WIDTH ? width : height;
@@ -235,6 +315,56 @@ public final class AttachmentDefinitionDialog {
         return value.length() <= max ? value : value.substring(0, max - 3) + "...";
     }
 
-    private enum Field { NAME, WIDTH, HEIGHT }
+    private void saveCurrentState() {
+        AttachmentStateDefinition previous = states.get(selectedStateId);
+        if (previous == null) return;
+        states.put(selectedStateId, new AttachmentStateDefinition(
+                selectedStateId, stateName, assetId, stateVisible, parseColor(stateColor)));
+    }
+
+    private void selectState(String stateId) {
+        saveCurrentState();
+        AttachmentStateDefinition state = states.get(stateId);
+        if (state == null) return;
+        selectedStateId = stateId;
+        stateName = state.displayName();
+        stateColor = formatColor(state.tintColorRgb());
+        stateVisible = state.visible();
+        assetId = state.assetId();
+        assetName = state.assetId();
+        preview = null;
+        previewWidth = previewHeight = 0;
+    }
+
+    private void addState() {
+        if (states.size() >= 4) return;
+        saveCurrentState();
+        int index = 1;
+        while (states.containsKey("state_" + index)) index++;
+        String id = "state_" + index;
+        states.put(id, new AttachmentStateDefinition(id, "State " + index,
+                null, true, 0xFFFFFF));
+        selectState(id);
+    }
+
+    private void deleteState() {
+        if (states.size() <= 1) return;
+        states.remove(selectedStateId);
+        if (selectedStateId.equals(defaultStateId)) defaultStateId = states.keySet().iterator().next();
+        selectState(states.keySet().iterator().next());
+    }
+
+    private int parseColor(String value) {
+        try {
+            String normalized = value == null ? "" : value.trim().replace("#", "");
+            return normalized.length() == 6 ? Integer.parseInt(normalized, 16) : 0xFFFFFF;
+        } catch (RuntimeException ignored) { return 0xFFFFFF; }
+    }
+
+    private String formatColor(int rgb) {
+        return String.format(java.util.Locale.ROOT, "#%06X", rgb & 0xFFFFFF);
+    }
+
+    private enum Field { NAME, WIDTH, HEIGHT, STATE_NAME, STATE_COLOR }
     public enum Action { NONE, CHOOSE_IMAGE, SAVE, CANCEL }
 }

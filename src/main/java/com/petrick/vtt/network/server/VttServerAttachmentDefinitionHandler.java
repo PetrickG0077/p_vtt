@@ -180,6 +180,16 @@ public final class VttServerAttachmentDefinitionHandler {
             throw new IllegalArgumentException("Invalid attachment definition metadata");
         }
         if (data.assetId() != null && !data.assetId().isBlank()) resolveAsset(data.assetId());
+        if (data.states() != null) {
+            if (data.states().size() > 64) throw new IllegalArgumentException("Too many attachment states");
+            data.states().values().forEach(state -> {
+                if (state == null || state.id().length() > 64
+                        || state.displayName().length() > 64) {
+                    throw new IllegalArgumentException("Invalid attachment state");
+                }
+                if (state.assetId() != null) resolveAsset(state.assetId());
+            });
+        }
     }
 
     private static Path resolveAsset(String assetId) {
@@ -213,7 +223,8 @@ public final class VttServerAttachmentDefinitionHandler {
                 CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION,
                 "user/attachments/" + slug(name) + "_"
                         + UUID.randomUUID().toString().substring(0, 8),
-                name, source.assetId(), source.defaultWidth(), source.defaultHeight());
+                name, source.assetId(), source.defaultWidth(), source.defaultHeight(),
+                source.states(), source.defaultStateId());
         save(copy, sourceFile.getParent());
         return copy.attachmentDefinitionId();
     }

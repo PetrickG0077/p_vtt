@@ -145,6 +145,7 @@ public final class AttachmentBindingService {
         if (light == null || attachment == null
                 || !attachment.hasSourceAttachmentDefinition()) return false;
         light.setAttachedToObjectId(attachmentId);
+        light.setAttachmentStateId(attachment.activeStateId());
         captureLightTransform(light, attachment);
         return true;
     }
@@ -153,6 +154,7 @@ public final class AttachmentBindingService {
         VttLight light = findLight(scene, lightId);
         if (light == null || !light.isAttached()) return false;
         light.setAttachedToObjectId(null);
+        light.setAttachmentStateId(null);
         return true;
     }
 
@@ -172,6 +174,7 @@ public final class AttachmentBindingService {
             CanvasObject attachment = canvas.findObjectById(light.getAttachedToObjectId());
             if (attachment == null || !attachment.hasSourceAttachmentDefinition()) {
                 light.setAttachedToObjectId(null);
+                light.setAttachmentStateId(null);
                 continue;
             }
             double localOffsetX = attachment.flippedHorizontally()

@@ -52,7 +52,10 @@ public final class AttachmentVisibilityResolver {
         if (!light.isAttached()) return true;
         CanvasObject attachment = canvasScene == null ? null
                 : canvasScene.findObjectById(light.getAttachedToObjectId());
-        return isObjectEffectivelyVisible(tabletopScene, canvasScene, attachment);
+        return attachment != null
+                && (light.getAttachmentStateId() == null
+                || light.getAttachmentStateId().equals(attachment.activeStateId()))
+                && isObjectEffectivelyVisible(tabletopScene, canvasScene, attachment);
     }
 
     /** True only when an attachment belongs to a different state of its direct parent. */
