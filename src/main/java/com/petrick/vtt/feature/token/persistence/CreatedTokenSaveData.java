@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import com.petrick.vtt.feature.token.TokenStatePreset;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 
 /**
  * Dados salvos em JSON para tokens criados pelo usuário.
@@ -47,6 +48,9 @@ public final class CreatedTokenSaveData {
 
     /** Optional reusable appearance/attachment presets keyed by state id. */
     public Map<String, TokenStatePreset> statePresets = new LinkedHashMap<>();
+
+    /** Default local collision shape copied to newly placed token instances. */
+    public VttSceneCollisionBox defaultCollisionBox;
 
     public CreatedTokenSaveData() {}
 

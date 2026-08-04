@@ -16,6 +16,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Supplier;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * Ferramenta de seleção.
@@ -60,6 +61,7 @@ public final class SelectTool implements Tool {
     private final Supplier<String> playerIdSupplier;
     private final BooleanSupplier spectatorSupplier;
     private final Runnable saveAction;
+    private final Consumer<String> saveDefaultCollisionAction;
 
     private String collisionEditingObjectId;
     private boolean collisionResizing;
@@ -103,13 +105,15 @@ public final class SelectTool implements Tool {
             Supplier<VttRole> roleSupplier,
             Supplier<String> playerIdSupplier,
             BooleanSupplier spectatorSupplier,
-            Runnable saveAction
+            Runnable saveAction,
+            Consumer<String> saveDefaultCollisionAction
     ) {
         this.tabletopSceneSupplier = tabletopSceneSupplier;
         this.roleSupplier = roleSupplier;
         this.playerIdSupplier = playerIdSupplier;
         this.spectatorSupplier = spectatorSupplier;
         this.saveAction = saveAction;
+        this.saveDefaultCollisionAction = saveDefaultCollisionAction;
     }
 
     @Override
@@ -663,9 +667,11 @@ public final class SelectTool implements Tool {
     public boolean toggleCollisionBoxEditor(ToolContext context) {
         if (roleSupplier.get() != VttRole.MASTER) return false;
         if (collisionEditingObjectId != null) {
+            String editedObjectId = collisionEditingObjectId;
             collisionEditingObjectId = null;
             endCollisionResize();
             saveAction.run();
+            saveDefaultCollisionAction.accept(editedObjectId);
             return true;
         }
         if (context.selectionManager().getSelectedObjectIds().size() != 1) return false;
@@ -688,9 +694,11 @@ public final class SelectTool implements Tool {
 
     public boolean closeCollisionBoxEditor() {
         if (!isEditingCollisionBox()) return false;
+        String editedObjectId = collisionEditingObjectId;
         collisionEditingObjectId = null;
         endCollisionResize();
         saveAction.run();
+        saveDefaultCollisionAction.accept(editedObjectId);
         return true;
     }
 
@@ -736,7 +744,8 @@ public final class SelectTool implements Tool {
         if (Math.abs(scaleX) < 0.000001 || Math.abs(scaleY) < 0.000001) return;
         Vec2d localCenter = rotate(center.subtract(canvasObject.transform().position()), -rotation);
         VttSceneCollisionBox box = sceneObject.getCollisionBox();
-        box.setOffsetX(localCenter.x() / scaleX);
+        double offsetX = localCenter.x() / scaleX;
+        box.setOffsetX(canvasObject.flippedHorizontally() ? -offsetX : offsetX);
         box.setOffsetY(localCenter.y() / scaleY);
         box.setWidth(worldWidth / Math.abs(scaleX));
         box.setHeight(worldHeight / Math.abs(scaleY));
@@ -809,7 +818,9 @@ public final class SelectTool implements Tool {
         double rotation = canvasObject.transform().rotationDegrees();
         double scaleX = canvasObject.transform().scale().x();
         double scaleY = canvasObject.transform().scale().y();
-        Vec2d localOffset = new Vec2d(box.getOffsetX() * scaleX, box.getOffsetY() * scaleY);
+        double offsetX = canvasObject.flippedHorizontally()
+                ? -box.getOffsetX() : box.getOffsetX();
+        Vec2d localOffset = new Vec2d(offsetX * scaleX, box.getOffsetY() * scaleY);
         Vec2d center = canvasObject.transform().position().add(rotate(localOffset, rotation));
         double width = Math.abs(box.getWidth() * scaleX);
         double height = Math.abs(box.getHeight() * scaleY);

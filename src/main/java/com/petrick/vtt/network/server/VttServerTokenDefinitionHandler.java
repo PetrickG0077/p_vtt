@@ -348,6 +348,17 @@ public final class VttServerTokenDefinitionHandler {
                 });
             });
         }
+        if (data.defaultCollisionBox != null) {
+            var box = data.defaultCollisionBox;
+            if (!Double.isFinite(box.getOffsetX()) || !Double.isFinite(box.getOffsetY())
+                    || !Double.isFinite(box.getWidth()) || !Double.isFinite(box.getHeight())
+                    || Math.abs(box.getOffsetX()) > 1_000_000.0
+                    || Math.abs(box.getOffsetY()) > 1_000_000.0
+                    || box.getWidth() < 1.0 || box.getWidth() > 1_000_000.0
+                    || box.getHeight() < 1.0 || box.getHeight() > 1_000_000.0) {
+                throw new JsonParseException("Invalid default token collision box");
+            }
+        }
     }
 
     private static boolean validPresetScale(double value) {

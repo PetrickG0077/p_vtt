@@ -181,6 +181,12 @@ public final class VttClientTokenLifecycleSync {
                             result.getState().setTintColorRgb(
                                     activePreset.appearance().getTintColorRgb());
                         }
+                        if (definition.defaultCollisionBox() != null) {
+                            var box = definition.defaultCollisionBox();
+                            result.setCollisionBox(new VttSceneCollisionBox(
+                                    box.getOffsetX(), box.getOffsetY(),
+                                    box.getWidth(), box.getHeight()));
+                        }
                     });
         }
         if (metadataSource != null) {

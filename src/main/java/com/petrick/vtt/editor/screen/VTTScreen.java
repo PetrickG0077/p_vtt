@@ -389,7 +389,8 @@ public final class VTTScreen extends Screen {
         this.inputController = new InputController(camera, scene, selectionManager,
                 session::getActiveScene, this::saveCanvasSceneWithAttachmentBindings,
                 this::requestActiveSceneBackground,
-                session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator);
+                session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator,
+                this::saveTokenCollisionAsDefault);
         this.editorHudOverlay = new EditorHudOverlay();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
         this.assetManagerOverlay.setAttachmentRegistry(attachmentDefinitionRegistry);
@@ -3746,8 +3747,13 @@ public final class VTTScreen extends Screen {
         AttachmentBindingService.synchronize(
                 session.getActiveScene(), scene, Set.of());
         if (session.isNetworkAuthorityActive()) {
-            VttClientEnvironmentCommandSync.sendAttachmentBinding(
-                    session, attachmentId, attachment.getAttachmentBinding());
+            // State changes are replicated through the regular object-transform channel.
+            // Sending a null binding for an independent attachment would be interpreted
+            // as an invalid binding lifecycle command by the authoritative server.
+            if (interaction.action() != CanvasAttachmentContextMenuOverlay.Action.SET_STATE) {
+                VttClientEnvironmentCommandSync.sendAttachmentBinding(
+                        session, attachmentId, attachment.getAttachmentBinding());
+            }
         } else {
             saveCanvasSceneWithAttachmentBindings();
         }
@@ -5316,6 +5322,12 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)
+                && inputController.isEditingCollisionBox()) {
+            inputController.closeCollisionBoxEditor();
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             if (!session.getLocalRole().canUseCatalogs()) return true;
             createSelectedTokenAtCameraCenter();
@@ -5520,7 +5532,7 @@ public final class VTTScreen extends Screen {
 
         if (requestedStateId != null) {
             if (!canTransformSelectedTokens()) return true;
-            setSelectedTokensActiveState(requestedStateId);
+            setSelectedObjectsStateFromNumber(Integer.parseInt(requestedStateId));
             return true;
         }
 
@@ -6232,6 +6244,46 @@ public final class VTTScreen extends Screen {
         return null;
     }
 
+    private void setSelectedObjectsStateFromNumber(int number) {
+        if (number < 1 || number > 9) return;
+        inputController.beginEditorAction();
+        try {
+            for (String selectedId : List.copyOf(selectionManager.getSelectedObjectIds())) {
+                CanvasObject object = scene.findObjectById(selectedId);
+                if (object == null) continue;
+                String stateId = object.states().containsKey(Integer.toString(number))
+                        ? Integer.toString(number)
+                        : object.states().keySet().stream().skip(number - 1L)
+                        .findFirst().orElse(null);
+                if (stateId == null) continue;
+                if (object.hasSourceTokenDefinition()) {
+                    tokenStateOverrideService.switchState(
+                            session.getActiveScene(), scene, selectedId, stateId);
+                } else if (object.hasSourceAttachmentDefinition()) {
+                    VttSceneObject metadata = AttachmentBindingService.find(
+                            session.getActiveScene(), selectedId);
+                    scene.replaceObject(object.withActiveState(stateId));
+                    if (metadata != null) {
+                        metadata.getState().setActiveStateId(stateId);
+                        attachmentDefinitionRegistry.findById(
+                                metadata.getSourceAttachmentDefinitionId())
+                                .map(definition -> definition.states().get(stateId))
+                                .ifPresent(state -> {
+                                    metadata.getState().setTintColorRgb(state.tintColorRgb());
+                                    metadata.getState().setVisible(state.visible());
+                                    CanvasObject current = scene.findObjectById(selectedId);
+                                    if (current != null) scene.replaceObject(
+                                            current.withVisible(state.visible()));
+                                });
+                    }
+                }
+            }
+        } finally {
+            inputController.endEditorAction();
+        }
+        if (!session.isNetworkAuthorityActive()) saveCanvasSceneWithAttachmentBindings();
+    }
+
     private List<VttPlayerOption> getConnectedPlayerOptions() {
         Map<String, Integer> ownedTokens = new HashMap<>();
         if (session.getActiveScene() != null) {
@@ -6366,6 +6418,12 @@ public final class VTTScreen extends Screen {
                         if (activePreset != null) {
                             object.getState().setTintColorRgb(
                                     activePreset.appearance().getTintColorRgb());
+                        }
+                        if (placementDefinition.defaultCollisionBox() != null) {
+                            var box = placementDefinition.defaultCollisionBox();
+                            object.setCollisionBox(new com.petrick.vtt.feature.tabletop.VttSceneCollisionBox(
+                                    box.getOffsetX(), box.getOffsetY(),
+                                    box.getWidth(), box.getHeight()));
                         }
                     });
             instantiateTokenStateAttachments(placedToken, placementDefinition);
@@ -6720,6 +6778,44 @@ public final class VTTScreen extends Screen {
         attachmentDefinitionDialog.close();
         closeBackgroundImagePicker();
         returnToAssetManagerIfRequested();
+    }
+
+    private void saveTokenCollisionAsDefault(String objectId) {
+        if (objectId == null || session.getActiveScene() == null) return;
+        CanvasObject canvasObject = scene.findObjectById(objectId);
+        VttSceneObject sceneObject = session.getActiveScene().getObjects().stream()
+                .filter(object -> object != null && objectId.equals(object.getId()))
+                .findFirst().orElse(null);
+        if (canvasObject == null || sceneObject == null || sceneObject.getCollisionBox() == null
+                || canvasObject.sourceTokenDefinitionId() == null) return;
+        TokenDefinition definition = tokenDefinitionRegistry
+                .findById(canvasObject.sourceTokenDefinitionId()).orElse(null);
+        if (!CreatedTokenStorage.isUserCreatedToken(definition)) {
+            VttClientEditorNotice.show("Collision saved only to this instance (debug token)");
+            return;
+        }
+        if (session.isNetworkAuthorityActive()) {
+            String json = CreatedTokenStorage.serializeDefaultCollisionBox(
+                    definition, session.getSyncedServerTokensFolder(),
+                    sceneObject.getCollisionBox());
+            String requestId = beginPendingTokenDefinitionRequest(
+                    "saving default collision", "Default collision saved",
+                    definition.id(), definition.id(), null);
+            if (json == null || requestId == null || !VttClientTokenDefinitionSync.sendUpsert(
+                    requestId, session.getNetworkAuthorityRevision(), json)) {
+                clearPendingTokenDefinitionRequest();
+                VttClientEditorNotice.show("Could not save default collision on server");
+            } else {
+                VttClientEditorNotice.show("Default collision save sent to server");
+            }
+            return;
+        }
+        TokenDefinition updated = CreatedTokenStorage.saveDefaultCollisionBox(
+                definition, sceneObject.getCollisionBox(), tokenDefinitionRegistry,
+                assetRegistry);
+        VttClientEditorNotice.show(updated == null
+                ? "Could not save default collision"
+                : "Default collision saved to token");
     }
 
     private void synchronizePlacedAttachments(AttachmentDefinition definition) {

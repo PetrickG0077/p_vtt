@@ -125,7 +125,7 @@ public final class AttachmentBindingService {
                 CanvasObject child = canvas.findObjectById(sceneObject.getId());
                 CanvasObject parent = canvas.findObjectById(binding.getTargetObjectId());
                 if (child == null || parent == null) continue;
-                Transform2D resolved = resolve(binding, child.transform(), parent.transform(),
+                Transform2D resolved = resolve(binding, child, parent,
                         parent.flippedHorizontally());
                 boolean flipped = parent.flippedHorizontally() ^ binding.isFlipOffset();
                 if (!same(child.transform(), resolved) || child.flippedHorizontally() != flipped) {
@@ -249,11 +249,14 @@ public final class AttachmentBindingService {
                 - attachment.transform().rotationDegrees());
     }
 
-    private static Transform2D resolve(VttAttachmentBinding binding, Transform2D child,
-                                       Transform2D parent, boolean parentFlippedHorizontally) {
+    private static Transform2D resolve(VttAttachmentBinding binding, CanvasObject childObject,
+                                       CanvasObject parentObject,
+                                       boolean parentFlippedHorizontally) {
+        Transform2D child = childObject.transform();
+        Transform2D parent = parentObject.transform();
         Vec2d position = child.position();
         if (binding.isFollowPosition()) {
-            Vec2d anchor = scaledAnchorOffset(binding.getAnchor(), parent);
+            Vec2d anchor = scaledAnchorOffset(binding.getAnchor(), parentObject);
             Vec2d residual = new Vec2d(binding.getOffsetX(), binding.getOffsetY());
             if (binding.isFollowScale()) {
                 residual = new Vec2d(

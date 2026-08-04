@@ -56,7 +56,8 @@ public final class InputController {
             Consumer<String> setBackgroundAction,
             Supplier<VttRole> roleSupplier,
             Supplier<String> playerIdSupplier,
-            BooleanSupplier spectatorSupplier
+            BooleanSupplier spectatorSupplier,
+            Consumer<String> saveDefaultCollisionAction
     ) {
         this.camera = camera;
         this.scene = scene;
@@ -65,7 +66,7 @@ public final class InputController {
         this.saveTabletopAction = saveTabletopAction;
         this.setBackgroundAction = setBackgroundAction;
         this.toolController = new ToolController(tabletopSceneSupplier, saveTabletopAction,
-                roleSupplier, playerIdSupplier, spectatorSupplier);
+                roleSupplier, playerIdSupplier, spectatorSupplier, saveDefaultCollisionAction);
     }
 
     public boolean mouseClicked(

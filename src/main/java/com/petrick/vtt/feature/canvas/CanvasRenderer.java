@@ -151,7 +151,8 @@ public final class CanvasRenderer {
                         .map(metadata -> metadata.getAttachmentBinding() != null
                                 && metadata.getAttachmentBinding().getParentStateId() != null)
                         .findFirst().orElse(false);
-                renderAttachmentMarker(context, object, stateSpecific);
+                renderAttachmentMarker(context, object, stateSpecific,
+                        tintColors.getOrDefault(object.id(), 0xFFFFFF));
             }
 
             if (editorSelectionVisible && selectionManager.isSelected(object.id())) {
@@ -216,7 +217,8 @@ public final class CanvasRenderer {
     }
 
     private void renderAttachmentMarker(
-            VRenderContext context, CanvasObject object, boolean stateSpecific
+            VRenderContext context, CanvasObject object, boolean stateSpecific,
+            int tintColorRgb
     ) {
         Vec2d center = context.renderState().worldToScreen(object.transform().position());
         PoseStack pose = context.graphics().pose();
@@ -224,8 +226,12 @@ public final class CanvasRenderer {
         pose.translate(center.x(), center.y(), 0.0);
         pose.mulPose(Axis.ZP.rotationDegrees((float) object.transform().rotationDegrees()));
         int half = 6;
-        int fill = stateSpecific ? 0xDDB455FF : 0xDD278CFF;
-        int outline = stateSpecific ? 0xFFFF88FF : 0xFF66CCFF;
+        boolean imageMissing = object.currentState().visual()
+                instanceof com.petrick.vtt.feature.canvas.visual.ColorVisual;
+        int markerRgb = imageMissing ? tintColorRgb & 0x00FFFFFF
+                : stateSpecific ? 0x00B455FF : 0x00278CFF;
+        int fill = 0xDD000000 | markerRgb;
+        int outline = 0xFF000000 | markerRgb;
         context.graphics().fill(-half, -half, half, half, fill);
         context.graphics().hLine(-half, half, -half, outline);
         context.graphics().hLine(-half, half, half, outline);

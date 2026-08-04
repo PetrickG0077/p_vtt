@@ -835,10 +835,11 @@ public final class AssetManagerOverlay {
                 && attachment.isComposite()) {
             String label = "COMPOSITE";
             int labelWidth = font.width(label) + 6;
-            context.graphics().fill(card.right() - labelWidth - 5, card.y() + 8,
-                    card.right() - 5, card.y() + 20, 0xDD9A6500);
+            int labelX = card.x() + (card.width() - labelWidth) / 2;
+            context.graphics().fill(labelX, card.y() + 8,
+                    labelX + labelWidth, card.y() + 20, 0xDD9A6500);
             context.graphics().drawString(font, label,
-                    card.right() - labelWidth - 2, card.y() + 10,
+                    labelX + 3, card.y() + 10,
                     0xFFFFFFFF, false);
         }
         if (item.editable()) {

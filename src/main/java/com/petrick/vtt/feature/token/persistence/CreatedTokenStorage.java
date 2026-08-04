@@ -165,6 +165,7 @@ public final class CreatedTokenStorage {
                     data.activeStateId
             );
             draft.setStatePresets(data.statePresets);
+            draft.setDefaultCollisionBox(data.defaultCollisionBox);
 
             return draft;
         } catch (Exception exception) {
@@ -201,6 +202,46 @@ public final class CreatedTokenStorage {
 
     public static String serializeEditedToken(TokenCreationDraft draft) {
         return GSON.toJson(createSaveDataForEditedDraft(draft));
+    }
+
+    public static String serializeDefaultCollisionBox(
+            TokenDefinition definition, Path folder,
+            com.petrick.vtt.feature.tabletop.VttSceneCollisionBox box
+    ) {
+        CreatedTokenSaveData data = readTokenData(definition, folder);
+        if (data == null || box == null) return null;
+        data.defaultCollisionBox = copyCollisionBox(box);
+        return GSON.toJson(data);
+    }
+
+    public static TokenDefinition saveDefaultCollisionBox(
+            TokenDefinition definition,
+            com.petrick.vtt.feature.tabletop.VttSceneCollisionBox box,
+            TokenDefinitionRegistry registry, AssetRegistry assetRegistry
+    ) {
+        if (definition == null || box == null || registry == null || assetRegistry == null) return null;
+        Path file = findTokenFile(getTokensFolder(), definition);
+        CreatedTokenSaveData data = readTokenData(definition, getTokensFolder());
+        if (file == null || data == null) return null;
+        data.defaultCollisionBox = copyCollisionBox(box);
+        try {
+            saveCreatedTokenData(data, file.getParent());
+            TokenDefinition updated = createTokenDefinitionFromSaveData(data, assetRegistry);
+            String folder = registry.folderOf(definition.id());
+            registry.removeById(definition.id());
+            registry.register(updated, folder);
+            return updated;
+        } catch (IOException exception) {
+            VTT.LOGGER.error("Failed to save default collision box: {}", definition.id(), exception);
+            return null;
+        }
+    }
+
+    private static com.petrick.vtt.feature.tabletop.VttSceneCollisionBox copyCollisionBox(
+            com.petrick.vtt.feature.tabletop.VttSceneCollisionBox box
+    ) {
+        return new com.petrick.vtt.feature.tabletop.VttSceneCollisionBox(
+                box.getOffsetX(), box.getOffsetY(), box.getWidth(), box.getHeight());
     }
 
     public static String serializeTokenStatePreset(
@@ -676,7 +717,8 @@ public final class CreatedTokenStorage {
                 states,
                 defaultStateId,
                 data.player,
-                data.statePresets
+                data.statePresets,
+                data.defaultCollisionBox
         );
     }
 
@@ -817,6 +859,7 @@ public final class CreatedTokenStorage {
 
         data.defaultWidth = draft.getDefaultWidth();
         data.defaultHeight = draft.getDefaultHeight();
+        data.defaultCollisionBox = draft.getDefaultCollisionBox();
 
         data.states.clear();
         data.statePresets = new LinkedHashMap<>();

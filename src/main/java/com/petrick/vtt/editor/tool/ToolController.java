@@ -6,6 +6,7 @@ import com.petrick.vtt.core.session.VttRole;
 import com.petrick.vtt.feature.tabletop.VttScene;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 /**
  * Controla qual ferramenta está ativa no editor.
@@ -27,12 +28,14 @@ public final class ToolController {
     public ToolController(
             Supplier<VttScene> sceneSupplier, Runnable saveAction,
             Supplier<VttRole> roleSupplier, Supplier<String> playerIdSupplier,
-            BooleanSupplier spectatorSupplier
+            BooleanSupplier spectatorSupplier,
+            Consumer<String> saveDefaultCollisionAction
     ) {
         this.roleSupplier = roleSupplier;
         this.handTool = new HandTool();
         this.selectTool = new SelectTool(
-                sceneSupplier, roleSupplier, playerIdSupplier, spectatorSupplier, saveAction);
+                sceneSupplier, roleSupplier, playerIdSupplier, spectatorSupplier,
+                saveAction, saveDefaultCollisionAction);
         this.wallTool = new WallTool(sceneSupplier, saveAction);
         this.doorTool = new DoorTool(sceneSupplier, saveAction);
         this.fogTool = new FogTool(sceneSupplier, saveAction);

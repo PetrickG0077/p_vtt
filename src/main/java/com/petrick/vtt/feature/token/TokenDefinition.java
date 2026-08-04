@@ -2,6 +2,7 @@ package com.petrick.vtt.feature.token;
 
 import com.petrick.vtt.core.math.Vec2d;
 import com.petrick.vtt.feature.canvas.CanvasObjectState;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -24,7 +25,8 @@ public record TokenDefinition(
         Map<String, CanvasObjectState> states,
         String defaultStateId,
         String defaultOwnerId,
-        Map<String, TokenStatePreset> statePresets
+        Map<String, TokenStatePreset> statePresets,
+        VttSceneCollisionBox defaultCollisionBox
 ) {
     public static final double MIN_DEFAULT_SIZE = 1.0;
     public static final double MAX_DEFAULT_SIZE = 10_000.0;
@@ -33,7 +35,7 @@ public record TokenDefinition(
             String id, String displayName, Vec2d defaultSize,
             Map<String, CanvasObjectState> states, String defaultStateId
     ) {
-        this(id, displayName, defaultSize, states, defaultStateId, null, Map.of());
+        this(id, displayName, defaultSize, states, defaultStateId, null, Map.of(), null);
     }
 
     public TokenDefinition(
@@ -42,7 +44,16 @@ public record TokenDefinition(
             String defaultOwnerId
     ) {
         this(id, displayName, defaultSize, states, defaultStateId,
-                defaultOwnerId, Map.of());
+                defaultOwnerId, Map.of(), null);
+    }
+
+    public TokenDefinition(
+            String id, String displayName, Vec2d defaultSize,
+            Map<String, CanvasObjectState> states, String defaultStateId,
+            String defaultOwnerId, Map<String, TokenStatePreset> statePresets
+    ) {
+        this(id, displayName, defaultSize, states, defaultStateId,
+                defaultOwnerId, statePresets, null);
     }
 
     public TokenDefinition {
@@ -90,5 +101,10 @@ public record TokenDefinition(
             }
         }
         statePresets = Collections.unmodifiableMap(normalizedPresets);
+        if (defaultCollisionBox != null) {
+            defaultCollisionBox = new VttSceneCollisionBox(
+                    defaultCollisionBox.getOffsetX(), defaultCollisionBox.getOffsetY(),
+                    defaultCollisionBox.getWidth(), defaultCollisionBox.getHeight());
+        }
     }
 }

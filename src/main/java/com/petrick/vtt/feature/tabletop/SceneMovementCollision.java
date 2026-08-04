@@ -138,6 +138,7 @@ public final class SceneMovementCollision {
         double baseWidth = collisionBox == null ? object.size().x() : collisionBox.getWidth();
         double baseHeight = collisionBox == null ? object.size().y() : collisionBox.getHeight();
         double localOffsetX = collisionBox == null ? 0.0 : collisionBox.getOffsetX();
+        if (object.flippedHorizontally()) localOffsetX = -localOffsetX;
         double localOffsetY = collisionBox == null ? 0.0 : collisionBox.getOffsetY();
         double scaleX = object.transform().scale().x();
         double scaleY = object.transform().scale().y();
@@ -160,6 +161,7 @@ public final class SceneMovementCollision {
         double baseWidth = collisionBox == null ? object.getSize().getWidth() : collisionBox.getWidth();
         double baseHeight = collisionBox == null ? object.getSize().getHeight() : collisionBox.getHeight();
         double localOffsetX = collisionBox == null ? 0.0 : collisionBox.getOffsetX();
+        if (object.getState().isFlippedHorizontally()) localOffsetX = -localOffsetX;
         double localOffsetY = collisionBox == null ? 0.0 : collisionBox.getOffsetY();
         VttSceneTransform transform = object.getTransform();
         Vec2d scaledOffset = new Vec2d(localOffsetX * transform.getScaleX(),

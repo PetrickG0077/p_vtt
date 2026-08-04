@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import com.petrick.vtt.feature.token.TokenStatePreset;
+import com.petrick.vtt.feature.tabletop.VttSceneCollisionBox;
 
 /**
  * Dados temporários enquanto o usuário está criando ou editando um token.
@@ -63,6 +64,7 @@ public final class TokenCreationDraft {
     private String selectedStateId;
 
     private final Map<String, TokenStatePreset> statePresets = new LinkedHashMap<>();
+    private VttSceneCollisionBox defaultCollisionBox;
 
     public TokenCreationDraft() {
         ensureDefaultState();
@@ -211,6 +213,11 @@ public final class TokenCreationDraft {
     public void setStatePresets(Map<String, TokenStatePreset> presets) {
         statePresets.clear();
         if (presets != null) statePresets.putAll(presets);
+    }
+
+    public VttSceneCollisionBox getDefaultCollisionBox() { return defaultCollisionBox; }
+    public void setDefaultCollisionBox(VttSceneCollisionBox box) {
+        defaultCollisionBox = box;
     }
 
     public String getName() {
