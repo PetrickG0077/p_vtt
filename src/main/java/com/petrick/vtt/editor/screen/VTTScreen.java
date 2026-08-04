@@ -37,6 +37,7 @@ import com.petrick.vtt.editor.overlay.SelectionInspectorOverlay;
 import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.overlay.CanvasTokenContextMenuOverlay;
 import com.petrick.vtt.editor.overlay.CanvasAttachmentContextMenuOverlay;
+import com.petrick.vtt.editor.overlay.CanvasEmptyContextMenuOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.scene.SceneBackgroundEditor;
@@ -67,6 +68,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneObject;
 import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 import com.petrick.vtt.feature.tabletop.VttLight;
+import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -240,6 +242,8 @@ public final class VTTScreen extends Screen {
 
     private final CanvasAttachmentContextMenuOverlay canvasAttachmentContextMenuOverlay =
             new CanvasAttachmentContextMenuOverlay();
+    private final CanvasEmptyContextMenuOverlay canvasEmptyContextMenuOverlay =
+            new CanvasEmptyContextMenuOverlay();
     private final TokenStateOverrideService tokenStateOverrideService =
             new TokenStateOverrideService();
 
@@ -362,6 +366,8 @@ public final class VTTScreen extends Screen {
     private String pendingTokenDefinitionTargetFolder;
     private long pendingTokenDefinitionAcknowledgedRevision = -1L;
     private long pendingTokenDefinitionRequestUntil;
+    private Vec2d contextCreationWorldPosition;
+    private ContextCreationType contextCreationType = ContextCreationType.NONE;
 
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
@@ -655,6 +661,7 @@ public final class VTTScreen extends Screen {
         renderEditorHud(context);
         renderCanvasTokenContextMenu(context);
         renderCanvasAttachmentContextMenu(context);
+        canvasEmptyContextMenuOverlay.render(context, this.font);
         if (hudCreationOpen && session.isLocalMaster()) {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
@@ -1376,7 +1383,12 @@ public final class VTTScreen extends Screen {
     private void completePendingAttachmentDefinitionRequest() {
         String selectionId = pendingAttachmentDefinitionSelectionId;
         String message = pendingAttachmentDefinitionSuccessMessage;
+        Vec2d placementPosition = contextCreationType == ContextCreationType.ATTACHMENT
+                ? contextCreationWorldPosition : null;
         clearPendingAttachmentDefinitionRequest();
+        if (session.isNetworkAuthorityActive()) {
+            session.reloadSyncedServerAssets();
+        }
         assetManagerOverlay.reconcileCurrentFolder(session.getActiveTabletop());
         assetManagerOverlay.reconcileSelection(
                 session.getActiveTabletop(), mapDefinitionRegistry,
@@ -1387,6 +1399,11 @@ public final class VTTScreen extends Screen {
             assetManagerOverlay.select(AssetManagerOverlay.Section.ATTACHMENTS, selectionId);
         } else {
             attachmentCatalogSelection.clear();
+        }
+        if (placementPosition != null && selectionId != null) {
+            attachmentDefinitionRegistry.findById(selectionId)
+                    .ifPresent(definition -> placeAttachmentAtWorldPosition(
+                            definition, placementPosition));
         }
         VttClientEditorNotice.show(message);
     }
@@ -1407,6 +1424,7 @@ public final class VTTScreen extends Screen {
         pendingAttachmentDefinitionAcknowledgedRevision = -1L;
         pendingAttachmentDefinitionRequestUntil = 0L;
         assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
+        if (contextCreationType == ContextCreationType.ATTACHMENT) clearContextCreation();
     }
 
     private String beginPendingTokenDefinitionRequest(
@@ -1480,6 +1498,8 @@ public final class VTTScreen extends Screen {
         String selectionId = pendingTokenDefinitionSelectionId;
         String targetFolder = pendingTokenDefinitionTargetFolder;
         String message = pendingTokenDefinitionSuccessMessage;
+        Vec2d placementPosition = contextCreationType == ContextCreationType.TOKEN
+                ? contextCreationWorldPosition : null;
         clearPendingTokenDefinitionRequest();
         // The authority revision may arrive in the scene snapshot before the
         // incremental asset transfer has refreshed the in-memory catalog. Read
@@ -1503,6 +1523,11 @@ public final class VTTScreen extends Screen {
         } else {
             tokenCatalogSelection.clear();
         }
+        if (placementPosition != null && selectionId != null) {
+            tokenDefinitionRegistry.findById(selectionId)
+                    .ifPresent(definition -> createTokenAtWorldPosition(
+                            placementPosition, definition));
+        }
         VttClientEditorNotice.show(message);
     }
 
@@ -1523,6 +1548,7 @@ public final class VTTScreen extends Screen {
         pendingTokenDefinitionAcknowledgedRevision = -1L;
         pendingTokenDefinitionRequestUntil = 0L;
         assetManagerOverlay.setPendingOperation(currentAssetManagerPendingOperation());
+        if (contextCreationType == ContextCreationType.TOKEN) clearContextCreation();
     }
 
     private String currentAssetManagerPendingOperation() {
@@ -2540,6 +2566,7 @@ public final class VTTScreen extends Screen {
 
     private void closeHudPopups() {
         finishGridSettingsDrag();
+        canvasEmptyContextMenuOverlay.close();
         hudPlayersOpen = false;
         hudSettingsOpen = false;
         hudCreationOpen = false;
@@ -2755,6 +2782,22 @@ public final class VTTScreen extends Screen {
         if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
         if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
+        if (canvasEmptyContextMenuOverlay.isOpen()) {
+            var interaction = canvasEmptyContextMenuOverlay.mouseClicked(
+                    mouseX, mouseY, button, this.width);
+            if (interaction.action() == CanvasEmptyContextMenuOverlay.Action.CREATE_TOKEN) {
+                contextCreationType = ContextCreationType.TOKEN;
+                beginCreateTokenDefinition();
+            } else if (interaction.action()
+                    == CanvasEmptyContextMenuOverlay.Action.CREATE_ATTACHMENT) {
+                contextCreationType = ContextCreationType.ATTACHMENT;
+                beginNewAttachmentDialog();
+            } else if (interaction.action() == CanvasEmptyContextMenuOverlay.Action.CANCEL) {
+                clearContextCreation();
+            }
+            if (interaction.consumed()) return true;
+        }
+
         if (handleCanvasAttachmentContextClick(mouseX, mouseY, button)) return true;
 
         if (canvasTokenContextMenuOverlay.isOpen()) {
@@ -2788,6 +2831,18 @@ public final class VTTScreen extends Screen {
                 canvasTokenContextMenuOverlay.open(clickedToken.id(),
                         (int) mouseX, (int) mouseY, this.width, this.height, master);
                 return true;
+            }
+            if (master && clickedToken == null
+                    && "select".equals(inputController.getActiveToolId())) {
+                Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+                if (!isDoorAt(world)) {
+                    contextCreationWorldPosition = world;
+                    canvasTokenContextMenuOverlay.close();
+                    canvasAttachmentContextMenuOverlay.close();
+                    canvasEmptyContextMenuOverlay.open(
+                            (int) mouseX, (int) mouseY, this.width, this.height);
+                    return true;
+                }
             }
         }
 
@@ -3166,6 +3221,11 @@ public final class VTTScreen extends Screen {
             moveCreatedAssetToFolder(
                     AssetManagerOverlay.Section.TOKENS,
                     createdDefinition.id(), targetFolder);
+            if (contextCreationType == ContextCreationType.TOKEN
+                    && contextCreationWorldPosition != null) {
+                createTokenAtWorldPosition(contextCreationWorldPosition, createdDefinition);
+                clearContextCreation();
+            }
         }
 
         tokenCatalogSelection.select(createdDefinition.id());
@@ -3235,6 +3295,8 @@ public final class VTTScreen extends Screen {
         tokenImagePickerActive = false;
         lastTokenImagePickerClickedItemId = null;
         lastTokenImagePickerClickTime = 0L;
+        if (contextCreationType == ContextCreationType.TOKEN
+                && pendingTokenDefinitionRequestId == null) clearContextCreation();
         returnToAssetManagerIfRequested();
     }
 
@@ -4966,6 +5028,14 @@ public final class VTTScreen extends Screen {
                 }
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 pendingAssetDeletion = null;
+            }
+            return true;
+        }
+        if (canvasEmptyContextMenuOverlay.isOpen()) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE
+                    || keyCode == GLFW.GLFW_KEY_ENTER
+                    || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                canvasEmptyContextMenuOverlay.close();
             }
             return true;
         }
@@ -6769,6 +6839,11 @@ public final class VTTScreen extends Screen {
             attachmentDefinitionRegistry.register(definition, folder);
             if (existing != null) synchronizePlacedAttachments(definition);
             attachmentCatalogSelection.select(definition.id());
+            if (existing == null && contextCreationType == ContextCreationType.ATTACHMENT
+                    && contextCreationWorldPosition != null) {
+                placeAttachmentAtWorldPosition(definition, contextCreationWorldPosition);
+                clearContextCreation();
+            }
             VttClientEditorNotice.show((existing == null ? "Attachment created: "
                     : "Attachment updated: ") + definition.displayName());
             closeAttachmentDialog();
@@ -6781,6 +6856,8 @@ public final class VTTScreen extends Screen {
     private void closeAttachmentDialog() {
         attachmentDefinitionDialog.close();
         closeBackgroundImagePicker();
+        if (contextCreationType == ContextCreationType.ATTACHMENT
+                && pendingAttachmentDefinitionRequestId == null) clearContextCreation();
         returnToAssetManagerIfRequested();
     }
 
@@ -7068,6 +7145,13 @@ public final class VTTScreen extends Screen {
         draggingAttachmentDefinition = null;
         if (!place || definition == null || renderState == null) return;
         Vec2d world = renderState.screenToWorld(new Vec2d(mouseX, mouseY));
+        placeAttachmentAtWorldPosition(definition, world);
+    }
+
+    private void placeAttachmentAtWorldPosition(
+            AttachmentDefinition definition, Vec2d world
+    ) {
+        if (definition == null || world == null) return;
         if (session.isNetworkAuthorityActive()) {
             String objectId = "attachment_" + UUID.randomUUID().toString()
                     .replace("-", "").substring(0, 12);
@@ -7104,6 +7188,11 @@ public final class VTTScreen extends Screen {
         instantiateCompositeAttachment(definition, objectId, world);
         inputController.selectSelectTool();
         VttClientEditorNotice.show("Attachment placed: " + definition.displayName());
+    }
+
+    private void clearContextCreation() {
+        contextCreationWorldPosition = null;
+        contextCreationType = ContextCreationType.NONE;
     }
 
     private boolean handleMapCatalogPlacementMouseClicked(
@@ -8026,6 +8115,32 @@ public final class VTTScreen extends Screen {
                     libraryFile.entry().fileType()
             );
         }
+    }
+
+    private boolean isDoorAt(Vec2d world) {
+        if (world == null || session.getActiveScene() == null) return false;
+        for (VttDoor door : session.getActiveScene().getDoors()) {
+            if (door == null || !door.isVisible()) continue;
+            double radians = Math.toRadians(-door.getTransform().getRotationDegrees());
+            double dx = world.x() - door.getTransform().getX();
+            double dy = world.y() - door.getTransform().getY();
+            double localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+            double localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+            double width = Math.abs(door.getSize().getWidth()
+                    * door.getTransform().getScaleX());
+            double height = Math.abs(door.getSize().getHeight()
+                    * door.getTransform().getScaleY());
+            if (Math.abs(localX) <= width / 2.0 && Math.abs(localY) <= height / 2.0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private enum ContextCreationType {
+        NONE,
+        TOKEN,
+        ATTACHMENT
     }
 
     private enum BackgroundPickerTarget {
