@@ -139,6 +139,10 @@ public final class ToolController {
         return activeTool == lightTool ? lightTool.getSelectedLightId() : null;
     }
 
+    public boolean consumeLightCopyRequest() {
+        return lightTool.consumeCopyRequest();
+    }
+
     public void selectMeasureTool() {
         selectTool.closeCollisionBoxEditor();
         wallTool.deactivate();

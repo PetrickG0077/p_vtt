@@ -69,6 +69,7 @@ import com.petrick.vtt.feature.tabletop.VttAttachmentBinding;
 import com.petrick.vtt.feature.tabletop.VttAttachmentAnchor;
 import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttDoor;
+import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -368,6 +369,7 @@ public final class VTTScreen extends Screen {
     private long pendingTokenDefinitionRequestUntil;
     private Vec2d contextCreationWorldPosition;
     private ContextCreationType contextCreationType = ContextCreationType.NONE;
+    private SceneClipboard sceneClipboard;
 
     private String observedActiveSceneId;
     private boolean initialCameraApplied;
@@ -661,7 +663,7 @@ public final class VTTScreen extends Screen {
         renderEditorHud(context);
         renderCanvasTokenContextMenu(context);
         renderCanvasAttachmentContextMenu(context);
-        canvasEmptyContextMenuOverlay.render(context, this.font);
+        canvasEmptyContextMenuOverlay.render(context, this.font, sceneClipboard != null);
         if (hudCreationOpen && session.isLocalMaster()) {
             context.graphics().fill(
                     0, 0, context.screenWidth(), context.screenHeight(),
@@ -2741,7 +2743,9 @@ public final class VTTScreen extends Screen {
                         scene, renderState.screenToWorld(new Vec2d(mouseX, mouseY)), true);
                 if (openCanvasAttachmentContext(clickedToken, mouseX, mouseY)) return true;
                 if (clickedToken != null && clickedToken.hasSourceTokenDefinition()) {
-                    selectionManager.selectOnly(clickedToken.id());
+                    if (!selectionManager.isSelected(clickedToken.id())) {
+                        selectionManager.selectOnly(clickedToken.id());
+                    }
                     inputController.selectSelectTool();
                     canvasAttachmentContextMenuOverlay.close();
                     canvasTokenContextMenuOverlay.open(clickedToken.id(),
@@ -2784,7 +2788,7 @@ public final class VTTScreen extends Screen {
 
         if (canvasEmptyContextMenuOverlay.isOpen()) {
             var interaction = canvasEmptyContextMenuOverlay.mouseClicked(
-                    mouseX, mouseY, button, this.width);
+                    mouseX, mouseY, button, this.width, sceneClipboard != null);
             if (interaction.action() == CanvasEmptyContextMenuOverlay.Action.CREATE_TOKEN) {
                 contextCreationType = ContextCreationType.TOKEN;
                 beginCreateTokenDefinition();
@@ -2793,6 +2797,9 @@ public final class VTTScreen extends Screen {
                 contextCreationType = ContextCreationType.ATTACHMENT;
                 beginNewAttachmentDialog();
             } else if (interaction.action() == CanvasEmptyContextMenuOverlay.Action.CANCEL) {
+                clearContextCreation();
+            } else if (interaction.action() == CanvasEmptyContextMenuOverlay.Action.PASTE) {
+                pasteClipboard(contextCreationWorldPosition);
                 clearContextCreation();
             }
             if (interaction.consumed()) return true;
@@ -2825,7 +2832,9 @@ public final class VTTScreen extends Screen {
             if (openCanvasAttachmentContext(clickedToken, mouseX, mouseY)) return true;
             if (clickedToken != null && clickedToken.hasSourceTokenDefinition()
                     && (master || owned)) {
-                selectionManager.selectOnly(clickedToken.id());
+                if (!selectionManager.isSelected(clickedToken.id())) {
+                    selectionManager.selectOnly(clickedToken.id());
+                }
                 inputController.selectSelectTool();
                 canvasAttachmentContextMenuOverlay.close();
                 canvasTokenContextMenuOverlay.open(clickedToken.id(),
@@ -3115,6 +3124,10 @@ public final class VTTScreen extends Screen {
                 getKeyboardModifiers(),
                 renderState
         )) {
+            if (inputController.consumeLightCopyRequest()) {
+                copyCurrentSelection();
+                return true;
+            }
             beginPlacedAttachmentDragCandidate(mouseX, mouseY, button);
             return true;
         }
@@ -3545,7 +3558,9 @@ public final class VTTScreen extends Screen {
     ) {
         if (clickedObject == null || !clickedObject.hasSourceAttachmentDefinition()
                 || !session.isLocalMaster()) return false;
-        selectionManager.selectOnly(clickedObject.id());
+        if (!selectionManager.isSelected(clickedObject.id())) {
+            selectionManager.selectOnly(clickedObject.id());
+        }
         inputController.selectSelectTool();
         canvasTokenContextMenuOverlay.close();
         canvasAttachmentContextMenuOverlay.open(clickedObject.id(),
@@ -3579,6 +3594,14 @@ public final class VTTScreen extends Screen {
             return;
         }
         String attachmentId = attachment.getId();
+        if (interaction.action() == CanvasAttachmentContextMenuOverlay.Action.COPY) {
+            if (!selectionManager.isSelected(attachmentId)) {
+                selectionManager.selectOnly(attachmentId);
+            }
+            copyCurrentSelection();
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
         if (interaction.action() == CanvasAttachmentContextMenuOverlay.Action.DUPLICATE) {
             selectionManager.selectOnly(attachmentId);
             inputController.duplicateSelectedObjects();
@@ -3801,7 +3824,7 @@ public final class VTTScreen extends Screen {
                 }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
-                case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
+                case COPY, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
                         SAVE_AS_TEMPLATE -> {
                 }
                 case NONE -> {
@@ -4175,6 +4198,137 @@ public final class VTTScreen extends Screen {
         return copy;
     }
 
+    private void copyCurrentSelection() {
+        if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        session.saveCanvasSceneToActiveScene();
+        String selectedLightId = inputController.getSelectedLightId();
+        VttLight selectedLight = selectedLightId == null ? null
+                : session.getActiveScene().getLights().stream()
+                .filter(candidate -> candidate != null
+                        && selectedLightId.equals(candidate.getId()))
+                .findFirst().orElse(null);
+        if (selectedLight != null) {
+            VttLight copy = copySubtreeLight(selectedLight);
+            sceneClipboard = new SceneClipboard(List.of(), List.of(copy),
+                    new Vec2d(copy.getX(), copy.getY()));
+            VttClientEditorNotice.show("Light copied");
+            return;
+        }
+        Set<String> selected = new LinkedHashSet<>(selectionManager.getSelectedObjectIds());
+        selected.removeIf(id -> AttachmentBindingService.find(session.getActiveScene(), id) == null);
+        if (!selected.isEmpty()) {
+            Set<String> included = new LinkedHashSet<>(selected);
+            boolean changed;
+            do {
+                changed = false;
+                for (VttSceneObject object : session.getActiveScene().getObjects()) {
+                    if (object == null || included.contains(object.getId())) continue;
+                    VttAttachmentBinding binding = object.getAttachmentBinding();
+                    if (binding != null && binding.isBound()
+                            && included.contains(binding.getTargetObjectId())) {
+                        changed |= included.add(object.getId());
+                    }
+                }
+            } while (changed);
+            List<VttSceneObject> objects = session.getActiveScene().getObjects().stream()
+                    .filter(object -> object != null && included.contains(object.getId()))
+                    .map(this::copySceneObject).toList();
+            List<VttLight> lights = session.getActiveScene().getLights().stream()
+                    .filter(light -> light != null
+                            && included.contains(light.getAttachedToObjectId()))
+                    .map(this::copySubtreeLight).toList();
+            sceneClipboard = new SceneClipboard(objects, lights, clipboardCenter(objects, lights));
+            VttClientEditorNotice.show("Copied " + objects.size() + " object(s) and "
+                    + lights.size() + " light(s)");
+            return;
+        }
+    }
+
+    private void pasteClipboard(Vec2d target) {
+        if (!session.isLocalMaster() || session.getActiveScene() == null
+                || sceneClipboard == null || target == null) return;
+        Vec2d delta = target.subtract(sceneClipboard.center());
+        Map<String, String> remapped = new LinkedHashMap<>();
+        for (VttSceneObject source : sceneClipboard.objects()) {
+            String prefix = source.isAttachment() ? "attachment" : "token";
+            String candidate = prefix + "_" + UUID.randomUUID().toString()
+                    .replace("-", "").substring(0, 12);
+            remapped.put(source.getId(), scene.createUniqueObjectId(candidate));
+        }
+        List<VttSceneObject> pastedObjects = new ArrayList<>();
+        for (VttSceneObject source : sceneClipboard.objects()) {
+            VttSceneObject copy = copySceneObject(source);
+            copy.setId(remapped.get(source.getId()));
+            copy.getTransform().setX(source.getTransform().getX() + delta.x());
+            copy.getTransform().setY(source.getTransform().getY() + delta.y());
+            VttAttachmentBinding binding = copy.getAttachmentBinding();
+            if (binding != null && binding.isBound()) {
+                String parent = remapped.get(binding.getTargetObjectId());
+                if (parent == null) copy.setAttachmentBinding(null);
+                else binding.setTargetObjectId(parent);
+            }
+            copy.setLayerIndex(session.getActiveScene().getObjects().size()
+                    + pastedObjects.size());
+            pastedObjects.add(copy);
+        }
+
+        inputController.beginTokenLifecycleChange();
+        try {
+            selectionManager.clearSelection();
+            for (VttSceneObject object : pastedObjects) {
+                session.getActiveScene().addObject(object);
+                CanvasObject canvas = VttSceneToCanvasSceneMapper.convertObject(
+                        object, tokenDefinitionRegistry, attachmentDefinitionRegistry,
+                        assetRegistry, session.getAssetThumbnailRegistry());
+                if (canvas != null) {
+                    scene.addObject(canvas);
+                    selectionManager.select(canvas.id());
+                }
+            }
+            for (VttLight source : sceneClipboard.lights()) {
+                VttLight light = copySubtreeLight(source);
+                light.setId(uniqueSubtreeLightId(source.getId() + "_copy"));
+                light.setX(source.getX() + delta.x());
+                light.setY(source.getY() + delta.y());
+                String attached = remapped.get(source.getAttachedToObjectId());
+                light.setAttachedToObjectId(attached);
+                session.getActiveScene().addLight(light);
+            }
+            AttachmentBindingService.synchronize(
+                    session.getActiveScene(), scene, Set.of());
+            AttachmentBindingService.synchronizeLights(
+                    session.getActiveScene(), scene, null);
+            session.saveCanvasSceneToActiveScene();
+        } finally {
+            inputController.endTokenLifecycleChange();
+        }
+        inputController.selectSelectTool();
+        VttClientEditorNotice.show("Pasted " + pastedObjects.size() + " object(s) and "
+                + sceneClipboard.lights().size() + " light(s)");
+    }
+
+    private VttSceneObject copySceneObject(VttSceneObject source) {
+        return NETWORK_GSON.fromJson(NETWORK_GSON.toJson(source), VttSceneObject.class);
+    }
+
+    private Vec2d clipboardCenter(List<VttSceneObject> objects, List<VttLight> lights) {
+        double sumX = 0.0;
+        double sumY = 0.0;
+        int count = 0;
+        for (VttSceneObject object : objects) {
+            sumX += object.getTransform().getX();
+            sumY += object.getTransform().getY();
+            count++;
+        }
+        for (VttLight light : lights) {
+            if (light.getAttachedToObjectId() != null) continue;
+            sumX += light.getX();
+            sumY += light.getY();
+            count++;
+        }
+        return count == 0 ? Vec2d.ZERO : new Vec2d(sumX / count, sumY / count);
+    }
+
     private String uniqueSubtreeLightId(String prefix) {
         String base = prefix == null || prefix.isBlank() ? "light_copy" : prefix;
         String candidate = base;
@@ -4269,6 +4423,13 @@ public final class VTTScreen extends Screen {
                     selectionManager.selectOnly(token.id());
                     setSelectedSceneTokenOwner(interaction.stringValue());
                 }
+            }
+            case COPY -> {
+                if (!selectionManager.isSelected(token.id())) {
+                    selectionManager.selectOnly(token.id());
+                }
+                copyCurrentSelection();
+                canvasTokenContextMenuOverlay.close();
             }
             case DUPLICATE -> {
                 selectionManager.selectOnly(token.id());
@@ -5396,6 +5557,17 @@ public final class VTTScreen extends Screen {
             return true;
         }
 
+        if (controlDown && keyCode == GLFW.GLFW_KEY_C) {
+            if (session.isLocalMaster()) copyCurrentSelection();
+            return true;
+        }
+
+        if (controlDown && keyCode == GLFW.GLFW_KEY_V
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) == 0) {
+            if (session.isLocalMaster()) pasteClipboard(mouseWorldPosition());
+            return true;
+        }
+
         if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)
                 && inputController.isEditingCollisionBox()) {
             inputController.closeCollisionBoxEditor();
@@ -5590,7 +5762,8 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_V
-                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) != 0
+                && (getKeyboardModifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             toggleSelectedTokenAsVisionSource();
             return true;
@@ -7195,6 +7368,16 @@ public final class VTTScreen extends Screen {
         contextCreationType = ContextCreationType.NONE;
     }
 
+    private Vec2d mouseWorldPosition() {
+        if (renderState == null || this.minecraft == null) return null;
+        var window = this.minecraft.getWindow();
+        double screenX = this.minecraft.mouseHandler.xpos()
+                * window.getGuiScaledWidth() / Math.max(1.0, window.getScreenWidth());
+        double screenY = this.minecraft.mouseHandler.ypos()
+                * window.getGuiScaledHeight() / Math.max(1.0, window.getScreenHeight());
+        return renderState.screenToWorld(new Vec2d(screenX, screenY));
+    }
+
     private boolean handleMapCatalogPlacementMouseClicked(
             double mouseX, double mouseY, int button
     ) {
@@ -8158,6 +8341,16 @@ public final class VTTScreen extends Screen {
     }
 
     private record MapPreview(ResourceLocation texture, int width, int height) {
+    }
+
+    private record SceneClipboard(
+            List<VttSceneObject> objects, List<VttLight> lights, Vec2d center
+    ) {
+        private SceneClipboard {
+            objects = objects == null ? List.of() : List.copyOf(objects);
+            lights = lights == null ? List.of() : List.copyOf(lights);
+            center = center == null ? Vec2d.ZERO : center;
+        }
     }
 
     private record PendingAssetDeletion(

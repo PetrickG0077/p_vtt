@@ -31,11 +31,11 @@ public final class CanvasEmptyContextMenuOverlay {
 
     public boolean isOpen() { return open; }
 
-    public void render(VRenderContext context, Font font) {
+    public void render(VRenderContext context, Font font, boolean canPaste) {
         if (!open) return;
         panel(context, x, y, WIDTH, height());
         row(context, font, x, y, WIDTH, 0, "Create new  >", true);
-        row(context, font, x, y, WIDTH, 1, "Paste", false);
+        row(context, font, x, y, WIDTH, 1, "Paste", canPaste);
         row(context, font, x, y, WIDTH, 2, "Cancel", true);
         if (createSubmenuOpen) {
             int childX = childX(context.screenWidth());
@@ -46,7 +46,7 @@ public final class CanvasEmptyContextMenuOverlay {
     }
 
     public Interaction mouseClicked(
-            double mouseX, double mouseY, int button, int screenWidth
+            double mouseX, double mouseY, int button, int screenWidth, boolean canPaste
     ) {
         if (!open) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
@@ -67,7 +67,11 @@ public final class CanvasEmptyContextMenuOverlay {
             createSubmenuOpen = true;
             return Interaction.handled();
         }
-        if (row == 1) return Interaction.handled(); // Clipboard support is the next step.
+        if (row == 1) {
+            if (!canPaste) return Interaction.handled();
+            close();
+            return new Interaction(Action.PASTE, true);
+        }
         if (row == 2) {
             close();
             return new Interaction(Action.CANCEL, true);
@@ -116,7 +120,7 @@ public final class CanvasEmptyContextMenuOverlay {
     private int height() { return PADDING * 2 + ROW_HEIGHT * 3; }
     private int childHeight() { return PADDING * 2 + ROW_HEIGHT * 2; }
 
-    public enum Action { NONE, CREATE_TOKEN, CREATE_ATTACHMENT, CANCEL }
+    public enum Action { NONE, CREATE_TOKEN, CREATE_ATTACHMENT, PASTE, CANCEL }
 
     public record Interaction(Action action, boolean consumed) {
         public static Interaction none() { return new Interaction(Action.NONE, false); }

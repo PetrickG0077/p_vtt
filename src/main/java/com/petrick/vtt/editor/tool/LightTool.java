@@ -64,6 +64,7 @@ public final class LightTool implements Tool {
     private final EditorColorPickerOverlay colorPicker = new EditorColorPickerOverlay();
     private CanvasScene lastCanvasScene;
     private boolean attachmentTargetsOpen;
+    private boolean copyRequested;
     private CanvasObject lightDropAttachmentTarget;
 
     public LightTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
@@ -437,6 +438,7 @@ public final class LightTool implements Tool {
                 / (VttLight.MAX_INTENSITY - VttLight.MIN_INTENSITY);
         int knobX = trackX + (int) Math.round(progress * trackWidth);
         context.graphics().fill(knobX - 2, trackY - 3, knobX + 3, trackY + 8, CYAN);
+        popupRow(context, font, copyRow(), "Copy", true);
         popupRow(context, font, duplicateRow(), "Duplicate", true);
         popupRow(context, font, deleteRow(), "Delete", true);
         VttLight selected = selectedLight();
@@ -527,6 +529,10 @@ public final class LightTool implements Tool {
             int row = (int) ((mouseY - popupY - 5) / 19);
             if (row == attachRow()) attachmentTargetsOpen = !attachmentTargetsOpen;
             else if (row == detachRow()) detachSelectedLight();
+            else if (row == copyRow()) {
+                copyRequested = true;
+                closePopup();
+            }
             else if (row == duplicateRow()) duplicateSelected();
             else if (row == deleteRow()) deleteSelected();
         }
@@ -560,6 +566,12 @@ public final class LightTool implements Tool {
         closePopup();
         saveAction.run();
         return true;
+    }
+
+    public boolean consumeCopyRequest() {
+        boolean requested = copyRequested;
+        copyRequested = false;
+        return requested;
     }
 
     private void createPointLight() {
@@ -869,11 +881,12 @@ public final class LightTool implements Tool {
     private int intensityTrackY() { return popupY + (isSpot() ? 192 : 126); }
     private int attachRow() { return isSpot() ? 11 : 8; }
     private int detachRow() { return isSpot() ? 12 : 9; }
-    private int duplicateRow() { return isSpot() ? 13 : 10; }
-    private int deleteRow() { return isSpot() ? 14 : 11; }
+    private int copyRow() { return isSpot() ? 13 : 10; }
+    private int duplicateRow() { return isSpot() ? 14 : 11; }
+    private int deleteRow() { return isSpot() ? 15 : 12; }
     private int popupHeight() {
         if (popup == Popup.CREATE) return 64;
-        return isSpot() ? 299 : 236;
+        return isSpot() ? 318 : 255;
     }
 
     private void closePopup() {
