@@ -81,6 +81,13 @@ public final class VttServerAssetSyncService {
         sendActiveSceneAssets(player, scene, false, null);
     }
 
+    /** Sends the active scene plus the complete public music/show library on login. */
+    public static void sendActiveSceneAssetsWithMedia(
+            ServerPlayer player, VttScene scene, boolean includeAllTokens, Runnable completion
+    ) {
+        prepareSync(player, AssetScope.fromScene(scene, true), includeAllTokens, true, completion);
+    }
+
     /** Offers one library asset without replacing the client's current scene cache scope. */
     public static void sendLibraryAsset(
             ServerPlayer player, String relativePath, Runnable completion
@@ -93,7 +100,7 @@ public final class VttServerAssetSyncService {
             return;
         }
         prepareSync(player, new AssetScope(
-                "library:" + normalized, Set.of(), Set.of(), Set.of()),
+                "library:" + normalized, Set.of(), Set.of(), Set.of(), false),
                 false, false, completion);
     }
 
@@ -208,6 +215,10 @@ public final class VttServerAssetSyncService {
         if (scope != null) {
             scope.mapAssetIds().forEach(
                     assetId -> addAsset(assetId, assetsRoot, result, totalBytes));
+        }
+        if (scope != null && scope.includeMedia()) {
+            addMediaAssets(assetsRoot.resolve("musics"), assetsRoot, result, totalBytes);
+            addMediaAssets(assetsRoot.resolve("shows"), assetsRoot, result, totalBytes);
         }
 
         if (Files.isDirectory(tokensRoot)) {
@@ -343,6 +354,18 @@ public final class VttServerAssetSyncService {
         if (relative.startsWith("library:")) relative = relative.substring("library:".length());
         while (relative.startsWith("/")) relative = relative.substring(1);
         addFile("assets", assetsRoot, assetsRoot.resolve(relative), result, totalBytes);
+    }
+
+    private static void addMediaAssets(
+            Path folder, Path assetsRoot, Map<String, SyncFile> result, long[] totalBytes
+    ) {
+        if (!Files.isDirectory(folder)) return;
+        try (Stream<Path> files = Files.walk(folder)) {
+            files.filter(Files::isRegularFile).forEach(file ->
+                    addFile("assets", assetsRoot, file, result, totalBytes));
+        } catch (IOException exception) {
+            VTT.LOGGER.warn("Could not scan VTT media folder: {}", folder, exception);
+        }
     }
 
     private static void addFile(String category, Path root, Path file, Map<String, SyncFile> result, long[] totalBytes) {
@@ -825,7 +848,8 @@ public final class VttServerAssetSyncService {
             String backgroundAssetId,
             Set<String> mapAssetIds,
             Set<String> definitionIds,
-            Set<String> attachmentDefinitionIds
+            Set<String> attachmentDefinitionIds,
+            boolean includeMedia
     ) {
         private AssetScope {
             mapAssetIds = mapAssetIds == null ? Set.of() : Set.copyOf(mapAssetIds);
@@ -835,6 +859,12 @@ public final class VttServerAssetSyncService {
         }
 
         private static AssetScope fromScene(VttScene scene) {
+            // Media stays in the same server cache scope for the whole connection.
+            // Subsequent scene resyncs therefore retain it instead of deleting it as stale.
+            return fromScene(scene, true);
+        }
+
+        private static AssetScope fromScene(VttScene scene, boolean includeMedia) {
             return new AssetScope(
                     scene == null ? null : scene.getBackgroundAssetId(),
                     scene == null ? Set.of() : scene.getMaps().stream()
@@ -843,12 +873,13 @@ public final class VttServerAssetSyncService {
                             .filter(java.util.Objects::nonNull)
                             .collect(java.util.stream.Collectors.toSet()),
                     scene == null ? Set.of() : definitionIds(scene.getObjects()),
-                    scene == null ? Set.of() : attachmentDefinitionIds(scene.getObjects()));
+                    scene == null ? Set.of() : attachmentDefinitionIds(scene.getObjects()),
+                    includeMedia);
         }
 
         private static AssetScope fromObjects(List<VttSceneObject> objects) {
             return new AssetScope(null, Set.of(), definitionIds(objects),
-                    attachmentDefinitionIds(objects));
+                    attachmentDefinitionIds(objects), false);
         }
 
         private static Set<String> definitionIds(List<VttSceneObject> objects) {

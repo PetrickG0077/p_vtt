@@ -17,6 +17,7 @@ import java.nio.file.Path;
 public final class VttServerShowHandler {
     private static String path = "";
     private static boolean active;
+    private static boolean playing;
     private static long changedAtMillis;
 
     private VttServerShowHandler() {}
@@ -39,11 +40,23 @@ public final class VttServerShowHandler {
             synchronized (VttServerShowHandler.class) {
                 path = selected;
                 active = true;
+                playing = false;
                 changedAtMillis = System.currentTimeMillis();
             }
         } else if (VttShowCommandPayload.CLOSE.equals(command.operation())) {
             synchronized (VttServerShowHandler.class) {
                 active = false;
+                playing = false;
+                changedAtMillis = System.currentTimeMillis();
+            }
+        } else if (VttShowCommandPayload.PLAY.equals(command.operation()) && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                playing = true;
+                changedAtMillis = System.currentTimeMillis();
+            }
+        } else if (VttShowCommandPayload.PAUSE.equals(command.operation()) && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                playing = false;
                 changedAtMillis = System.currentTimeMillis();
             }
         } else return;
@@ -54,26 +67,19 @@ public final class VttServerShowHandler {
 
     public static void sendCurrent(ServerPlayer player) {
         if (player == null) return;
-        VttShowUpdatePayload update = current();
-        if (update.active()) {
-            VttServerAssetSyncService.sendLibraryAsset(player, update.relativePath(),
-                    () -> PacketDistributor.sendToPlayer(player, update));
-        } else PacketDistributor.sendToPlayer(player, update);
+        PacketDistributor.sendToPlayer(player, current());
     }
 
     private static void broadcast(MinecraftServer server) {
         if (server == null) return;
         VttShowUpdatePayload update = current();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (update.active()) {
-                VttServerAssetSyncService.sendLibraryAsset(player, update.relativePath(),
-                        () -> PacketDistributor.sendToPlayer(player, update));
-            } else PacketDistributor.sendToPlayer(player, update);
+            PacketDistributor.sendToPlayer(player, update);
         }
     }
 
     private static synchronized VttShowUpdatePayload current() {
-        return new VttShowUpdatePayload(path, active, changedAtMillis);
+        return new VttShowUpdatePayload(path, active, playing, changedAtMillis);
     }
 
     private static String validPath(String value) {
@@ -90,5 +96,9 @@ public final class VttServerShowHandler {
         Path file = assetsRoot.resolve(normalized).toAbsolutePath().normalize();
         if (!file.startsWith(assetsRoot) || !Files.isRegularFile(file)) return null;
         return normalized;
+    }
+
+    private static boolean isVideo(String candidate) {
+        return candidate != null && candidate.toLowerCase(Locale.ROOT).endsWith(".mp4");
     }
 }

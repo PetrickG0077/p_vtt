@@ -60,6 +60,7 @@ public final class ClientGameEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         VttClientSceneSnapshotReceiver.reset();
         VttClientEditorNotice.reset();
+        VttClientAssetCache.clearActiveServerCache();
         VttClientAssetCache.reset();
         VttClientPresentationState.reset();
         VttClientSceneHistorySync.reset();

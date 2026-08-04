@@ -298,6 +298,18 @@ public final class VttClientAssetCache {
         return activeServerId == null ? base.resolve("inactive") : base.resolve(activeServerId);
     }
 
+    /** Removes downloaded server-only assets when leaving that server. */
+    public static synchronized void clearActiveServerCache() {
+        discardIncoming();
+        cancelVerification();
+        deleteTreeQuietly(activeCacheRoot());
+        activeServerId = null;
+        readyForServerState = false;
+        recoveryRequired = false;
+        progress = SyncProgress.hidden();
+        progressHideAt = 0L;
+    }
+
     private static boolean validManifest(VttAssetManifestPayload manifest) {
         if (manifest == null || manifest.entries().size() > VttAssetManifestPayload.MAX_FILES
                 || !validUuid(manifest.syncId()) || !validUuid(manifest.serverId())) return false;

@@ -13,6 +13,7 @@ public final class VttClientShowState {
     private static final long FADE_OUT_MILLIS = 350L;
     private static String relativePath = "";
     private static boolean targetActive;
+    private static boolean playing;
     private static float transitionStartAlpha;
     private static long transitionStartedAt;
 
@@ -22,14 +23,23 @@ public final class VttClientShowState {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.SHOW, path));
-        } else accept(new VttShowUpdatePayload(path, true, System.currentTimeMillis()));
+        } else accept(new VttShowUpdatePayload(path, true, false, System.currentTimeMillis()));
     }
 
     public static void close(VTTSession session) {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.CLOSE, ""));
-        } else accept(new VttShowUpdatePayload(relativePath, false,
+        } else accept(new VttShowUpdatePayload(relativePath, false, false,
+                System.currentTimeMillis()));
+    }
+
+    public static void togglePlayback(VTTSession session) {
+        String operation = playing ? VttShowCommandPayload.PAUSE : VttShowCommandPayload.PLAY;
+        if (session.isNetworkAuthorityActive()) {
+            if (session.isLocalMaster()) PacketDistributor.sendToServer(
+                    new VttShowCommandPayload(operation, ""));
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, !playing,
                 System.currentTimeMillis()));
     }
 
@@ -41,6 +51,7 @@ public final class VttClientShowState {
         }
         transitionStartAlpha = current;
         targetActive = update.active();
+        playing = update.playing();
         transitionStartedAt = System.currentTimeMillis();
         if (targetActive) {
             Minecraft minecraft = Minecraft.getInstance();
@@ -62,11 +73,14 @@ public final class VttClientShowState {
 
     public static String relativePath() { return relativePath; }
     public static boolean isActive() { return targetActive; }
+    public static boolean isPlaying() { return playing; }
+    public static boolean isVideo() { return relativePath.toLowerCase().endsWith(".mp4"); }
     public static boolean blocksInput() { return targetActive || alpha() > 0.01F; }
 
     public static synchronized void reset() {
         relativePath = "";
         targetActive = false;
+        playing = false;
         transitionStartAlpha = 0.0F;
         transitionStartedAt = 0L;
     }

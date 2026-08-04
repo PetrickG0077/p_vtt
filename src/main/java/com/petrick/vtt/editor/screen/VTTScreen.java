@@ -765,7 +765,8 @@ public final class VTTScreen extends Screen {
         int sourceWidth = thumbnail == null ? 0 : thumbnail.width();
         int sourceHeight = thumbnail == null ? 0 : thumbnail.height();
         if (entry != null && entry.fileType() == AssetLibraryFileType.VIDEO) {
-            VttVideoFrameService.Frame frame = VttVideoFrameService.frame(entry.absolutePath());
+            VttVideoFrameService.Frame frame = VttVideoFrameService.frame(
+                    entry.absolutePath(), VttClientShowState.isPlaying());
             showTexture = frame.texture();
             sourceWidth = frame.width();
             sourceHeight = frame.height();
@@ -804,6 +805,17 @@ public final class VTTScreen extends Screen {
                     context.screenHeight() / 2, 0xFFFFFFFF);
         }
         if (session.isLocalMaster()) {
+            if (VttClientShowState.isVideo()) {
+                int playX = context.screenWidth() - 150;
+                context.graphics().fill(playX, 14, playX + 58, 38, 0xE0222228);
+                context.graphics().hLine(playX, playX + 58, 14, 0xFFFFFFFF);
+                context.graphics().hLine(playX, playX + 58, 38, 0xFFFFFFFF);
+                context.graphics().vLine(playX, 14, 38, 0xFFFFFFFF);
+                context.graphics().vLine(playX + 58, 14, 38, 0xFFFFFFFF);
+                context.graphics().drawCenteredString(this.font,
+                        VttClientShowState.isPlaying() ? "Pause" : "Play",
+                        playX + 29, 22, 0xFFFFFFFF);
+            }
             int x = context.screenWidth() - 82;
             context.graphics().fill(x, 14, x + 66, 38, 0xE0222228);
             context.graphics().hLine(x, x + 66, 14, 0xFFFFFFFF);
@@ -2806,6 +2818,13 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
+            if (session.isLocalMaster() && VttClientShowState.isVideo()
+                    && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && mouseX >= this.width - 150 && mouseX <= this.width - 92
+                    && mouseY >= 14 && mouseY <= 38) {
+                VttClientShowState.togglePlayback(session);
+                return true;
+            }
             if (session.isLocalMaster() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && mouseX >= this.width - 82 && mouseX <= this.width - 16
                     && mouseY >= 14 && mouseY <= 38) {

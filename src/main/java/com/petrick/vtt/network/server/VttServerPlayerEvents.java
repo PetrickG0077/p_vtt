@@ -68,7 +68,7 @@ public final class VttServerPlayerEvents {
         broadcastRoster(player.getServer());
         VttServerTabletopState state = VttServerTabletopState.get();
         VttServerVisionSourceSync.markCurrentAssetsSent(player, state);
-        VttServerAssetSyncService.sendActiveSceneAssets(
+        VttServerAssetSyncService.sendActiveSceneAssetsWithMedia(
                 player, state.replicatedSceneFor(player), isMaster(player), () -> {
                     VttServerSceneSnapshotSync.sendToPlayer(player, state);
                     VttServerVisionSourceSync.sendToPlayer(player, state);

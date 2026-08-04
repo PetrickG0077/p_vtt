@@ -11,6 +11,8 @@ public record VttShowCommandPayload(String operation, String relativePath)
         implements CustomPacketPayload {
     public static final String SHOW = "SHOW";
     public static final String CLOSE = "CLOSE";
+    public static final String PLAY = "PLAY";
+    public static final String PAUSE = "PAUSE";
     public static final Type<VttShowCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "show_command"));
     public static final StreamCodec<RegistryFriendlyByteBuf, VttShowCommandPayload>
