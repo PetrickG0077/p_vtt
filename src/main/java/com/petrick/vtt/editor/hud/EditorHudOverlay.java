@@ -601,7 +601,7 @@ public final class EditorHudOverlay {
     private ResourceLocation icon(Action action) {
         String fileName = action == Action.ATTACHMENTS ? "attachs.png"
                 : action == Action.RELOAD ? "redo.png"
-                : action == Action.MEDIA ? "creation.png"
+                : action == Action.MEDIA ? "music_show.png"
                 : action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
