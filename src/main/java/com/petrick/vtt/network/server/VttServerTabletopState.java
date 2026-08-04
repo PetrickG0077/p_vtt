@@ -1530,6 +1530,124 @@ public final class VttServerTabletopState {
                 List.copyOf(objectUpdates), List.copyOf(lightUpdates));
     }
 
+    public synchronized CompositeAttachmentPlacementResult applySceneClipboardPaste(
+            VttCompositeAttachmentPlacementData data, String playerId
+    ) {
+        if (activeScene == null || data == null || playerId == null
+                || data.objects().isEmpty() && data.lights().isEmpty()
+                || data.objects().size() > 256 || data.lights().size() > 2_048
+                || activeScene.getObjects().size() + data.objects().size()
+                > VttSceneLimits.MAX_TOKENS
+                || activeScene.getLights().size() + data.lights().size()
+                > VttSceneLimits.MAX_LIGHTS) return null;
+
+        Set<String> requestedObjectIds = new java.util.LinkedHashSet<>();
+        Set<String> requestedLightIds = new java.util.LinkedHashSet<>();
+        Map<String, VttSceneObject> requestedObjects = new LinkedHashMap<>();
+        for (VttSceneObject object : data.objects()) {
+            if (!validSceneObject(object) || object.getId() == null
+                    || object.getId().isBlank() || !requestedObjectIds.add(object.getId())) {
+                return null;
+            }
+            requestedObjects.put(object.getId(), object);
+        }
+        for (VttSceneObject object : data.objects()) {
+            VttAttachmentBinding binding = object.getAttachmentBinding();
+            if (binding != null && binding.isBound()
+                    && !requestedObjectIds.contains(binding.getTargetObjectId())) return null;
+            Set<String> visited = new HashSet<>();
+            VttSceneObject current = object;
+            for (int depth = 0; current != null && current.getAttachmentBinding() != null
+                    && current.getAttachmentBinding().isBound(); depth++) {
+                if (depth > com.petrick.vtt.feature.attachment.AttachmentBindingService
+                        .MAX_BINDING_DEPTH || !visited.add(current.getId())) return null;
+                current = requestedObjects.get(
+                        current.getAttachmentBinding().getTargetObjectId());
+                if (current == null) return null;
+            }
+        }
+        for (VttLight light : data.lights()) {
+            if (!validCompositeLight(light) || light.getId() == null
+                    || !requestedLightIds.add(light.getId())
+                    || light.getAttachedToObjectId() != null
+                    && !requestedObjectIds.contains(light.getAttachedToObjectId())) return null;
+        }
+
+        Map<String, String> remappedObjectIds = new LinkedHashMap<>();
+        for (VttSceneObject object : data.objects()) {
+            String prefix = object.isAttachment() ? "attachment" : "token";
+            remappedObjectIds.put(object.getId(), createUniqueObjectId(prefix + "_"
+                    + UUID.randomUUID().toString().replace("-", "").substring(0, 12)));
+        }
+        Set<String> reservedLightIds = new HashSet<>();
+        Map<String, String> remappedLightIds = new LinkedHashMap<>();
+        for (VttLight light : data.lights()) {
+            remappedLightIds.put(light.getId(), createUniqueClipboardLightId(
+                    reservedLightIds));
+        }
+
+        for (VttSceneObject object : data.objects()) {
+            String requestedId = object.getId();
+            object.setId(remappedObjectIds.get(requestedId));
+            VttAttachmentBinding binding = object.getAttachmentBinding();
+            if (binding != null && binding.isBound()) {
+                binding.setTargetObjectId(remappedObjectIds.get(binding.getTargetObjectId()));
+            }
+        }
+        for (VttLight light : data.lights()) {
+            String requestedId = light.getId();
+            light.setId(remappedLightIds.get(requestedId));
+            if (light.getAttachedToObjectId() != null) {
+                light.setAttachedToObjectId(remappedObjectIds.get(
+                        light.getAttachedToObjectId()));
+            }
+        }
+
+        int layer = activeScene.getObjects().size();
+        for (VttSceneObject object : data.objects()) {
+            object.setLayerIndex(layer++);
+            activeScene.addObject(object);
+            objectSpatialIndex.addOrUpdate(object);
+        }
+        data.lights().forEach(activeScene::addLight);
+        for (VttSceneObject object : data.objects()) {
+            VttAttachmentBinding binding = object.getAttachmentBinding();
+            if (binding == null || !binding.isBound()) {
+                synchronizeAttachmentDependencies(object.getId());
+            }
+        }
+
+        List<VttTokenLifecycleUpdatePayload> objectUpdates = new ArrayList<>();
+        for (VttSceneObject object : data.objects()) {
+            objectUpdates.add(new VttTokenLifecycleUpdatePayload(
+                    "CREATE", object.getId(), object.getId(), GSON.toJson(object), playerId));
+        }
+        List<VttEnvironmentCommandUpdatePayload> lightUpdates = new ArrayList<>();
+        for (VttLight light : data.lights()) {
+            String key = VttEnvironmentCommandPayload.LIGHT + "\u0000" + light.getId();
+            lightUpdates.add(new VttEnvironmentCommandUpdatePayload(
+                    authorityRevision, nextRevision(environmentRevisions, key), 0L,
+                    VttEnvironmentCommandPayload.UPSERT, activeScene.getId(),
+                    VttEnvironmentCommandPayload.LIGHT, light.getId(),
+                    GSON.toJson(light), playerId));
+        }
+        normalizeLayerIndices();
+        markActiveSceneDirty();
+        flushActiveSceneNow("scene clipboard paste");
+        return new CompositeAttachmentPlacementResult(
+                List.copyOf(objectUpdates), List.copyOf(lightUpdates));
+    }
+
+    private String createUniqueClipboardLightId(Set<String> reservedIds) {
+        while (true) {
+            String candidate = "light_" + UUID.randomUUID().toString()
+                    .replace("-", "").substring(0, 12);
+            boolean exists = activeScene.getLights().stream().anyMatch(
+                    light -> light != null && candidate.equals(light.getId()));
+            if (!exists && reservedIds.add(candidate)) return candidate;
+        }
+    }
+
     private boolean validCompositeLight(VttLight light) {
         return light != null && light.getId() != null && !light.getId().isBlank()
                 && Double.isFinite(light.getX()) && Double.isFinite(light.getY())

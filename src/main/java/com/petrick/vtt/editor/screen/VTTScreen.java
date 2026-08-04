@@ -116,6 +116,7 @@ import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
 import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementData;
 import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementPayload;
+import com.petrick.vtt.network.payload.VttSceneClipboardPastePayload;
 import com.google.gson.Gson;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
@@ -4272,6 +4273,31 @@ public final class VTTScreen extends Screen {
             pastedObjects.add(copy);
         }
 
+        List<VttLight> pastedLights = new ArrayList<>();
+        for (VttLight source : sceneClipboard.lights()) {
+            VttLight light = copySubtreeLight(source);
+            light.setId(uniqueSubtreeLightId(source.getId() + "_copy"));
+            light.setX(source.getX() + delta.x());
+            light.setY(source.getY() + delta.y());
+            light.setAttachedToObjectId(remapped.get(source.getAttachedToObjectId()));
+            pastedLights.add(light);
+        }
+
+        if (session.isNetworkAuthorityActive()) {
+            String json = NETWORK_GSON.toJson(
+                    new VttCompositeAttachmentPlacementData(pastedObjects, pastedLights));
+            if (json.length() > VttSceneClipboardPastePayload.MAX_JSON_LENGTH) {
+                VttClientEditorNotice.show("Clipboard selection is too large to paste");
+                return;
+            }
+            PacketDistributor.sendToServer(new VttSceneClipboardPastePayload(
+                    session.getNetworkAuthorityRevision(),
+                    session.getActiveScene().getId(), json));
+            inputController.selectSelectTool();
+            VttClientEditorNotice.show("Paste sent to server");
+            return;
+        }
+
         inputController.beginTokenLifecycleChange();
         try {
             selectionManager.clearSelection();
@@ -4285,13 +4311,7 @@ public final class VTTScreen extends Screen {
                     selectionManager.select(canvas.id());
                 }
             }
-            for (VttLight source : sceneClipboard.lights()) {
-                VttLight light = copySubtreeLight(source);
-                light.setId(uniqueSubtreeLightId(source.getId() + "_copy"));
-                light.setX(source.getX() + delta.x());
-                light.setY(source.getY() + delta.y());
-                String attached = remapped.get(source.getAttachedToObjectId());
-                light.setAttachedToObjectId(attached);
+            for (VttLight light : pastedLights) {
                 session.getActiveScene().addLight(light);
             }
             AttachmentBindingService.synchronize(
@@ -4304,7 +4324,7 @@ public final class VTTScreen extends Screen {
         }
         inputController.selectSelectTool();
         VttClientEditorNotice.show("Pasted " + pastedObjects.size() + " object(s) and "
-                + sceneClipboard.lights().size() + " light(s)");
+                + pastedLights.size() + " light(s)");
     }
 
     private VttSceneObject copySceneObject(VttSceneObject source) {
