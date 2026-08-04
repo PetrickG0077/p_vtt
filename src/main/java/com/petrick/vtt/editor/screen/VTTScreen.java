@@ -58,6 +58,11 @@ import com.petrick.vtt.feature.token.CreatedTokenDefinitions;
 import com.petrick.vtt.feature.asset.AssetRegistry;
 import com.petrick.vtt.feature.asset.BuiltInTextureAssetRef;
 import com.petrick.vtt.feature.asset.thumbnail.AssetThumbnail;
+import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
+import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
+import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
+import com.petrick.vtt.feature.asset.animation.AnimatedTextureFrame;
+import com.petrick.vtt.network.client.VttClientShowState;
 import com.petrick.vtt.feature.camera.Camera2D;
 import com.petrick.vtt.feature.canvas.CanvasObject;
 import com.petrick.vtt.feature.canvas.CanvasRenderer;
@@ -554,6 +559,7 @@ public final class VTTScreen extends Screen {
             renderEditorHud(context);
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
+            renderFullscreenShow(context);
             return;
         }
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
@@ -568,6 +574,7 @@ public final class VTTScreen extends Screen {
             }
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
+            renderFullscreenShow(context);
             return;
         }
 
@@ -738,6 +745,67 @@ public final class VTTScreen extends Screen {
         }
         VttAssetSyncHudOverlay.render(graphics);
         renderPresentationCurtain(context);
+        renderFullscreenShow(context);
+    }
+
+    private void renderFullscreenShow(VRenderContext context) {
+        float alpha = VttClientShowState.alpha();
+        if (alpha <= 0.001F) return;
+        String path = VttClientShowState.relativePath();
+        AssetLibraryEntry entry = session.getAssetLibraryScanResult() == null ? null
+                : session.getAssetLibraryScanResult().entries().stream()
+                .filter(candidate -> candidate.relativePath().replace('\\', '/').equals(path))
+                .findFirst().orElse(null);
+        AssetThumbnail thumbnail = entry == null ? null
+                : session.getAssetThumbnailRegistry().findById(entry.id()).orElse(null);
+
+        net.minecraft.resources.ResourceLocation showTexture = thumbnail == null
+                ? null : thumbnail.texture();
+        int sourceWidth = thumbnail == null ? 0 : thumbnail.width();
+        int sourceHeight = thumbnail == null ? 0 : thumbnail.height();
+        if (entry != null && thumbnail != null
+                && entry.fileType() == AssetLibraryFileType.ANIMATED_IMAGE) {
+            AnimatedTextureFrame frame = session.getAnimatedTextureService().getCurrentFrame(
+                    new LibraryTextureAssetRef(entry.id(), thumbnail.texture(),
+                            thumbnail.width(), thumbnail.height(), entry.relativePath()),
+                    System.currentTimeMillis());
+            if (frame != null) {
+                showTexture = frame.texture();
+                sourceWidth = frame.width();
+                sourceHeight = frame.height();
+            }
+        }
+
+        int backdropAlpha = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
+        context.graphics().fill(0, 0, context.screenWidth(), context.screenHeight(),
+                backdropAlpha << 24);
+        if (showTexture != null) {
+            double scale = Math.min(context.screenWidth() / (double) sourceWidth,
+                    context.screenHeight() / (double) sourceHeight);
+            int width = Math.max(1, (int) Math.round(sourceWidth * scale));
+            int height = Math.max(1, (int) Math.round(sourceHeight * scale));
+            int x = (context.screenWidth() - width) / 2;
+            int y = (context.screenHeight() - height) / 2;
+            context.graphics().setColor(1.0F, 1.0F, 1.0F, alpha);
+            context.graphics().blit(showTexture, x, y, width, height,
+                    0.0F, 0.0F, sourceWidth, sourceHeight,
+                    sourceWidth, sourceHeight);
+            context.graphics().setColor(1.0F, 1.0F, 1.0F, 1.0F);
+        } else {
+            context.graphics().drawCenteredString(this.font,
+                    "Loading presentation...", context.screenWidth() / 2,
+                    context.screenHeight() / 2, 0xFFFFFFFF);
+        }
+        if (session.isLocalMaster()) {
+            int x = context.screenWidth() - 82;
+            context.graphics().fill(x, 14, x + 66, 38, 0xE0222228);
+            context.graphics().hLine(x, x + 66, 14, 0xFFFFFFFF);
+            context.graphics().hLine(x, x + 66, 38, 0xFFFFFFFF);
+            context.graphics().vLine(x, 14, 38, 0xFFFFFFFF);
+            context.graphics().vLine(x + 66, 14, 38, 0xFFFFFFFF);
+            context.graphics().drawCenteredString(this.font, "Close",
+                    x + 33, 22, 0xFFFFFFFF);
+        }
     }
 
     private void applyPendingPresentationCamera() {
@@ -2738,6 +2806,14 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (VttClientShowState.blocksInput()) {
+            if (session.isLocalMaster() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && mouseX >= this.width - 82 && mouseX <= this.width - 16
+                    && mouseY >= 14 && mouseY <= 38) {
+                VttClientShowState.close(session);
+            }
+            return true;
+        }
         if (handleAssetBatchDeleteConfirmationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -4969,6 +5045,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (VttClientShowState.blocksInput()) return true;
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
@@ -5071,6 +5148,7 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
+        if (VttClientShowState.blocksInput()) return true;
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
@@ -5178,6 +5256,7 @@ public final class VTTScreen extends Screen {
             double scrollX,
             double scrollY
     ) {
+        if (VttClientShowState.blocksInput()) return true;
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (sceneBackgroundEditor.isActive()) {
@@ -5321,6 +5400,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (VttClientShowState.blocksInput()) return true;
         if (pendingAssetBatchDeletion != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 if (!pendingAssetBatchDeletion.request().blocked()) {
@@ -6535,6 +6615,7 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (VttClientShowState.blocksInput()) return true;
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (canvasTokenContextMenuOverlay.isOpen()) {

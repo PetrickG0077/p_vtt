@@ -35,6 +35,10 @@ import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
 import com.petrick.vtt.network.payload.VttMusicUpdatePayload;
 import com.petrick.vtt.network.client.VttClientMusicSync;
+import com.petrick.vtt.network.payload.VttShowUpdatePayload;
+import com.petrick.vtt.network.client.VttClientShowState;
+import com.petrick.vtt.editor.screen.VTTScreen;
+import net.minecraft.client.Minecraft;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
@@ -194,6 +198,16 @@ public final class VttClientPayloadHandler {
             VttMusicUpdatePayload payload, IPayloadContext context
     ) {
         VttClientMusicSync.accept(payload);
+    }
+
+    public static void handleShowUpdate(
+            VttShowUpdatePayload payload, IPayloadContext context
+    ) {
+        VttClientShowState.accept(payload);
+        if (payload != null && payload.active()
+                && !(Minecraft.getInstance().screen instanceof VTTScreen)) {
+            Minecraft.getInstance().setScreen(new VTTScreen());
+        }
     }
 
     public static void handleAssetFolderResult(

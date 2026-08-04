@@ -69,6 +69,10 @@ public final class VttServerMusicHandler {
     }
 
     public static void sendCurrent(ServerPlayer player) {
+        sendCurrent(player, null);
+    }
+
+    public static void sendCurrent(ServerPlayer player, Runnable completion) {
         if (player == null) return;
         VttMusicUpdatePayload update;
         synchronized (VttServerMusicHandler.class) {
@@ -76,9 +80,13 @@ public final class VttServerMusicHandler {
         }
         if (update.playing() && !update.relativePath().isBlank()) {
             VttServerAssetSyncService.sendLibraryAsset(player, update.relativePath(),
-                    () -> PacketDistributor.sendToPlayer(player, update));
+                    () -> {
+                        PacketDistributor.sendToPlayer(player, update);
+                        if (completion != null) completion.run();
+                    });
         } else {
             PacketDistributor.sendToPlayer(player, update);
+            if (completion != null) completion.run();
         }
     }
 

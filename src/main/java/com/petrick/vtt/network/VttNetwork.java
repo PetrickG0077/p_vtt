@@ -64,6 +64,9 @@ import com.petrick.vtt.network.server.VttServerSceneClipboardCutHandler;
 import com.petrick.vtt.network.payload.VttMusicCommandPayload;
 import com.petrick.vtt.network.payload.VttMusicUpdatePayload;
 import com.petrick.vtt.network.server.VttServerMusicHandler;
+import com.petrick.vtt.network.payload.VttShowCommandPayload;
+import com.petrick.vtt.network.payload.VttShowUpdatePayload;
+import com.petrick.vtt.network.server.VttServerShowHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -72,7 +75,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "51";
+    private static final String PROTOCOL_VERSION = "52";
 
     private VttNetwork() {
     }
@@ -174,6 +177,9 @@ public final class VttNetwork {
         registrar.playToServer(VttMusicCommandPayload.TYPE,
                 VttMusicCommandPayload.STREAM_CODEC,
                 VttServerMusicHandler::handle);
+        registrar.playToServer(VttShowCommandPayload.TYPE,
+                VttShowCommandPayload.STREAM_CODEC,
+                VttServerShowHandler::handle);
         registrar.playToServer(VttAssetFolderCommandPayload.TYPE,
                 VttAssetFolderCommandPayload.STREAM_CODEC,
                 VttServerAssetFolderHandler::handle);
@@ -207,5 +213,8 @@ public final class VttNetwork {
         registrar.playToClient(VttMusicUpdatePayload.TYPE,
                 VttMusicUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleMusicUpdate);
+        registrar.playToClient(VttShowUpdatePayload.TYPE,
+                VttShowUpdatePayload.STREAM_CODEC,
+                VttClientPayloadHandler::handleShowUpdate);
     }
 }

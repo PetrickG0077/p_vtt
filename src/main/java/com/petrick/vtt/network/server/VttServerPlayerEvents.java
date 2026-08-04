@@ -61,7 +61,8 @@ public final class VttServerPlayerEvents {
                 player, state.replicatedSceneFor(player), isMaster(player), () -> {
                     VttServerSceneSnapshotSync.sendToPlayer(player, state);
                     VttServerVisionSourceSync.sendToPlayer(player, state);
-                    VttServerMusicHandler.sendCurrent(player);
+                    VttServerMusicHandler.sendCurrent(player,
+                            () -> VttServerShowHandler.sendCurrent(player));
                 });
     }
 
