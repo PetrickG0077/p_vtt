@@ -16,6 +16,7 @@ import java.util.function.Supplier;
 public final class DoorTool implements Tool {
     public static final String ID = "door";
     private static final int LEFT_MOUSE_BUTTON = 0;
+    private static final long DOUBLE_CLICK_MS = 350L;
     private static final double MIN_DRAG_PIXELS = 4.0;
     private static final double SNAP_TOLERANCE_PIXELS = 8.0;
 
@@ -32,6 +33,9 @@ public final class DoorTool implements Tool {
     private Vec2d wallGuideEnd;
     private Vec2d snapGuideStart;
     private Vec2d snapGuideEnd;
+    private String lastClickedDoorId;
+    private long lastDoorClickAt;
+    private boolean selectToolRequested;
     private Mode mode = Mode.NONE;
 
     public DoorTool(Supplier<VttScene> sceneSupplier, Runnable saveAction) {
@@ -47,7 +51,17 @@ public final class DoorTool implements Tool {
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         VttDoor clicked = findTopmostDoorAt(world);
         if (clicked != null) {
+            long now = System.currentTimeMillis();
+            boolean doubleClick = clicked.getId().equals(lastClickedDoorId)
+                    && now - lastDoorClickAt <= DOUBLE_CLICK_MS;
+            lastClickedDoorId = clicked.getId();
+            lastDoorClickAt = now;
             selectedDoorId = clicked.getId();
+            if (doubleClick) {
+                finishOperation();
+                toggleSelectedDoorOpen();
+                return true;
+            }
             originalTransform = copyTransform(clicked.getTransform());
             originalSize = new VttSceneSize(clicked.getSize().getWidth(), clicked.getSize().getHeight());
             originalWallId = clicked.getWallId();
@@ -78,7 +92,9 @@ public final class DoorTool implements Tool {
         Vec2d world = context.renderState().screenToWorld(new Vec2d(mouseX, mouseY));
         if (mode == Mode.CREATE) {
             end = world;
-            createDoorIfLargeEnough(context, mouseX, mouseY);
+            if (!createDoorIfLargeEnough(context, mouseX, mouseY)) {
+                selectToolRequested = true;
+            }
         } else {
             moveSelectedDoor(context, world);
             saveAction.run();
@@ -110,6 +126,7 @@ public final class DoorTool implements Tool {
     public void deactivate() {
         cancel();
         selectedDoorId = null;
+        selectToolRequested = false;
     }
 
     /** Selects a door without beginning a drag operation. */
@@ -118,7 +135,15 @@ public final class DoorTool implements Tool {
         if (door == null) return false;
         finishOperation();
         selectedDoorId = door.getId();
+        lastClickedDoorId = door.getId();
+        lastDoorClickAt = System.currentTimeMillis();
         return true;
+    }
+
+    public boolean consumeSelectToolRequest() {
+        boolean requested = selectToolRequested;
+        selectToolRequested = false;
+        return requested;
     }
 
     public boolean deleteSelectedDoor() {
@@ -178,12 +203,12 @@ public final class DoorTool implements Tool {
         return true;
     }
 
-    private void createDoorIfLargeEnough(ToolContext context, double mouseX, double mouseY) {
+    private boolean createDoorIfLargeEnough(ToolContext context, double mouseX, double mouseY) {
         Vec2d startScreen = context.renderState().worldToScreen(start);
         if (Math.abs(mouseX - startScreen.x()) < MIN_DRAG_PIXELS
-                || Math.abs(mouseY - startScreen.y()) < MIN_DRAG_PIXELS) return;
+                || Math.abs(mouseY - startScreen.y()) < MIN_DRAG_PIXELS) return false;
         VttScene scene = sceneSupplier.get();
-        if (scene == null) return;
+        if (scene == null) return false;
         double width = Math.abs(end.x() - start.x());
         double height = Math.abs(end.y() - start.y());
         VttDoor door = new VttDoor(nextDoorId(scene), null,
@@ -194,6 +219,7 @@ public final class DoorTool implements Tool {
         scene.addDoor(door);
         selectedDoorId = door.getId();
         saveAction.run();
+        return true;
     }
 
     private void moveSelectedDoor(ToolContext context, Vec2d world) {

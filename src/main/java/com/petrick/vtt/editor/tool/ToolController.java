@@ -275,7 +275,12 @@ public final class ToolController {
             int button,
             int modifiers
     ) {
-        return activeTool.mouseReleased(context, mouseX, mouseY, button, modifiers);
+        boolean handled = activeTool.mouseReleased(context, mouseX, mouseY, button, modifiers);
+        if (activeTool == doorTool && doorTool.consumeSelectToolRequest()) {
+            selectSelectTool();
+            return true;
+        }
+        return handled;
     }
 
     public boolean mouseDragged(
