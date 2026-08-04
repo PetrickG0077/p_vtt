@@ -15,7 +15,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 16;
+    private static final int ROWS = 17;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -27,6 +27,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private boolean anchorsOpen;
     private boolean constraintsOpen;
     private boolean statesOpen;
+    private boolean stateMappingOpen;
     private boolean confirmDeleteSubtree;
 
     public void open(String objectId, int mouseX, int mouseY,
@@ -39,6 +40,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         this.anchorsOpen = false;
         this.constraintsOpen = false;
         this.statesOpen = false;
+        this.stateMappingOpen = false;
         this.confirmDeleteSubtree = false;
     }
 
@@ -48,6 +50,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         anchorsOpen = false;
         constraintsOpen = false;
         statesOpen = false;
+        stateMappingOpen = false;
         confirmDeleteSubtree = false;
     }
 
@@ -55,6 +58,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     public String objectId() { return objectId; }
 
     public void render(VRenderContext context, Font font, CanvasObject object,
+                       CanvasObject rootToken,
                        VttAttachmentBinding binding,
                        List<CanvasObject> targets, int subtreeObjects, int subtreeLights,
                        int directChildren) {
@@ -89,19 +93,37 @@ public final class CanvasAttachmentContextMenuOverlay {
                 + subtreeLights + ")", true);
         row(context, font, 15, "State: " + trim(object.activeStateId(), 14) + "  >",
                 object.states().size() > 1);
+        row(context, font, 16, binding != null && binding.isStateMappingEnabled()
+                ? "State mapping: AUTO  >" : "State mapping: Independent  >",
+                binding != null && binding.isBound() && rootToken != null);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
         if (constraintsOpen) renderConstraints(context, font, binding);
         if (statesOpen) renderStates(context, font, object);
+        if (stateMappingOpen) renderStateMapping(
+                context, font, object, rootToken, binding);
     }
 
     public Interaction mouseClicked(double mouseX, double mouseY, int button,
-                                    CanvasObject object, VttAttachmentBinding binding,
+                                    CanvasObject object, CanvasObject rootToken,
+                                    VttAttachmentBinding binding,
                                     List<CanvasObject> targets, int screenWidth) {
         if (!isOpen()) return Interaction.none();
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Interaction.handled();
         int targetX = targetX(screenWidth);
+        if (stateMappingOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
+                stateMappingHeight(rootToken))) {
+            int row = (int) ((mouseY - y - 5) / ROW_HEIGHT);
+            if (row == 0) return new Interaction(Action.TOGGLE_STATE_MAPPING, null, true);
+            if (row == 1) return new Interaction(Action.CYCLE_STATE_FALLBACK, null, true);
+            if (rootToken != null && row - 2 < rootToken.states().size()) {
+                String parentStateId = rootToken.states().keySet().stream().skip(row - 2)
+                        .findFirst().orElse(null);
+                return new Interaction(Action.CYCLE_STATE_MAPPING, parentStateId, true);
+            }
+            return Interaction.handled();
+        }
         if (statesOpen && inside(mouseX, mouseY, targetX, y, TARGET_WIDTH,
                 stateHeight(object))) {
             int index = (int) ((mouseY - y - 5) / ROW_HEIGHT);
@@ -141,6 +163,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     anchorsOpen = false;
                     constraintsOpen = false;
                     statesOpen = false;
+                    stateMappingOpen = false;
                     yield Interaction.handled();
                 }
                 case 1 -> bound ? new Interaction(Action.TOGGLE_POSITION, null, true)
@@ -161,6 +184,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     targetsOpen = false;
                     constraintsOpen = false;
                     statesOpen = false;
+                    stateMappingOpen = false;
                     yield Interaction.handled();
                 }
                 case 8 -> {
@@ -169,6 +193,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     targetsOpen = false;
                     anchorsOpen = false;
                     statesOpen = false;
+                    stateMappingOpen = false;
                     yield Interaction.handled();
                 }
                 case 9 -> bound ? new Interaction(Action.DETACH, null, true)
@@ -188,7 +213,13 @@ public final class CanvasAttachmentContextMenuOverlay {
                 }
                 case 15 -> {
                     statesOpen = !statesOpen;
-                    targetsOpen = anchorsOpen = constraintsOpen = false;
+                    targetsOpen = anchorsOpen = constraintsOpen = stateMappingOpen = false;
+                    yield Interaction.handled();
+                }
+                case 16 -> {
+                    if (!bound || rootToken == null) yield Interaction.handled();
+                    stateMappingOpen = !stateMappingOpen;
+                    targetsOpen = anchorsOpen = constraintsOpen = statesOpen = false;
                     yield Interaction.handled();
                 }
                 default -> Interaction.handled();
@@ -335,6 +366,35 @@ public final class CanvasAttachmentContextMenuOverlay {
         return Math.max(24, 10 + (object == null ? 1 : object.states().size()) * ROW_HEIGHT);
     }
 
+    private void renderStateMapping(VRenderContext context, Font font, CanvasObject attachment,
+                                    CanvasObject rootToken, VttAttachmentBinding binding) {
+        int left = targetX(context.screenWidth());
+        panel(context, left, y, TARGET_WIDTH, stateMappingHeight(rootToken));
+        boolean enabled = binding != null && binding.isStateMappingEnabled();
+        context.graphics().drawString(font, enabled ? "Mode: Automatic" : "Mode: Independent",
+                left + 7, y + 7, enabled ? EditorHudTheme.selection() : TEXT, false);
+        String fallback = binding == null || binding.getFallbackAttachmentStateId() == null
+                ? "None" : binding.getFallbackAttachmentStateId();
+        context.graphics().drawString(font, "Fallback: " + trim(fallback, 12),
+                left + 7, y + 7 + ROW_HEIGHT, TEXT, false);
+        if (rootToken == null) return;
+        int index = 0;
+        for (var parentState : rootToken.states().values()) {
+            String mapped = binding == null ? null
+                    : binding.getParentStateMappings().get(parentState.id());
+            context.graphics().drawString(font,
+                    trim(parentState.displayName(), 9) + " -> "
+                            + trim(mapped == null ? "None" : mapped, 9),
+                    left + 7, y + 7 + (index++ + 2) * ROW_HEIGHT,
+                    mapped == null ? MUTED : TEXT, false);
+        }
+    }
+
+    private int stateMappingHeight(CanvasObject rootToken) {
+        return Math.max(42, 10 + (2 + (rootToken == null ? 0 : rootToken.states().size()))
+                * ROW_HEIGHT);
+    }
+
     private int anchorHeight() {
         return 10 + VttAttachmentAnchor.values().length * ROW_HEIGHT;
     }
@@ -393,6 +453,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         ADJUST_OFFSET_X, ADJUST_OFFSET_Y, ADJUST_ROTATION_OFFSET,
         ADJUST_MIN_SCALE, ADJUST_MAX_SCALE, RESET_OFFSET,
         SET_STATE,
+        TOGGLE_STATE_MAPPING, CYCLE_STATE_MAPPING, CYCLE_STATE_FALLBACK,
         DETACH, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 

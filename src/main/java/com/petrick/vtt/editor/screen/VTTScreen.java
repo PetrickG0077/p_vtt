@@ -484,6 +484,7 @@ public final class VTTScreen extends Screen {
         }
         AttachmentBindingService.synchronize(session.getActiveScene(), scene,
                 selectionManager.getSelectedObjectIds());
+        synchronizeMappedAttachmentStates();
         AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene,
                 inputController.getSelectedLightId());
         canvasRenderer.render(context, session.getActiveScene(), scene, selectionManager,
@@ -3326,8 +3327,11 @@ public final class VTTScreen extends Screen {
             return;
         }
         AttachmentSubtree subtree = attachmentSubtree(sceneObject.getId());
+        CanvasObject rootToken = sceneObject.getAttachmentBinding() == null ? null
+                : attachmentRootToken(
+                sceneObject.getAttachmentBinding().getTargetObjectId());
         canvasAttachmentContextMenuOverlay.render(context, this.font,
-                canvasAttachment,
+                canvasAttachment, rootToken,
                 sceneObject.getAttachmentBinding(), attachmentTargets(),
                 subtree.objectIds().size(), subtree.lightIds().size(),
                 attachmentDirectChildren(sceneObject.getId()).size());
@@ -3455,6 +3459,9 @@ public final class VTTScreen extends Screen {
         var interaction = canvasAttachmentContextMenuOverlay.mouseClicked(
                 mouseX, mouseY, button,
                 sceneObject == null ? null : scene.findObjectById(sceneObject.getId()),
+                sceneObject == null || sceneObject.getAttachmentBinding() == null ? null
+                        : attachmentRootToken(
+                        sceneObject.getAttachmentBinding().getTargetObjectId()),
                 sceneObject == null ? null : sceneObject.getAttachmentBinding(),
                 attachmentTargets(), this.width);
         if (interaction.action() != CanvasAttachmentContextMenuOverlay.Action.NONE) {
@@ -3677,6 +3684,45 @@ public final class VTTScreen extends Screen {
                                 });
                     }
                 }
+                case TOGGLE_STATE_MAPPING -> {
+                    var binding = attachment.getAttachmentBinding();
+                    CanvasObject canvasAttachment = scene.findObjectById(attachmentId);
+                    CanvasObject root = binding == null ? null
+                            : attachmentRootToken(binding.getTargetObjectId());
+                    if (binding != null && canvasAttachment != null && root != null) {
+                        if (binding.isStateMappingEnabled()) {
+                            binding.getParentStateMappings().clear();
+                        } else {
+                            root.states().keySet().forEach(parentState ->
+                                    binding.getParentStateMappings().put(
+                                            parentState, canvasAttachment.activeStateId()));
+                            if (binding.getFallbackAttachmentStateId() == null) {
+                                binding.setFallbackAttachmentStateId(
+                                        canvasAttachment.activeStateId());
+                            }
+                        }
+                    }
+                }
+                case CYCLE_STATE_MAPPING -> {
+                    var binding = attachment.getAttachmentBinding();
+                    CanvasObject canvasAttachment = scene.findObjectById(attachmentId);
+                    if (binding != null && canvasAttachment != null) {
+                        String parentStateId = interaction.targetObjectId();
+                        String current = binding.getParentStateMappings().get(parentStateId);
+                        String next = nextAttachmentState(canvasAttachment, current, true);
+                        if (next == null) binding.getParentStateMappings().remove(parentStateId);
+                        else binding.getParentStateMappings().put(parentStateId, next);
+                    }
+                }
+                case CYCLE_STATE_FALLBACK -> {
+                    var binding = attachment.getAttachmentBinding();
+                    CanvasObject canvasAttachment = scene.findObjectById(attachmentId);
+                    if (binding != null && canvasAttachment != null) {
+                        binding.setFallbackAttachmentStateId(nextAttachmentState(
+                                canvasAttachment,
+                                binding.getFallbackAttachmentStateId(), true));
+                    }
+                }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE -> {
@@ -3703,6 +3749,18 @@ public final class VTTScreen extends Screen {
         return "-1".equals(interaction.targetObjectId()) ? -1.0 : 1.0;
     }
 
+    private String nextAttachmentState(
+            CanvasObject attachment, String currentStateId, boolean includeNone
+    ) {
+        List<String> stateIds = new ArrayList<>(attachment.states().keySet());
+        if (stateIds.isEmpty()) return null;
+        if (currentStateId == null) return stateIds.get(0);
+        int index = stateIds.indexOf(currentStateId);
+        if (index < 0) return stateIds.get(0);
+        if (index + 1 < stateIds.size()) return stateIds.get(index + 1);
+        return includeNone ? null : stateIds.get(0);
+    }
+
     private CanvasObject attachmentRootToken(String objectId) {
         Set<String> visited = new HashSet<>();
         String currentId = objectId;
@@ -3717,6 +3775,36 @@ public final class VTTScreen extends Screen {
             currentId = metadata.getAttachmentBinding().getTargetObjectId();
         }
         return null;
+    }
+
+    private void synchronizeMappedAttachmentStates() {
+        if (session.getActiveScene() == null) return;
+        for (VttSceneObject attachment : session.getActiveScene().getObjects()) {
+            if (attachment == null || !attachment.isAttachment()) continue;
+            VttAttachmentBinding binding = attachment.getAttachmentBinding();
+            if (binding == null || !binding.isBound() || !binding.isStateMappingEnabled()) continue;
+            CanvasObject root = attachmentRootToken(binding.getTargetObjectId());
+            CanvasObject canvasAttachment = scene.findObjectById(attachment.getId());
+            if (root == null || canvasAttachment == null) continue;
+            String mappedState = binding.getParentStateMappings().get(root.activeStateId());
+            if (mappedState == null) mappedState = binding.getFallbackAttachmentStateId();
+            if (mappedState == null || !canvasAttachment.states().containsKey(mappedState)) continue;
+            if (!mappedState.equals(canvasAttachment.activeStateId())) {
+                scene.replaceObject(canvasAttachment.withActiveState(mappedState));
+                attachment.getState().setActiveStateId(mappedState);
+            }
+            String targetState = mappedState;
+            attachmentDefinitionRegistry.findById(attachment.getSourceAttachmentDefinitionId())
+                    .map(definition -> definition.states().get(targetState))
+                    .ifPresent(state -> {
+                        CanvasObject current = scene.findObjectById(attachment.getId());
+                        if (current != null && current.visible() != state.visible()) {
+                            scene.replaceObject(current.withVisible(state.visible()));
+                        }
+                        attachment.getState().setVisible(state.visible());
+                        attachment.getState().setTintColorRgb(state.tintColorRgb());
+                    });
+        }
     }
 
     private AttachmentSubtree attachmentSubtree(String rootId) {
@@ -3886,6 +3974,8 @@ public final class VTTScreen extends Screen {
         copy.setLockOffsetY(source.isLockOffsetY());
         copy.setMinimumScale(source.getMinimumScale());
         copy.setMaximumScale(source.getMaximumScale());
+        copy.setParentStateMappings(source.getParentStateMappings());
+        copy.setFallbackAttachmentStateId(source.getFallbackAttachmentStateId());
         return copy;
     }
 
@@ -6252,6 +6342,8 @@ public final class VTTScreen extends Screen {
         binding.setLockOffsetY(preset.lockOffsetY());
         binding.setMinimumScale(preset.minimumScale());
         binding.setMaximumScale(preset.maximumScale());
+        binding.setParentStateMappings(preset.parentStateMappings());
+        binding.setFallbackAttachmentStateId(preset.fallbackAttachmentStateId());
         return binding;
     }
 

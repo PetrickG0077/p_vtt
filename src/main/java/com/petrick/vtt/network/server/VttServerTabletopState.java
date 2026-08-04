@@ -1202,6 +1202,16 @@ public final class VttServerTabletopState {
     private boolean resolveBoundAttachment(
             VttSceneObject child, VttSceneObject parent, VttAttachmentBinding binding
     ) {
+        String previousActiveState = child.getState().getActiveStateId();
+        if (binding.isStateMappingEnabled()) {
+            VttSceneObject rootToken = attachmentRootToken(parent);
+            if (rootToken != null && rootToken.getState() != null) {
+                String mapped = binding.getParentStateMappings().get(
+                        rootToken.getState().getActiveStateId());
+                if (mapped == null) mapped = binding.getFallbackAttachmentStateId();
+                if (mapped != null) child.getState().setActiveStateId(mapped);
+            }
+        }
         var childTransform = child.getTransform();
         var parentTransform = parent.getTransform();
         double x = childTransform.getX();
@@ -1251,6 +1261,8 @@ public final class VttServerTabletopState {
                 || !nearlyEqual(rotation, childTransform.getRotationDegrees())
                 || !nearlyEqual(scaleX, childTransform.getScaleX())
                 || !nearlyEqual(scaleY, childTransform.getScaleY())
+                || !java.util.Objects.equals(previousActiveState,
+                child.getState().getActiveStateId())
                 || child.getState().isFlippedHorizontally() != flipped;
         if (!changed) return false;
         childTransform.setX(x); childTransform.setY(y);
@@ -1258,6 +1270,22 @@ public final class VttServerTabletopState {
         childTransform.setScaleX(scaleX); childTransform.setScaleY(scaleY);
         child.getState().setFlippedHorizontally(flipped);
         return true;
+    }
+
+    private VttSceneObject attachmentRootToken(VttSceneObject start) {
+        VttSceneObject current = start;
+        Set<String> visited = new java.util.HashSet<>();
+        while (current != null && current.getId() != null && visited.add(current.getId())) {
+            if (current.getSourceTokenDefinitionId() != null
+                    && !current.getSourceTokenDefinitionId().isBlank()) return current;
+            VttAttachmentBinding binding = current.getAttachmentBinding();
+            if (binding == null || !binding.isBound()) return null;
+            String parentId = binding.getTargetObjectId();
+            current = activeScene.getObjects().stream()
+                    .filter(object -> object != null && parentId.equals(object.getId()))
+                    .findFirst().orElse(null);
+        }
+        return null;
     }
 
     private void captureAttachmentBindingFromTransform(

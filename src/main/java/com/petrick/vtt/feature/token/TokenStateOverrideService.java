@@ -103,7 +103,8 @@ public final class TokenStateOverrideService {
                     binding.getScaleMultiplierX(), binding.getScaleMultiplierY(),
                     binding.isInheritScaleX(), binding.isInheritScaleY(),
                     binding.isLockOffsetX(), binding.isLockOffsetY(),
-                    binding.getMinimumScale(), binding.getMaximumScale(), lights,
+                    binding.getMinimumScale(), binding.getMaximumScale(),
+                    binding.getParentStateMappings(), binding.getFallbackAttachmentStateId(), lights,
                     attachment.getId(), find(scene, binding.getTargetObjectId()) != null
                             && find(scene, binding.getTargetObjectId()).isAttachment()
                             ? binding.getTargetObjectId() : null));
@@ -190,7 +191,8 @@ public final class TokenStateOverrideService {
                     binding.getScaleMultiplierX(), binding.getScaleMultiplierY(),
                     binding.isInheritScaleX(), binding.isInheritScaleY(),
                     binding.isLockOffsetX(), binding.isLockOffsetY(),
-                    binding.getMinimumScale(), binding.getMaximumScale(), lights,
+                    binding.getMinimumScale(), binding.getMaximumScale(),
+                    binding.getParentStateMappings(), binding.getFallbackAttachmentStateId(), lights,
                     attachment.getId(), find(scene, binding.getTargetObjectId()) != null
                             && find(scene, binding.getTargetObjectId()).isAttachment()
                             ? binding.getTargetObjectId() : null));

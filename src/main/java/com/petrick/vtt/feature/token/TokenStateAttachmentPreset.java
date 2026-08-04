@@ -28,6 +28,8 @@ public record TokenStateAttachmentPreset(
         boolean lockOffsetY,
         double minimumScale,
         double maximumScale,
+        java.util.Map<String, String> parentStateMappings,
+        String fallbackAttachmentStateId,
         List<VttLight> lights,
         String templateId,
         String parentTemplateId
@@ -41,6 +43,8 @@ public record TokenStateAttachmentPreset(
         tintColorRgb &= 0x00FFFFFF;
         anchor = anchor == null ? VttAttachmentAnchor.CUSTOM : anchor;
         lights = lights == null ? List.of() : List.copyOf(lights);
+        parentStateMappings = parentStateMappings == null
+                ? java.util.Map.of() : java.util.Map.copyOf(parentStateMappings);
         templateId = templateId == null || templateId.isBlank()
                 ? definitionId : templateId;
         parentTemplateId = parentTemplateId == null || parentTemplateId.isBlank()

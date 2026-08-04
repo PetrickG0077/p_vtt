@@ -1,5 +1,8 @@
 package com.petrick.vtt.feature.tabletop;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /** Per-scene relationship between a placed attachment and a placed token. */
 public final class VttAttachmentBinding {
     private String targetObjectId;
@@ -25,6 +28,9 @@ public final class VttAttachmentBinding {
     private boolean lockOffsetY;
     private double minimumScale = 0.05;
     private double maximumScale = 16.0;
+    /** Empty means independent/manual attachment state selection. */
+    private Map<String, String> parentStateMappings = new LinkedHashMap<>();
+    private String fallbackAttachmentStateId;
 
     public VttAttachmentBinding() {}
 
@@ -94,6 +100,24 @@ public final class VttAttachmentBinding {
         double sign = value < 0.0 ? -1.0 : 1.0;
         double magnitude = Math.max(getMinimumScale(), Math.min(getMaximumScale(), Math.abs(value)));
         return sign * magnitude;
+    }
+    public Map<String, String> getParentStateMappings() {
+        if (parentStateMappings == null) parentStateMappings = new LinkedHashMap<>();
+        return parentStateMappings;
+    }
+    public void setParentStateMappings(Map<String, String> mappings) {
+        parentStateMappings = new LinkedHashMap<>();
+        if (mappings != null) mappings.forEach((parentState, attachmentState) -> {
+            if (parentState != null && !parentState.isBlank()
+                    && attachmentState != null && !attachmentState.isBlank()) {
+                parentStateMappings.put(parentState.trim(), attachmentState.trim());
+            }
+        });
+    }
+    public boolean isStateMappingEnabled() { return !getParentStateMappings().isEmpty(); }
+    public String getFallbackAttachmentStateId() { return fallbackAttachmentStateId; }
+    public void setFallbackAttachmentStateId(String value) {
+        fallbackAttachmentStateId = value == null || value.isBlank() ? null : value.trim();
     }
 
     public boolean isBound() { return targetObjectId != null; }

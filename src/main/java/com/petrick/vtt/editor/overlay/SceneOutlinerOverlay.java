@@ -436,7 +436,8 @@ public final class SceneOutlinerOverlay {
                 if (binding != null) {
                     String scope = binding.getParentStateId() == null
                             ? "G" : "S:" + binding.getParentStateId();
-                    badge = " [" + binding.getAnchor().name() + "][" + scope + "]";
+                    String mapping = binding.isStateMappingEnabled() ? "[AUTO]" : "[IND]";
+                    badge = " [" + binding.getAnchor().name() + "][" + scope + "]" + mapping;
                 } else {
                     badge = " [DETACHED]";
                 }

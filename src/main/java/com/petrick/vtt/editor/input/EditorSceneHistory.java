@@ -905,7 +905,9 @@ public final class EditorSceneHistory {
             boolean lockOffsetX,
             boolean lockOffsetY,
             double minimumScale,
-            double maximumScale
+            double maximumScale,
+            java.util.Map<String, String> parentStateMappings,
+            String fallbackAttachmentStateId
     ) {
         private static AttachmentBinding capture(
                 com.petrick.vtt.feature.tabletop.VttAttachmentBinding binding
@@ -920,7 +922,9 @@ public final class EditorSceneHistory {
                     binding.getScaleMultiplierY(), binding.isInheritScaleX(),
                     binding.isInheritScaleY(), binding.isLockOffsetX(),
                     binding.isLockOffsetY(), binding.getMinimumScale(),
-                    binding.getMaximumScale());
+                    binding.getMaximumScale(),
+                    java.util.Map.copyOf(binding.getParentStateMappings()),
+                    binding.getFallbackAttachmentStateId());
         }
 
         private com.petrick.vtt.feature.tabletop.VttAttachmentBinding restore() {
@@ -943,6 +947,8 @@ public final class EditorSceneHistory {
             binding.setLockOffsetY(lockOffsetY);
             binding.setMinimumScale(minimumScale);
             binding.setMaximumScale(maximumScale);
+            binding.setParentStateMappings(parentStateMappings);
+            binding.setFallbackAttachmentStateId(fallbackAttachmentStateId);
             return binding;
         }
     }

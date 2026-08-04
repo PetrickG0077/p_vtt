@@ -205,6 +205,8 @@ public final class CanvasSceneToVttSceneMapper {
         copy.setLockOffsetY(source.isLockOffsetY());
         copy.setMinimumScale(source.getMinimumScale());
         copy.setMaximumScale(source.getMaximumScale());
+        copy.setParentStateMappings(source.getParentStateMappings());
+        copy.setFallbackAttachmentStateId(source.getFallbackAttachmentStateId());
         return copy;
     }
 }
