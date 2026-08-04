@@ -3,6 +3,7 @@ package com.petrick.vtt.network.server;
 import com.google.gson.Gson;
 import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementData;
 import com.petrick.vtt.network.payload.VttSceneClipboardPastePayload;
+import com.petrick.vtt.network.payload.VttSceneClipboardPasteResultPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -14,10 +15,18 @@ public final class VttServerSceneClipboardPasteHandler {
     private VttServerSceneClipboardPasteHandler() {}
 
     public static void handle(VttSceneClipboardPastePayload request, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player) || request == null
-                || !VttServerPlayerEvents.isMaster(player)) return;
+        if (!(context.player() instanceof ServerPlayer player) || request == null) return;
+        if (request.requestId() == null || request.requestId().isBlank()
+                || request.requestId().length() > 64) return;
+        if (!VttServerPlayerEvents.isMaster(player)) {
+            reply(player, request, false, "Only masters can paste scene objects");
+            return;
+        }
         if (!VttServerRequestRateLimiter.allow(
-                player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE)) return;
+                player, VttServerRequestRateLimiter.Category.TOKEN_LIFECYCLE)) {
+            reply(player, request, false, "Too many paste requests; try again shortly");
+            return;
+        }
         VttServerTabletopState state = VttServerTabletopState.get();
         if (request.authorityRevision() != state.authorityRevision()
                 || state.activeScene() == null
@@ -25,7 +34,8 @@ public final class VttServerSceneClipboardPasteHandler {
                 || request.clipboardJson() == null
                 || request.clipboardJson().length()
                 > VttSceneClipboardPastePayload.MAX_JSON_LENGTH) {
-            VttServerFeedback.show(player, "Clipboard paste is stale; resynchronize and try again");
+            reply(player, request, false,
+                    "Clipboard paste is stale; resynchronize and try again");
             return;
         }
         try {
@@ -34,7 +44,7 @@ public final class VttServerSceneClipboardPasteHandler {
             var result = state.applySceneClipboardPaste(
                     data, player.getUUID().toString());
             if (result == null) {
-                VttServerFeedback.show(player, "Scene clipboard paste was rejected");
+                reply(player, request, false, "Scene clipboard paste was rejected");
                 return;
             }
             for (ServerPlayer connected : player.getServer().getPlayerList().getPlayers()) {
@@ -44,8 +54,16 @@ public final class VttServerSceneClipboardPasteHandler {
                         PacketDistributor.sendToPlayer(connected, update));
             }
             VttServerVisionSourceSync.broadcast(player.getServer(), state);
+            reply(player, request, true, "Pasted as one editor action");
         } catch (RuntimeException exception) {
-            VttServerFeedback.show(player, "Invalid scene clipboard data");
+            reply(player, request, false, "Invalid scene clipboard data");
         }
+    }
+
+    private static void reply(ServerPlayer player, VttSceneClipboardPastePayload request,
+                              boolean success, String message) {
+        PacketDistributor.sendToPlayer(player,
+                new VttSceneClipboardPasteResultPayload(
+                        request.requestId(), success, message));
     }
 }

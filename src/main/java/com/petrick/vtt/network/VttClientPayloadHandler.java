@@ -43,7 +43,9 @@ import com.petrick.vtt.network.payload.VttTokenDefinitionResultPayload;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
+import com.petrick.vtt.network.client.VttClientSceneClipboardPasteResultState;
 import com.petrick.vtt.network.payload.VttAttachmentDefinitionResultPayload;
+import com.petrick.vtt.network.payload.VttSceneClipboardPasteResultPayload;
 import com.petrick.vtt.network.client.VttClientAttachmentDefinitionResultState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -220,5 +222,11 @@ public final class VttClientPayloadHandler {
             VttSceneCommandResultPayload payload, IPayloadContext context
     ) {
         VttClientSceneCommandResultState.accept(payload);
+    }
+
+    public static void handleSceneClipboardPasteResult(
+            VttSceneClipboardPasteResultPayload payload, IPayloadContext context
+    ) {
+        VttClientSceneClipboardPasteResultState.accept(payload);
     }
 }

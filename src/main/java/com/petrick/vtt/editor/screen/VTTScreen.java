@@ -101,6 +101,7 @@ import com.petrick.vtt.network.client.VttClientAttachmentDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientAttachmentLifecycleSync;
 import com.petrick.vtt.network.client.VttClientTokenDefinitionResultState;
 import com.petrick.vtt.network.client.VttClientSceneCommandResultState;
+import com.petrick.vtt.network.client.VttClientSceneClipboardPasteResultState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
 import com.petrick.vtt.network.payload.VttPlayerModeCommandPayload;
 import com.petrick.vtt.network.payload.VttPresentationCommandPayload;
@@ -338,6 +339,8 @@ public final class VTTScreen extends Screen {
     private long pendingHistoryStartedSnapshotVersion = -1L;
     private long pendingHistoryRequestUntil;
     private boolean pendingHistoryRejected;
+    private String pendingClipboardPasteRequestId;
+    private long pendingClipboardPasteRequestUntil;
     private long observedNetworkSnapshotVersion;
     private String pendingAssetFolderRequestId;
     private String pendingAssetFolderOperation;
@@ -455,6 +458,7 @@ public final class VTTScreen extends Screen {
         ensureRenderState();
         handleNetworkHistorySnapshot();
         resolvePendingHistoryResult();
+        resolvePendingClipboardPasteResult();
         resolvePendingAssetFolderResult();
         resolvePendingMapDefinitionResult();
         resolvePendingAttachmentDefinitionResult();
@@ -873,8 +877,10 @@ public final class VTTScreen extends Screen {
                 session.isLocalMaster(), session.isLocalSpectator(),
                 sceneBackgroundEditor.isActive(),
                 inputController.getActiveToolId(),
-                pendingHistoryRequestId == null && inputController.canUndoEditorAction(),
-                pendingHistoryRequestId == null && inputController.canRedoEditorAction(),
+                pendingHistoryRequestId == null && pendingClipboardPasteRequestId == null
+                        && inputController.canUndoEditorAction(),
+                pendingHistoryRequestId == null && pendingClipboardPasteRequestId == null
+                        && inputController.canRedoEditorAction(),
                 inputController.nextUndoDescription(),
                 inputController.nextRedoDescription(),
                 hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
@@ -4248,6 +4254,10 @@ public final class VTTScreen extends Screen {
     private void pasteClipboard(Vec2d target) {
         if (!session.isLocalMaster() || session.getActiveScene() == null
                 || sceneClipboard == null || target == null) return;
+        if (pendingClipboardPasteRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current paste to finish");
+            return;
+        }
         Vec2d delta = target.subtract(sceneClipboard.center());
         Map<String, String> remapped = new LinkedHashMap<>();
         for (VttSceneObject source : sceneClipboard.objects()) {
@@ -4290,7 +4300,11 @@ public final class VTTScreen extends Screen {
                 VttClientEditorNotice.show("Clipboard selection is too large to paste");
                 return;
             }
+            pendingClipboardPasteRequestId = UUID.randomUUID().toString();
+            pendingClipboardPasteRequestUntil = System.currentTimeMillis() + 30_000L;
+            inputController.beginTokenLifecycleChange();
             PacketDistributor.sendToServer(new VttSceneClipboardPastePayload(
+                    pendingClipboardPasteRequestId,
                     session.getNetworkAuthorityRevision(),
                     session.getActiveScene().getId(), json));
             inputController.selectSelectTool();
@@ -4325,6 +4339,34 @@ public final class VTTScreen extends Screen {
         inputController.selectSelectTool();
         VttClientEditorNotice.show("Pasted " + pastedObjects.size() + " object(s) and "
                 + pastedLights.size() + " light(s)");
+    }
+
+    private void resolvePendingClipboardPasteResult() {
+        if (pendingClipboardPasteRequestId == null) return;
+        var result = VttClientSceneClipboardPasteResultState.consume(
+                pendingClipboardPasteRequestId);
+        if (result != null) {
+            if (result.success()) {
+                inputController.endTokenLifecycleChange();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "Paste completed" : result.message());
+            } else {
+                // Atomic rejection means the before/after snapshots are identical.
+                inputController.endTokenLifecycleChange();
+                VttClientEditorNotice.show(result.message().isBlank()
+                        ? "The server rejected the paste" : result.message());
+            }
+            pendingClipboardPasteRequestId = null;
+            pendingClipboardPasteRequestUntil = 0L;
+            return;
+        }
+        if (System.currentTimeMillis() > pendingClipboardPasteRequestUntil) {
+            inputController.clearEditorHistory();
+            pendingClipboardPasteRequestId = null;
+            pendingClipboardPasteRequestUntil = 0L;
+            session.requestSceneHistoryResync();
+            VttClientEditorNotice.show("Paste confirmation timed out; resynchronizing");
+        }
     }
 
     private VttSceneObject copySceneObject(VttSceneObject source) {
@@ -6131,6 +6173,10 @@ public final class VTTScreen extends Screen {
 
     private void requestHistoryAction(boolean redo) {
         if (!session.isLocalMaster() || session.getActiveScene() == null) return;
+        if (pendingClipboardPasteRequestId != null) {
+            VttClientEditorNotice.show("Wait for the current paste to finish");
+            return;
+        }
         if (sceneBackgroundEditor.isActive()) {
             VttClientEditorNotice.show("Finish Scene Edit before using undo/redo");
             return;
@@ -8405,6 +8451,11 @@ public final class VTTScreen extends Screen {
             VttClientSceneHistorySync.releaseAfterNextSnapshot();
             session.requestSceneHistoryResync();
             pendingHistoryRequestId = null;
+        }
+        if (pendingClipboardPasteRequestId != null) {
+            inputController.clearEditorHistory();
+            session.requestSceneHistoryResync();
+            pendingClipboardPasteRequestId = null;
         }
         if (session.isLocalMaster()
                 && VttClientPresentationState.isFollowingMasterCamera()) {
