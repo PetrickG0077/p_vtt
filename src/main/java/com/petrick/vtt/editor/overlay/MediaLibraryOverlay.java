@@ -51,10 +51,13 @@ public final class MediaLibraryOverlay {
             context.graphics().drawString(font, entry.relativePath(), bounds.x + 15,
                     rowY + 7, TEXT, false);
             boolean active = entry.absolutePath().equals(audio.track());
-            context.graphics().drawString(font, active && audio.isPlaying()
-                            ? audio.isPaused() ? "[ resume ]" : "[ pause ]" : "[ play ]",
-                    bounds.right() - 70,
-                    rowY + 7, MUTED, false);
+            int buttonX = bounds.right() - 78;
+            context.graphics().fill(buttonX, rowY + 2, bounds.right() - 12,
+                    rowY + 19, active ? EditorHudTheme.selection() : 0xE038383F);
+            border(context, buttonX, rowY + 2, 66, 17, EditorHudTheme.outline());
+            context.graphics().drawCenteredString(font, active && audio.isPlaying()
+                            ? audio.isPaused() ? "Resume" : "Pause" : "Play",
+                    buttonX + 33, rowY + 6, TEXT);
             rowY += 23;
         }
         context.graphics().fill(bounds.x + 8, bounds.bottom() - 47,
@@ -75,6 +78,10 @@ public final class MediaLibraryOverlay {
                     trackY + 4, EditorHudTheme.selection());
             context.graphics().drawString(font, audio.isLoop() ? "Loop: ON" : "Loop: off",
                     bounds.right() - 112, trackY - 4, TEXT, false);
+            if (!audio.error().isBlank()) {
+                context.graphics().drawString(font, trim(audio.error(), 70), bounds.x + 12,
+                        bounds.bottom() - 60, 0xFFFF6666, false);
+            }
         }
     }
 
@@ -89,9 +96,10 @@ public final class MediaLibraryOverlay {
             tab = Tab.SHOWS;
         } else if (tab == Tab.MUSICS) {
             List<AssetLibraryEntry> entries = entries(scan);
-            int row = (int) ((mouseY - bounds.y - 45) / 23);
+            int row = (int) Math.floor((mouseY - bounds.y - 45) / 23.0);
             if (row >= 0 && row < Math.min(entries.size(), 10)
-                    && mouseY <= bounds.y + 45 + row * 23 + 21) {
+                    && inside(mouseX, mouseY, bounds.right() - 78,
+                    bounds.y + 47 + row * 23, 66, 17)) {
                 AssetLibraryEntry entry = entries.get(row);
                 if (entry.absolutePath().equals(audio.track()) && audio.isPlaying()) {
                     audio.togglePause();
@@ -120,8 +128,7 @@ public final class MediaLibraryOverlay {
     }
 
     private String playerText(VttAudioPlayerService audio) {
-        String state = !audio.isPlaying() ? "stopped" : audio.isPaused() ? "paused" : "playing";
-        return "Stop | Pause | " + state + "  " + time(audio.positionSeconds()) + "/"
+        return "Stop | Pause | " + audio.status() + "  " + time(audio.positionSeconds()) + "/"
                 + time(audio.durationSeconds()) + "  Volume: "
                 + Math.round(audio.masterVolume() * 100.0F) + "%";
     }
@@ -129,6 +136,11 @@ public final class MediaLibraryOverlay {
     private String time(double seconds) {
         int value = Math.max(0, (int) Math.round(seconds));
         return String.format("%d:%02d", value / 60, value % 60);
+    }
+
+    private String trim(String value, int length) {
+        if (value == null || value.length() <= length) return value == null ? "" : value;
+        return value.substring(0, Math.max(0, length - 3)) + "...";
     }
 
     private List<AssetLibraryEntry> entries(AssetLibraryScanResult scan) {

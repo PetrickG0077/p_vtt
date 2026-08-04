@@ -59,6 +59,12 @@ runs {
         workingDirectory project.layout.projectDirectory.dir('run').dir(name)
 
         modSource project.sourceSets.main
+
+        // NeoForge 1.21.1 does not automatically expose ordinary external
+        // libraries to development runs, even when they are on implementation.
+        dependencies {
+            runtime "javazoom:jlayer:1.0.1"
+        }
     }
 
     client {
@@ -115,15 +121,10 @@ dependencies {
     // And its provides the option to then use net.minecraft as the group, and one of; client, server or joined as the module name, plus the game version as version.
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
-    implementation "io.github.jseproject:jse-spi-mp3:1.1.0"
-    implementation "io.github.jseproject:jse-spi-vorbis:1.1.0"
-    localRuntime "io.github.jseproject:jse-spi-mp3:1.1.0"
-    localRuntime "io.github.jseproject:jse-spi-vorbis:1.1.0"
-    jarJar("io.github.jseproject:jse-spi-mp3:[1.1.0]") {
-        version { prefer "1.1.0" }
-    }
-    jarJar("io.github.jseproject:jse-spi-vorbis:[1.1.0]") {
-        version { prefer "1.1.0" }
+    implementation "javazoom:jlayer:1.0.1"
+    localRuntime "javazoom:jlayer:1.0.1"
+    jarJar("javazoom:jlayer:[1.0.1]") {
+        version { prefer "1.0.1" }
     }
 
     // Example optional mod dependency with JEI
