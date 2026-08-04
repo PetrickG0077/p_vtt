@@ -1050,11 +1050,22 @@ public final class VttServerTabletopState {
                 : followsRotation && !editingAttachmentOffset
                 ? object.getTransform().getRotationDegrees()
                 : normalizeRotation(request.rotationDegrees());
+        boolean acceptedFlip = (!followsPosition || editingAttachmentOffset)
+                ? request.flippedHorizontally() : object.getState().isFlippedHorizontally();
+        if (!bypassCollision && movementCollision.collidesAtTransform(
+                activeScene, object, acceptedPosition, acceptedRotation,
+                requestedScaleX, requestedScaleY, acceptedFlip)) {
+            acceptedPosition = currentPosition;
+            acceptedRotation = object.getTransform().getRotationDegrees();
+            requestedScaleX = object.getTransform().getScaleX();
+            requestedScaleY = object.getTransform().getScaleY();
+            acceptedFlip = object.getState().isFlippedHorizontally();
+            movementAccepted = false;
+        }
         boolean contentChanged = !nearlyEqual(acceptedPosition.x(), object.getTransform().getX())
                 || !nearlyEqual(acceptedPosition.y(), object.getTransform().getY())
                 || !nearlyEqual(acceptedRotation, object.getTransform().getRotationDegrees())
-                || (!followsPosition || editingAttachmentOffset) && (object.getState().isFlippedHorizontally()
-                != request.flippedHorizontally())
+                || object.getState().isFlippedHorizontally() != acceptedFlip
                 || !Objects.equals(object.getState().getActiveStateId(), request.activeStateId())
                 || object.getState().getTintColorRgb() != (requestedTint & 0x00FFFFFF)
                 || master && (
@@ -1079,7 +1090,7 @@ public final class VttServerTabletopState {
             object.setDisplayName(request.displayName());
         }
         if (!followsPosition || editingAttachmentOffset) {
-            object.getState().setFlippedHorizontally(request.flippedHorizontally());
+            object.getState().setFlippedHorizontally(acceptedFlip);
         }
         object.getState().setActiveStateId(request.activeStateId());
         object.getState().setTintColorRgb(requestedTint);

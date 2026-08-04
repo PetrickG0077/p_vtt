@@ -67,6 +67,19 @@ public final class SceneMovementCollision {
         return clipShapes(List.of(movingShape), obstacles, requestedDelta);
     }
 
+    /** Checks a complete proposed transform, covering rotation, scale and flipped collision offsets. */
+    public boolean collidesAtTransform(
+            VttScene scene, VttSceneObject object, Vec2d position,
+            double rotationDegrees, double scaleX, double scaleY, boolean flippedHorizontally
+    ) {
+        if (scene == null || object == null || position == null) return false;
+        if (!sceneObjectObstacleIndex.isBuiltFor(scene)) rebuildObstacleIndex(scene);
+        RectShape shape = sceneTokenShape(object, position, rotationDegrees,
+                scaleX, scaleY, flippedHorizontally);
+        List<Obstacle> obstacles = sceneObjectObstacleIndex.query(shapeBounds(shape));
+        return collides(List.of(shape), obstacles, Vec2d.ZERO);
+    }
+
     private Vec2d clipShapes(
             List<RectShape> movingShapes, List<Obstacle> obstacles, Vec2d requestedDelta
     ) {
@@ -157,19 +170,26 @@ public final class SceneMovementCollision {
     }
 
     private RectShape sceneTokenShape(VttSceneObject object) {
+        VttSceneTransform transform = object.getTransform();
+        return sceneTokenShape(object, position(transform), transform.getRotationDegrees(),
+                transform.getScaleX(), transform.getScaleY(),
+                object.getState().isFlippedHorizontally());
+    }
+
+    private RectShape sceneTokenShape(
+            VttSceneObject object, Vec2d position, double rotationDegrees,
+            double scaleX, double scaleY, boolean flippedHorizontally
+    ) {
         VttSceneCollisionBox collisionBox = object.getCollisionBox();
         double baseWidth = collisionBox == null ? object.getSize().getWidth() : collisionBox.getWidth();
         double baseHeight = collisionBox == null ? object.getSize().getHeight() : collisionBox.getHeight();
         double localOffsetX = collisionBox == null ? 0.0 : collisionBox.getOffsetX();
-        if (object.getState().isFlippedHorizontally()) localOffsetX = -localOffsetX;
+        if (flippedHorizontally) localOffsetX = -localOffsetX;
         double localOffsetY = collisionBox == null ? 0.0 : collisionBox.getOffsetY();
-        VttSceneTransform transform = object.getTransform();
-        Vec2d scaledOffset = new Vec2d(localOffsetX * transform.getScaleX(),
-                localOffsetY * transform.getScaleY());
-        Vec2d center = position(transform).add(rotate(scaledOffset, transform.getRotationDegrees()));
-        return shape(center, transform.getRotationDegrees(),
-                Math.abs(baseWidth * transform.getScaleX()),
-                Math.abs(baseHeight * transform.getScaleY()));
+        Vec2d scaledOffset = new Vec2d(localOffsetX * scaleX, localOffsetY * scaleY);
+        Vec2d center = position.add(rotate(scaledOffset, rotationDegrees));
+        return shape(center, rotationDegrees,
+                Math.abs(baseWidth * scaleX), Math.abs(baseHeight * scaleY));
     }
 
     private RectShape moved(RectShape shape, Vec2d offset) {

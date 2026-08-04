@@ -110,6 +110,16 @@ public final class VttClientTokenTransformSync {
             return;
         }
 
+        // A rejected transform is an authoritative correction, normally caused by
+        // collision, ownership or rate-limit validation. Applying it immediately
+        // prevents the locally predicted token from visually interpolating through
+        // a wall before returning to the last valid server position.
+        if (!update.accepted()) {
+            INTERPOLATIONS.remove(update.objectId());
+            session.applyConfirmedTokenTransform(update);
+            return;
+        }
+
         TokenState start = TokenState.from(object,
                 session.getCanvasScene().getObjectLayerIndex(object.id()),
                 tintColor(session, object.id()));
