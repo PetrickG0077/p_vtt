@@ -2,12 +2,17 @@ package com.petrick.vtt.editor.dialog;
 
 import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.attachment.AttachmentDefinition;
+import com.petrick.vtt.feature.attachment.AttachmentCompositeNode;
+import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
 import com.petrick.vtt.feature.attachment.AttachmentStateDefinition;
+import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /** Small create/edit dialog for image-optional attachment definitions. */
@@ -29,6 +34,8 @@ public final class AttachmentDefinitionDialog {
     private String stateName = "Default";
     private String stateColor = "#FFFFFF";
     private boolean stateVisible = true;
+    private final List<AttachmentCompositeNode> compositeNodes = new ArrayList<>();
+    private final List<VttLight> rootLights = new ArrayList<>();
 
     public void openNew() {
         editingId = null;
@@ -43,6 +50,8 @@ public final class AttachmentDefinitionDialog {
         stateName = "Default";
         stateColor = "#FFFFFF";
         stateVisible = true;
+        compositeNodes.clear();
+        rootLights.clear();
         focused = Field.NAME;
         open = true;
     }
@@ -64,6 +73,10 @@ public final class AttachmentDefinitionDialog {
         stateName = states.get(selectedStateId).displayName();
         stateColor = formatColor(states.get(selectedStateId).tintColorRgb());
         stateVisible = states.get(selectedStateId).visible();
+        compositeNodes.clear();
+        compositeNodes.addAll(definition.compositeNodes());
+        rootLights.clear();
+        rootLights.addAll(definition.rootLights());
         focused = Field.NAME;
         open = true;
     }
@@ -95,6 +108,17 @@ public final class AttachmentDefinitionDialog {
         return new LinkedHashMap<>(states);
     }
     public String defaultStateId() { return defaultStateId; }
+    public List<AttachmentCompositeNode> compositeNodes() {
+        return List.copyOf(compositeNodes);
+    }
+    public List<VttLight> rootLights() { return List.copyOf(rootLights); }
+    public boolean isComposite() { return !compositeNodes.isEmpty() || !rootLights.isEmpty(); }
+    public void setCompositeContents(List<AttachmentCompositeNode> nodes, List<VttLight> lights) {
+        compositeNodes.clear();
+        if (nodes != null) compositeNodes.addAll(nodes);
+        rootLights.clear();
+        if (lights != null) rootLights.addAll(lights);
+    }
 
     public double parsedWidth() { return parseSize(width); }
     public double parsedHeight() { return parseSize(height); }
@@ -105,8 +129,9 @@ public final class AttachmentDefinitionDialog {
                 && parsedHeight > 0 && parsedHeight <= 16_000;
     }
 
-    public void render(VRenderContext context, Font font, String targetFolder) {
-        int dialogWidth = 430;
+    public void render(VRenderContext context, Font font, String targetFolder,
+                       AttachmentDefinitionRegistry registry) {
+        int dialogWidth = isComposite() ? 680 : 430;
         int dialogHeight = 330;
         int x = (context.screenWidth() - dialogWidth) / 2;
         int y = (context.screenHeight() - dialogHeight) / 2;
@@ -186,13 +211,26 @@ public final class AttachmentDefinitionDialog {
         button(context, font, x + 216, y + 291, 90, 24,
                 editingId == null ? "Create" : "Save", valid());
         button(context, font, x + 322, y + 291, 90, 24, "Cancel", true);
+        if (isComposite()) renderCompositePanel(context, font, registry, x + 430, y);
     }
 
     public Action mouseClicked(double mouseX, double mouseY, int button,
                                int screenWidth, int screenHeight) {
         if (!open || button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return Action.NONE;
-        int x = (screenWidth - 430) / 2;
+        int dialogWidth = isComposite() ? 680 : 430;
+        int x = (screenWidth - dialogWidth) / 2;
         int y = (screenHeight - 330) / 2;
+        if (isComposite() && mouseX >= x + 430 && mouseX <= x + dialogWidth) {
+            if (inside(mouseX, mouseY, x + 446, y + 270, 218, 22)) {
+                return Action.UPDATE_FROM_SELECTION;
+            }
+            int index = (int) ((mouseY - y - 61) / 24);
+            if (index >= 0 && index < Math.min(7, compositeNodes.size())
+                    && inside(mouseX, mouseY, x + 638, y + 61 + index * 24, 22, 18)) {
+                removeCompositeSubtree(compositeNodes.get(index).templateNodeId());
+            }
+            return Action.NONE;
+        }
         if (inside(mouseX, mouseY, x + 16, y + 126, 82, 20)) return Action.CHOOSE_IMAGE;
         if (inside(mouseX, mouseY, x + 16, y + 151, 82, 20)) {
             if (assetId != null) clearImage();
@@ -286,6 +324,80 @@ public final class AttachmentDefinitionDialog {
                 y + (height - 8) / 2, enabled ? 0xFFFFFFFF : 0xFF77777D);
     }
 
+    private void renderCompositePanel(VRenderContext context, Font font,
+                                      AttachmentDefinitionRegistry registry,
+                                      int x, int y) {
+        context.graphics().vLine(x, y + 30, y + 316, EditorHudTheme.outline());
+        context.graphics().drawString(font, "COMPOSITE TEMPLATE", x + 16, y + 39,
+                0xFFFFFFFF, false);
+        int visible = Math.min(7, compositeNodes.size());
+        for (int index = 0; index < visible; index++) {
+            AttachmentCompositeNode node = compositeNodes.get(index);
+            int rowY = y + 61 + index * 24;
+            boolean missing = registry == null
+                    || registry.findById(node.definitionId()).isEmpty();
+            context.graphics().fill(x + 16, rowY, x + 230, rowY + 18,
+                    missing ? 0xAA5A2028 : 0xCC17171D);
+            int depth = compositeDepth(node);
+            String prefix = "  ".repeat(Math.min(3, depth)) + (depth > 0 ? "- " : "");
+            context.graphics().drawString(font,
+                    prefix + trim(node.displayName(), Math.max(8, 22 - depth * 2)),
+                    x + 21, rowY + 5, missing ? 0xFFFF7777 : 0xFFFFFFFF, false);
+            button(context, font, x + 208, rowY, 22, 18, "X", true);
+        }
+        if (compositeNodes.isEmpty()) {
+            context.graphics().drawString(font, "No child attachments",
+                    x + 16, y + 66, 0xFF88888E, false);
+        } else if (compositeNodes.size() > visible) {
+            context.graphics().drawString(font, "+ " + (compositeNodes.size() - visible)
+                            + " more nodes", x + 16, y + 235, 0xFFAAAAAA, false);
+        }
+        context.graphics().drawString(font,
+                "Root lights: " + rootLights.size() + "   Child lights: "
+                        + compositeNodes.stream().mapToInt(node -> node.lights().size()).sum(),
+                x + 16, y + 249, 0xFFCCCCCC, false);
+        button(context, font, x + 16, y + 270, 218, 22,
+                "Update from selected subtree", true);
+        context.graphics().drawString(font,
+                "Missing definitions are shown in red.", x + 16, y + 301,
+                0xFF88888E, false);
+    }
+
+    private int compositeDepth(AttachmentCompositeNode node) {
+        int depth = 0;
+        String parent = node.binding() == null ? null : node.binding().getTargetObjectId();
+        java.util.HashSet<String> visited = new java.util.HashSet<>();
+        while (parent != null && !AttachmentCompositeNode.ROOT_ID.equals(parent)
+                && visited.add(parent) && depth < 8) {
+            depth++;
+            AttachmentCompositeNode parentNode = null;
+            for (AttachmentCompositeNode candidate : compositeNodes) {
+                if (candidate.templateNodeId().equals(parent)) {
+                    parentNode = candidate;
+                    break;
+                }
+            }
+            parent = parentNode == null || parentNode.binding() == null ? null
+                    : parentNode.binding().getTargetObjectId();
+        }
+        return depth;
+    }
+
+    private void removeCompositeSubtree(String nodeId) {
+        java.util.HashSet<String> removed = new java.util.HashSet<>();
+        removed.add(nodeId);
+        boolean changed;
+        do {
+            changed = false;
+            for (AttachmentCompositeNode node : compositeNodes) {
+                if (node.binding() != null
+                        && removed.contains(node.binding().getTargetObjectId())
+                        && removed.add(node.templateNodeId())) changed = true;
+            }
+        } while (changed);
+        compositeNodes.removeIf(node -> removed.contains(node.templateNodeId()));
+    }
+
     private void border(VRenderContext context, int x, int y, int width, int height, int color) {
         context.graphics().hLine(x, x + width, y, color);
         context.graphics().hLine(x, x + width, y + height, color);
@@ -366,5 +478,5 @@ public final class AttachmentDefinitionDialog {
     }
 
     private enum Field { NAME, WIDTH, HEIGHT, STATE_NAME, STATE_COLOR }
-    public enum Action { NONE, CHOOSE_IMAGE, SAVE, CANCEL }
+    public enum Action { NONE, CHOOSE_IMAGE, UPDATE_FROM_SELECTION, SAVE, CANCEL }
 }

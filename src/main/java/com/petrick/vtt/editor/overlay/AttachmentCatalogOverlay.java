@@ -75,10 +75,12 @@ public final class AttachmentCatalogOverlay {
                         x + PADDING + PREVIEW_SIZE + 7, rowY + 7,
                         selected ? 0xFFFFFFFF : 0xFFDDDDDD, false);
                 context.graphics().drawString(font,
-                        formatSize(definition.defaultWidth()) + " x "
+                        definition.isComposite()
+                                ? "Composite - " + definition.compositeNodes().size() + " children"
+                                : formatSize(definition.defaultWidth()) + " x "
                                 + formatSize(definition.defaultHeight()),
                         x + PADDING + PREVIEW_SIZE + 7, rowY + 19,
-                        0xFF999999, false);
+                        definition.isComposite() ? 0xFFFFCC55 : 0xFF999999, false);
             }
             rowY += ROW_HEIGHT;
         }

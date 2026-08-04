@@ -691,7 +691,8 @@ public final class VTTScreen extends Screen {
         }
         if (attachmentDefinitionDialog.isOpen() && !backgroundImagePickerActive) {
             attachmentDefinitionDialog.render(context, this.font,
-                    assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS));
+                    assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS),
+                    attachmentDefinitionRegistry);
         }
         if (renamingSceneId != null) renderSceneRenameDialog(context);
         if (pendingDeleteSceneId != null) renderDeleteSceneConfirmation(context);
@@ -3971,35 +3972,16 @@ public final class VTTScreen extends Screen {
             VttClientEditorNotice.show("Attachment definition is unavailable");
             return;
         }
+        CompositeContents contents = captureAttachmentComposite(rootId);
+        if (contents == null) return;
         AttachmentSubtree subtree = attachmentSubtree(rootId);
-        List<AttachmentCompositeNode> nodes = new ArrayList<>();
-        for (String objectId : subtree.objectIds()) {
-            if (rootId.equals(objectId)) continue;
-            VttSceneObject metadata = AttachmentBindingService.find(
-                    session.getActiveScene(), objectId);
-            if (metadata == null || metadata.getSourceAttachmentDefinitionId() == null) continue;
-            VttAttachmentBinding binding = copyAttachmentBinding(metadata.getAttachmentBinding());
-            if (binding == null) continue;
-            if (rootId.equals(binding.getTargetObjectId())) {
-                binding.setTargetObjectId(AttachmentCompositeNode.ROOT_ID);
-            }
-            List<VttLight> lights = session.getActiveScene().getLights().stream()
-                    .filter(light -> objectId.equals(light.getAttachedToObjectId()))
-                    .map(this::copySubtreeLight).toList();
-            nodes.add(new AttachmentCompositeNode(objectId,
-                    metadata.getSourceAttachmentDefinitionId(), metadata.getDisplayName(),
-                    binding, lights));
-        }
-        List<VttLight> rootLights = session.getActiveScene().getLights().stream()
-                .filter(light -> rootId.equals(light.getAttachedToObjectId()))
-                .map(this::copySubtreeLight).toList();
         AttachmentDefinition base = CreatedAttachmentStorage.createDefinition(
                 root.displayName() + " Template", source.assetId(),
                 root.size().x(), root.size().y(), source.states(), source.defaultStateId());
         AttachmentDefinition template = new AttachmentDefinition(
                 base.id(), base.displayName(), source.assetId(),
                 root.size().x(), root.size().y(), source.states(), source.defaultStateId(),
-                nodes, rootLights);
+                contents.nodes(), contents.rootLights());
         String folder = attachmentDefinitionRegistry.folderOf(source.id());
         if (session.isNetworkAuthorityActive()) {
             String requestId = beginPendingAttachmentDefinitionRequest(
@@ -4022,7 +4004,56 @@ public final class VTTScreen extends Screen {
         }
         attachmentDefinitionRegistry.register(template, folder);
         attachmentCatalogSelection.select(template.id());
-        VttClientEditorNotice.show("Saved composite template: " + template.displayName());
+        VttClientEditorNotice.show("Saved composite template: " + template.displayName()
+                + " (" + subtree.objectIds().size() + " objects)");
+    }
+
+    private CompositeContents captureAttachmentComposite(String rootId) {
+        CanvasObject root = scene.findObjectById(rootId);
+        if (root == null || root.sourceAttachmentDefinitionId() == null) return null;
+        AttachmentSubtree subtree = attachmentSubtree(rootId);
+        List<AttachmentCompositeNode> nodes = new ArrayList<>();
+        for (String objectId : subtree.objectIds()) {
+            if (rootId.equals(objectId)) continue;
+            VttSceneObject metadata = AttachmentBindingService.find(
+                    session.getActiveScene(), objectId);
+            if (metadata == null || metadata.getSourceAttachmentDefinitionId() == null) continue;
+            VttAttachmentBinding binding = copyAttachmentBinding(metadata.getAttachmentBinding());
+            if (binding == null) continue;
+            if (rootId.equals(binding.getTargetObjectId())) {
+                binding.setTargetObjectId(AttachmentCompositeNode.ROOT_ID);
+            }
+            List<VttLight> lights = session.getActiveScene().getLights().stream()
+                    .filter(light -> objectId.equals(light.getAttachedToObjectId()))
+                    .map(this::copySubtreeLight).toList();
+            nodes.add(new AttachmentCompositeNode(objectId,
+                    metadata.getSourceAttachmentDefinitionId(), metadata.getDisplayName(),
+                    binding, lights));
+        }
+        List<VttLight> rootLights = session.getActiveScene().getLights().stream()
+                .filter(light -> rootId.equals(light.getAttachedToObjectId()))
+                .map(this::copySubtreeLight).toList();
+        return new CompositeContents(nodes, rootLights);
+    }
+
+    private void updateCompositeDialogFromSelection() {
+        if (!attachmentDefinitionDialog.isOpen()
+                || attachmentDefinitionDialog.editingId() == null) return;
+        if (selectionManager.getSelectedObjectIds().size() != 1) {
+            VttClientEditorNotice.show("Select one attachment root in the scene first");
+            return;
+        }
+        String rootId = selectionManager.getSelectedObjectIds().iterator().next();
+        CanvasObject root = scene.findObjectById(rootId);
+        if (root == null || root.sourceAttachmentDefinitionId() == null) {
+            VttClientEditorNotice.show("The selected object is not an attachment");
+            return;
+        }
+        CompositeContents contents = captureAttachmentComposite(rootId);
+        if (contents == null) return;
+        attachmentDefinitionDialog.setCompositeContents(
+                contents.nodes(), contents.rootLights());
+        VttClientEditorNotice.show("Template contents updated; press Save to persist");
     }
 
     private VttAttachmentBinding copyAttachmentBinding(VttAttachmentBinding source) {
@@ -4084,6 +4115,10 @@ public final class VTTScreen extends Screen {
 
     private record AttachmentSubtree(
             LinkedHashSet<String> objectIds, LinkedHashSet<String> lightIds
+    ) {}
+
+    private record CompositeContents(
+            List<AttachmentCompositeNode> nodes, List<VttLight> rootLights
     ) {}
 
     private CanvasObject canvasTokenContextToken() {
@@ -6606,6 +6641,8 @@ public final class VTTScreen extends Screen {
     private void handleAttachmentDialogAction(AttachmentDefinitionDialog.Action action) {
         if (action == AttachmentDefinitionDialog.Action.CHOOSE_IMAGE) {
             openBackgroundImagePicker(BackgroundPickerTarget.NEW_ATTACHMENT);
+        } else if (action == AttachmentDefinitionDialog.Action.UPDATE_FROM_SELECTION) {
+            updateCompositeDialogFromSelection();
         } else if (action == AttachmentDefinitionDialog.Action.SAVE) {
             confirmAttachmentDefinition();
         } else if (action == AttachmentDefinitionDialog.Action.CANCEL) {
@@ -6622,7 +6659,7 @@ public final class VTTScreen extends Screen {
             String editingId = attachmentDefinitionDialog.editingId();
             AttachmentDefinition existing = editingId == null ? null
                     : attachmentDefinitionRegistry.findById(editingId).orElse(null);
-            AttachmentDefinition definition = existing == null
+            AttachmentDefinition baseDefinition = existing == null
                     ? CreatedAttachmentStorage.createDefinition(
                     attachmentDefinitionDialog.name(), attachmentDefinitionDialog.assetId(),
                     attachmentDefinitionDialog.parsedWidth(),
@@ -6636,6 +6673,12 @@ public final class VTTScreen extends Screen {
                     attachmentDefinitionDialog.parsedHeight(),
                     attachmentDefinitionDialog.states(),
                     attachmentDefinitionDialog.defaultStateId());
+            AttachmentDefinition definition = new AttachmentDefinition(
+                    baseDefinition.id(), baseDefinition.displayName(), baseDefinition.assetId(),
+                    baseDefinition.defaultWidth(), baseDefinition.defaultHeight(),
+                    baseDefinition.states(), baseDefinition.defaultStateId(),
+                    attachmentDefinitionDialog.compositeNodes(),
+                    attachmentDefinitionDialog.rootLights());
             String folder = existing == null
                     ? assetManagerTargetFolder(AssetManagerOverlay.Section.ATTACHMENTS)
                     : attachmentDefinitionRegistry.folderOf(existing.id());
