@@ -48,6 +48,7 @@ import com.petrick.vtt.feature.attachment.AttachmentDefinition;
 import com.petrick.vtt.feature.attachment.AttachmentDefinitionRegistry;
 import com.petrick.vtt.feature.attachment.AttachmentFactory;
 import com.petrick.vtt.feature.attachment.AttachmentBindingService;
+import com.petrick.vtt.feature.attachment.AttachmentCompositeNode;
 import com.petrick.vtt.feature.attachment.persistence.CreatedAttachmentStorage;
 import com.petrick.vtt.feature.asset.folder.VttAssetFolderService;
 import com.petrick.vtt.feature.token.persistence.CreatedTokenStorage;
@@ -3207,6 +3208,7 @@ public final class VTTScreen extends Screen {
         }
 
         if (session.getActiveScene() != null) {
+            // Materialize the new scene objects before restoring their saved bindings.
             session.saveCanvasSceneToActiveScene();
             for (var sceneObject : session.getActiveScene().getObjects()) {
                 if (sceneObject != null
@@ -3540,6 +3542,12 @@ public final class VTTScreen extends Screen {
             canvasAttachmentContextMenuOverlay.close();
             return;
         }
+        if (interaction.action()
+                == CanvasAttachmentContextMenuOverlay.Action.SAVE_AS_TEMPLATE) {
+            saveAttachmentSubtreeAsTemplate(attachmentId);
+            canvasAttachmentContextMenuOverlay.close();
+            return;
+        }
         inputController.beginEditorAction();
         try {
             switch (interaction.action()) {
@@ -3725,7 +3733,8 @@ public final class VTTScreen extends Screen {
                 }
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
-                case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE -> {
+                case DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
+                        SAVE_AS_TEMPLATE -> {
                 }
                 case NONE -> {
                 }
@@ -3951,6 +3960,69 @@ public final class VTTScreen extends Screen {
         }
         VttClientEditorNotice.show("Duplicated subtree: " + subtree.objectIds().size()
                 + " objects, " + subtree.lightIds().size() + " lights");
+    }
+
+    private void saveAttachmentSubtreeAsTemplate(String rootId) {
+        CanvasObject root = scene.findObjectById(rootId);
+        if (root == null || root.sourceAttachmentDefinitionId() == null) return;
+        AttachmentDefinition source = attachmentDefinitionRegistry
+                .findById(root.sourceAttachmentDefinitionId()).orElse(null);
+        if (source == null) {
+            VttClientEditorNotice.show("Attachment definition is unavailable");
+            return;
+        }
+        AttachmentSubtree subtree = attachmentSubtree(rootId);
+        List<AttachmentCompositeNode> nodes = new ArrayList<>();
+        for (String objectId : subtree.objectIds()) {
+            if (rootId.equals(objectId)) continue;
+            VttSceneObject metadata = AttachmentBindingService.find(
+                    session.getActiveScene(), objectId);
+            if (metadata == null || metadata.getSourceAttachmentDefinitionId() == null) continue;
+            VttAttachmentBinding binding = copyAttachmentBinding(metadata.getAttachmentBinding());
+            if (binding == null) continue;
+            if (rootId.equals(binding.getTargetObjectId())) {
+                binding.setTargetObjectId(AttachmentCompositeNode.ROOT_ID);
+            }
+            List<VttLight> lights = session.getActiveScene().getLights().stream()
+                    .filter(light -> objectId.equals(light.getAttachedToObjectId()))
+                    .map(this::copySubtreeLight).toList();
+            nodes.add(new AttachmentCompositeNode(objectId,
+                    metadata.getSourceAttachmentDefinitionId(), metadata.getDisplayName(),
+                    binding, lights));
+        }
+        List<VttLight> rootLights = session.getActiveScene().getLights().stream()
+                .filter(light -> rootId.equals(light.getAttachedToObjectId()))
+                .map(this::copySubtreeLight).toList();
+        AttachmentDefinition base = CreatedAttachmentStorage.createDefinition(
+                root.displayName() + " Template", source.assetId(),
+                root.size().x(), root.size().y(), source.states(), source.defaultStateId());
+        AttachmentDefinition template = new AttachmentDefinition(
+                base.id(), base.displayName(), source.assetId(),
+                root.size().x(), root.size().y(), source.states(), source.defaultStateId(),
+                nodes, rootLights);
+        String folder = attachmentDefinitionRegistry.folderOf(source.id());
+        if (session.isNetworkAuthorityActive()) {
+            String requestId = beginPendingAttachmentDefinitionRequest(
+                    "saving attachment template", "Attachment template saved",
+                    template.id(), null);
+            if (requestId != null && VttClientAttachmentDefinitionSync.sendUpsert(
+                    requestId, session.getNetworkAuthorityRevision(), template, folder)) {
+                VttClientEditorNotice.show("Attachment template save sent to server");
+            } else if (requestId != null) {
+                clearPendingAttachmentDefinitionRequest();
+                VttClientEditorNotice.show("Could not save attachment template");
+            }
+            return;
+        }
+        java.nio.file.Path target = CreatedAttachmentStorage.getAttachmentsFolder();
+        if (folder != null && !folder.isBlank()) target = target.resolve(folder);
+        if (!CreatedAttachmentStorage.save(template, target)) {
+            VttClientEditorNotice.show("Could not save attachment template");
+            return;
+        }
+        attachmentDefinitionRegistry.register(template, folder);
+        attachmentCatalogSelection.select(template.id());
+        VttClientEditorNotice.show("Saved composite template: " + template.displayName());
     }
 
     private VttAttachmentBinding copyAttachmentBinding(VttAttachmentBinding source) {
@@ -6858,6 +6930,7 @@ public final class VTTScreen extends Screen {
                     .replace("-", "").substring(0, 12);
             if (VttClientAttachmentLifecycleSync.sendCreate(
                     session, definition, objectId, world)) {
+                sendCompositeAttachmentPlacement(definition, objectId, world);
                 inputController.selectSelectTool();
                 VttClientEditorNotice.show("Attachment placement sent to server");
             } else {
@@ -6883,6 +6956,7 @@ public final class VTTScreen extends Screen {
             placedMetadata.getState().setTintColorRgb(defaultAttachmentState.tintColorRgb());
             session.saveCanvasSceneToActiveScene();
         }
+        instantiateCompositeAttachment(definition, objectId, world);
         inputController.selectSelectTool();
         VttClientEditorNotice.show("Attachment placed: " + definition.displayName());
     }
@@ -6918,6 +6992,116 @@ public final class VTTScreen extends Screen {
         }
         return mapCatalogOverlay.contains(
                 mapDefinitionRegistry, this.width, this.height, mouseX, mouseY);
+    }
+
+    private void instantiateCompositeAttachment(
+            AttachmentDefinition template, String rootId, Vec2d world
+    ) {
+        if (template == null || !template.isComposite()) return;
+        Map<String, String> ids = compositeRuntimeIds(template, rootId);
+        inputController.beginEditorAction();
+        try {
+            for (AttachmentCompositeNode node : template.compositeNodes()) {
+                AttachmentDefinition childDefinition = attachmentDefinitionRegistry
+                        .findById(node.definitionId()).orElse(null);
+                if (childDefinition == null) continue;
+                String childId = ids.get(node.templateNodeId());
+                CanvasObject child = AttachmentFactory.createCanvasObject(
+                        childDefinition, childId, world, assetRegistry,
+                        session.getAssetThumbnailRegistry())
+                        .withDisplayName(node.displayName());
+                scene.addObject(child);
+            }
+            session.saveCanvasSceneToActiveScene();
+            for (AttachmentCompositeNode node : template.compositeNodes()) {
+                VttSceneObject child = AttachmentBindingService.find(
+                        session.getActiveScene(), ids.get(node.templateNodeId()));
+                VttAttachmentBinding binding = copyAttachmentBinding(node.binding());
+                if (child == null || binding == null) continue;
+                binding.setTargetObjectId(ids.getOrDefault(
+                        binding.getTargetObjectId(), binding.getTargetObjectId()));
+                child.setAttachmentBinding(binding);
+                addCompositeLights(node.lights(), child.getId());
+            }
+            addCompositeLights(template.rootLights(), rootId);
+            AttachmentBindingService.synchronize(session.getActiveScene(), scene, Set.of());
+            AttachmentBindingService.synchronizeLights(session.getActiveScene(), scene, null);
+            selectionManager.selectOnly(rootId);
+            // Persist the complete composite, including remapped bindings and lights.
+            session.saveCanvasSceneToActiveScene();
+        } finally {
+            inputController.endEditorAction();
+        }
+    }
+
+    private void sendCompositeAttachmentPlacement(
+            AttachmentDefinition template, String rootId, Vec2d world
+    ) {
+        if (template == null || !template.isComposite()) return;
+        Map<String, String> ids = compositeRuntimeIds(template, rootId);
+        int layer = session.getActiveScene() == null
+                ? 0 : session.getActiveScene().getObjects().size() + 1;
+        for (AttachmentCompositeNode node : template.compositeNodes()) {
+            AttachmentDefinition childDefinition = attachmentDefinitionRegistry
+                    .findById(node.definitionId()).orElse(null);
+            if (childDefinition == null) continue;
+            String childId = ids.get(node.templateNodeId());
+            VttSceneObject child = new VttSceneObject();
+            child.setId(childId);
+            child.setDisplayName(node.displayName());
+            child.setSourceAttachmentDefinitionId(childDefinition.id());
+            child.setTransform(new com.petrick.vtt.feature.tabletop.VttSceneTransform(
+                    world.x(), world.y(), 1.0, 1.0, 0.0));
+            child.setSize(new com.petrick.vtt.feature.tabletop.VttSceneSize(
+                    childDefinition.defaultWidth(), childDefinition.defaultHeight()));
+            var defaultState = childDefinition.states().get(childDefinition.defaultStateId());
+            var state = new com.petrick.vtt.feature.tabletop.VttSceneState(
+                    childDefinition.defaultStateId(), defaultState == null || defaultState.visible(), false);
+            if (defaultState != null) state.setTintColorRgb(defaultState.tintColorRgb());
+            child.setState(state);
+            child.setLayerIndex(layer++);
+            VttAttachmentBinding binding = copyAttachmentBinding(node.binding());
+            if (binding != null) binding.setTargetObjectId(ids.getOrDefault(
+                    binding.getTargetObjectId(), binding.getTargetObjectId()));
+            child.setAttachmentBinding(binding);
+            VttClientAttachmentLifecycleSync.sendCreateObject(child);
+            sendCompositeLights(node.lights(), childId, world);
+        }
+        sendCompositeLights(template.rootLights(), rootId, world);
+    }
+
+    private Map<String, String> compositeRuntimeIds(
+            AttachmentDefinition template, String rootId
+    ) {
+        Map<String, String> ids = new LinkedHashMap<>();
+        ids.put(AttachmentCompositeNode.ROOT_ID, rootId);
+        template.compositeNodes().forEach(node -> ids.put(node.templateNodeId(),
+                "attachment_" + UUID.randomUUID().toString()
+                        .replace("-", "").substring(0, 12)));
+        return ids;
+    }
+
+    private void addCompositeLights(List<VttLight> templates, String ownerId) {
+        for (VttLight source : templates) {
+            VttLight light = copySubtreeLight(source);
+            light.setId(uniqueSubtreeLightId(source.getId() + "_copy"));
+            light.setAttachedToObjectId(ownerId);
+            session.getActiveScene().addLight(light);
+        }
+    }
+
+    private void sendCompositeLights(
+            List<VttLight> templates, String ownerId, Vec2d world
+    ) {
+        for (VttLight source : templates) {
+            VttLight light = copySubtreeLight(source);
+            light.setId("light_" + UUID.randomUUID().toString()
+                    .replace("-", "").substring(0, 12));
+            light.setAttachedToObjectId(ownerId);
+            light.setX(world.x());
+            light.setY(world.y());
+            VttClientEnvironmentCommandSync.sendLight(session, light);
+        }
     }
 
     private boolean handleMapCatalogContextMouseClicked(

@@ -45,4 +45,11 @@ public final class VttClientAttachmentLifecycleSync {
                 VttClientTokenLifecycleSync.CREATE, requestedObjectId, GSON.toJson(object)));
         return true;
     }
+
+    public static boolean sendCreateObject(VttSceneObject object) {
+        if (object == null || object.getId() == null || object.getId().isBlank()) return false;
+        PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
+                VttClientTokenLifecycleSync.CREATE, object.getId(), GSON.toJson(object)));
+        return true;
+    }
 }

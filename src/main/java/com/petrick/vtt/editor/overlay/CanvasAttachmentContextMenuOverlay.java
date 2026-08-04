@@ -15,7 +15,7 @@ public final class CanvasAttachmentContextMenuOverlay {
     private static final int WIDTH = 210;
     private static final int TARGET_WIDTH = 154;
     private static final int ROW_HEIGHT = 18;
-    private static final int ROWS = 17;
+    private static final int ROWS = 18;
     private static final int PANEL = 0xF018181E;
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF77777D;
@@ -96,6 +96,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         row(context, font, 16, binding != null && binding.isStateMappingEnabled()
                 ? "State mapping: AUTO  >" : "State mapping: Independent  >",
                 binding != null && binding.isBound() && rootToken != null);
+        row(context, font, 17, "Save as Template", true);
 
         if (targetsOpen) renderTargets(context, font, binding, targets);
         if (anchorsOpen) renderAnchors(context, font, binding);
@@ -222,6 +223,7 @@ public final class CanvasAttachmentContextMenuOverlay {
                     targetsOpen = anchorsOpen = constraintsOpen = statesOpen = false;
                     yield Interaction.handled();
                 }
+                case 17 -> new Interaction(Action.SAVE_AS_TEMPLATE, null, true);
                 default -> Interaction.handled();
             };
         }
@@ -454,6 +456,7 @@ public final class CanvasAttachmentContextMenuOverlay {
         ADJUST_MIN_SCALE, ADJUST_MAX_SCALE, RESET_OFFSET,
         SET_STATE,
         TOGGLE_STATE_MAPPING, CYCLE_STATE_MAPPING, CYCLE_STATE_FALLBACK,
+        SAVE_AS_TEMPLATE,
         DETACH, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE
     }
 

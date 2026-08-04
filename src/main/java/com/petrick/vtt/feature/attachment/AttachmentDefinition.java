@@ -2,6 +2,8 @@ package com.petrick.vtt.feature.attachment;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
+import com.petrick.vtt.feature.tabletop.VttLight;
 
 /** Reusable attachment asset. Its image is optional by design. */
 public record AttachmentDefinition(
@@ -11,7 +13,9 @@ public record AttachmentDefinition(
         double defaultWidth,
         double defaultHeight,
         Map<String, AttachmentStateDefinition> states,
-        String defaultStateId
+        String defaultStateId,
+        List<AttachmentCompositeNode> compositeNodes,
+        List<VttLight> rootLights
 ) {
     public static final double DEFAULT_SIZE = 32.0;
 
@@ -36,6 +40,8 @@ public record AttachmentDefinition(
         defaultStateId = defaultStateId == null || !states.containsKey(defaultStateId)
                 ? states.keySet().iterator().next() : defaultStateId;
         assetId = states.get(defaultStateId).assetId();
+        compositeNodes = compositeNodes == null ? List.of() : List.copyOf(compositeNodes);
+        rootLights = rootLights == null ? List.of() : List.copyOf(rootLights);
         if (!Double.isFinite(defaultWidth) || !Double.isFinite(defaultHeight)
                 || defaultWidth <= 0.0 || defaultHeight <= 0.0
                 || defaultWidth > 16_000.0 || defaultHeight > 16_000.0) {
@@ -45,10 +51,21 @@ public record AttachmentDefinition(
 
     public AttachmentDefinition(String id, String displayName, String assetId,
                                 double defaultWidth, double defaultHeight) {
-        this(id, displayName, assetId, defaultWidth, defaultHeight, null, null);
+        this(id, displayName, assetId, defaultWidth, defaultHeight,
+                null, null, null, null);
+    }
+
+    public AttachmentDefinition(String id, String displayName, String assetId,
+                                double defaultWidth, double defaultHeight,
+                                Map<String, AttachmentStateDefinition> states,
+                                String defaultStateId) {
+        this(id, displayName, assetId, defaultWidth, defaultHeight,
+                states, defaultStateId, null, null);
     }
 
     public boolean hasImage() {
         return assetId != null;
     }
+
+    public boolean isComposite() { return !compositeNodes.isEmpty() || !rootLights.isEmpty(); }
 }

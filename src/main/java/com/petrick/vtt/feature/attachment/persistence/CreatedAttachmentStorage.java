@@ -58,7 +58,8 @@ public final class CreatedAttachmentStorage {
         }
         return new AttachmentDefinition(
                 existing.id(), normalizeName(name), assetId, width, height,
-                existing.states(), existing.defaultStateId());
+                existing.states(), existing.defaultStateId(),
+                existing.compositeNodes(), existing.rootLights());
     }
 
     public static AttachmentDefinition updateDefinition(
@@ -70,7 +71,8 @@ public final class CreatedAttachmentStorage {
             throw new IllegalArgumentException("Only user attachments can be edited");
         }
         return new AttachmentDefinition(existing.id(), normalizeName(name), assetId,
-                width, height, states, defaultStateId);
+                width, height, states, defaultStateId,
+                existing.compositeNodes(), existing.rootLights());
     }
 
     public static boolean save(AttachmentDefinition definition) {
@@ -87,8 +89,9 @@ public final class CreatedAttachmentStorage {
             var data = new CreatedAttachmentSaveData(
                     CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION,
                     definition.id(), definition.displayName(), definition.assetId(),
-                    definition.defaultWidth(), definition.defaultHeight(),
-                    definition.states(), definition.defaultStateId());
+                definition.defaultWidth(), definition.defaultHeight(),
+                    definition.states(), definition.defaultStateId(),
+                    definition.compositeNodes(), definition.rootLights());
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 GSON.toJson(data, writer);
             }
@@ -113,7 +116,7 @@ public final class CreatedAttachmentStorage {
                 source.defaultWidth(), source.defaultHeight());
         copy = new AttachmentDefinition(copy.id(), copy.displayName(), source.assetId(),
                 source.defaultWidth(), source.defaultHeight(), source.states(),
-                source.defaultStateId());
+                source.defaultStateId(), source.compositeNodes(), source.rootLights());
         Path sourceFile = findFile(source);
         Path folder = sourceFile == null ? getAttachmentsFolder() : sourceFile.getParent();
         if (!save(copy, folder)) throw new IllegalStateException("Could not duplicate attachment");
@@ -167,7 +170,7 @@ public final class CreatedAttachmentStorage {
             registry.register(new AttachmentDefinition(
                     data.attachmentDefinitionId(), data.displayName(), data.assetId(),
                     data.defaultWidth(), data.defaultHeight(), data.states(),
-                    data.defaultStateId()),
+                    data.defaultStateId(), data.compositeNodes(), data.rootLights()),
                     relativeFolder(root, file.getParent()));
         } catch (RuntimeException | IOException exception) {
             VTT.LOGGER.error("Failed to load VTT attachment: {}", file, exception);
@@ -175,8 +178,8 @@ public final class CreatedAttachmentStorage {
     }
 
     private static boolean valid(CreatedAttachmentSaveData data) {
-        return data != null && (data.schemaVersion() == 1
-                || data.schemaVersion() == CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION)
+        return data != null && data.schemaVersion() >= 1
+                && data.schemaVersion() <= CreatedAttachmentSaveData.CURRENT_SCHEMA_VERSION
                 && data.attachmentDefinitionId() != null
                 && data.attachmentDefinitionId().startsWith(ID_PREFIX)
                 && data.displayName() != null && !data.displayName().isBlank()

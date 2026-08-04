@@ -190,6 +190,28 @@ public final class VttServerAttachmentDefinitionHandler {
                 if (state.assetId() != null) resolveAsset(state.assetId());
             });
         }
+        if (data.compositeNodes() != null) {
+            if (data.compositeNodes().size() > 64) {
+                throw new IllegalArgumentException("Too many composite attachment nodes");
+            }
+            java.util.Set<String> nodeIds = new java.util.HashSet<>();
+            nodeIds.add(com.petrick.vtt.feature.attachment.AttachmentCompositeNode.ROOT_ID);
+            data.compositeNodes().forEach(node -> {
+                if (node == null || !nodeIds.add(node.templateNodeId())
+                        || node.binding() == null || !node.binding().isBound()
+                        || node.lights().size() > 32) {
+                    throw new IllegalArgumentException("Invalid composite attachment node");
+                }
+            });
+            data.compositeNodes().forEach(node -> {
+                if (!nodeIds.contains(node.binding().getTargetObjectId())) {
+                    throw new IllegalArgumentException("Invalid composite parent reference");
+                }
+            });
+        }
+        if (data.rootLights() != null && data.rootLights().size() > 32) {
+            throw new IllegalArgumentException("Too many composite root lights");
+        }
     }
 
     private static Path resolveAsset(String assetId) {
@@ -224,7 +246,8 @@ public final class VttServerAttachmentDefinitionHandler {
                 "user/attachments/" + slug(name) + "_"
                         + UUID.randomUUID().toString().substring(0, 8),
                 name, source.assetId(), source.defaultWidth(), source.defaultHeight(),
-                source.states(), source.defaultStateId());
+                source.states(), source.defaultStateId(),
+                source.compositeNodes(), source.rootLights());
         save(copy, sourceFile.getParent());
         return copy.attachmentDefinitionId();
     }

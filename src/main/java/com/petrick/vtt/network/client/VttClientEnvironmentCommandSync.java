@@ -453,6 +453,15 @@ public final class VttClientEnvironmentCommandSync {
                 attachmentId, binding == null ? "" : GSON.toJson(binding));
     }
 
+    public static void sendLight(VTTSession session, VttLight light) {
+        if (session == null || light == null || !session.hasNetworkSnapshot()
+                || !session.isLocalMaster() || session.getActiveScene() == null) return;
+        activeSceneId = session.getActiveScene().getId();
+        authorityRevision = session.getNetworkAuthorityRevision();
+        send(VttEnvironmentCommandPayload.UPSERT, VttEnvironmentCommandPayload.LIGHT,
+                light.getId(), GSON.toJson(light));
+    }
+
     public static void sendTokenStateOverrides(
             VTTSession session, String tokenId, VttTokenStateAppearance globalAppearance,
             Map<String, VttTokenStateAppearance> stateAppearances
