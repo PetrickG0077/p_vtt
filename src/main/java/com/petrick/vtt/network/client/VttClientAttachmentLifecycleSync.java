@@ -27,6 +27,19 @@ public final class VttClientAttachmentLifecycleSync {
                 || !Double.isFinite(worldPosition.x()) || !Double.isFinite(worldPosition.y())) {
             return false;
         }
+        VttSceneObject object = createObject(session, definition, requestedObjectId, worldPosition);
+        if (object == null) return false;
+        PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
+                VttClientTokenLifecycleSync.CREATE, requestedObjectId, GSON.toJson(object)));
+        return true;
+    }
+
+    public static VttSceneObject createObject(
+            VTTSession session, AttachmentDefinition definition,
+            String requestedObjectId, Vec2d worldPosition
+    ) {
+        if (session == null || definition == null || requestedObjectId == null
+                || requestedObjectId.isBlank() || worldPosition == null) return null;
         VttSceneObject object = new VttSceneObject();
         object.setId(requestedObjectId);
         object.setDisplayName(definition.displayName());
@@ -41,15 +54,7 @@ public final class VttClientAttachmentLifecycleSync {
         object.setState(state);
         object.setLayerIndex(session.getActiveScene() == null
                 ? 0 : session.getActiveScene().getObjects().size());
-        PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
-                VttClientTokenLifecycleSync.CREATE, requestedObjectId, GSON.toJson(object)));
-        return true;
+        return object;
     }
 
-    public static boolean sendCreateObject(VttSceneObject object) {
-        if (object == null || object.getId() == null || object.getId().isBlank()) return false;
-        PacketDistributor.sendToServer(new VttTokenLifecycleRequestPayload(
-                VttClientTokenLifecycleSync.CREATE, object.getId(), GSON.toJson(object)));
-        return true;
-    }
 }

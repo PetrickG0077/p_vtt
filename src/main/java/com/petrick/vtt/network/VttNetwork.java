@@ -54,6 +54,8 @@ import com.petrick.vtt.network.payload.VttAttachmentDefinitionUpsertPayload;
 import com.petrick.vtt.network.payload.VttAttachmentDefinitionCommandPayload;
 import com.petrick.vtt.network.payload.VttAttachmentDefinitionResultPayload;
 import com.petrick.vtt.network.server.VttServerAttachmentDefinitionHandler;
+import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementPayload;
+import com.petrick.vtt.network.server.VttServerCompositeAttachmentPlacementHandler;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -62,7 +64,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "49";
+    private static final String PROTOCOL_VERSION = "50";
 
     private VttNetwork() {
     }
@@ -132,6 +134,9 @@ public final class VttNetwork {
                 VttServerTokenLifecycleHandler::handle);
         registrar.playToClient(VttTokenLifecycleUpdatePayload.TYPE, VttTokenLifecycleUpdatePayload.STREAM_CODEC,
                 VttClientPayloadHandler::handleTokenLifecycleUpdate);
+        registrar.playToServer(VttCompositeAttachmentPlacementPayload.TYPE,
+                VttCompositeAttachmentPlacementPayload.STREAM_CODEC,
+                VttServerCompositeAttachmentPlacementHandler::handle);
         registrar.playToServer(VttSceneCommandPayload.TYPE, VttSceneCommandPayload.STREAM_CODEC,
                 VttServerSceneCommandHandler::handle);
         registrar.playToClient(VttSceneCommandResultPayload.TYPE,

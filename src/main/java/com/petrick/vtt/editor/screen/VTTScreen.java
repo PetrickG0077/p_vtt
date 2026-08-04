@@ -111,6 +111,9 @@ import com.petrick.vtt.network.payload.VttSceneCommandPayload;
 import com.petrick.vtt.network.payload.VttSceneCommandResultPayload;
 import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
+import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementData;
+import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementPayload;
+import com.google.gson.Gson;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -137,6 +140,7 @@ import java.util.UUID;
  * Esta Screen assume o controle visual enquanto o VTT está aberto.
  */
 public final class VTTScreen extends Screen {
+    private static final Gson NETWORK_GSON = new Gson();
 
     private static final double DEFAULT_TOKEN_VISION_OUTER_RADIUS = 512.0;
     private static final double DEFAULT_TOKEN_VISION_INNER_RADIUS = 256.0;
@@ -7067,9 +7071,11 @@ public final class VTTScreen extends Screen {
         if (session.isNetworkAuthorityActive()) {
             String objectId = "attachment_" + UUID.randomUUID().toString()
                     .replace("-", "").substring(0, 12);
-            if (VttClientAttachmentLifecycleSync.sendCreate(
-                    session, definition, objectId, world)) {
-                sendCompositeAttachmentPlacement(definition, objectId, world);
+            boolean sent = definition.isComposite()
+                    ? sendCompositeAttachmentPlacement(definition, objectId, world)
+                    : VttClientAttachmentLifecycleSync.sendCreate(
+                    session, definition, objectId, world);
+            if (sent) {
                 inputController.selectSelectTool();
                 VttClientEditorNotice.show("Attachment placement sent to server");
             } else {
@@ -7173,40 +7179,43 @@ public final class VTTScreen extends Screen {
         }
     }
 
-    private void sendCompositeAttachmentPlacement(
+    private boolean sendCompositeAttachmentPlacement(
             AttachmentDefinition template, String rootId, Vec2d world
     ) {
-        if (template == null || !template.isComposite()) return;
+        if (template == null || !template.isComposite()
+                || session.getActiveScene() == null) return false;
         Map<String, String> ids = compositeRuntimeIds(template, rootId);
-        int layer = session.getActiveScene() == null
-                ? 0 : session.getActiveScene().getObjects().size() + 1;
+        List<VttSceneObject> objects = new ArrayList<>();
+        List<VttLight> lights = new ArrayList<>();
+        VttSceneObject root = VttClientAttachmentLifecycleSync.createObject(
+                session, template, rootId, world);
+        if (root == null) return false;
+        objects.add(root);
+        int layer = session.getActiveScene().getObjects().size() + 1;
         for (AttachmentCompositeNode node : template.compositeNodes()) {
             AttachmentDefinition childDefinition = attachmentDefinitionRegistry
                     .findById(node.definitionId()).orElse(null);
-            if (childDefinition == null) continue;
+            if (childDefinition == null) return false;
             String childId = ids.get(node.templateNodeId());
-            VttSceneObject child = new VttSceneObject();
-            child.setId(childId);
+            VttSceneObject child = VttClientAttachmentLifecycleSync.createObject(
+                    session, childDefinition, childId, world);
+            if (child == null) return false;
             child.setDisplayName(node.displayName());
-            child.setSourceAttachmentDefinitionId(childDefinition.id());
-            child.setTransform(new com.petrick.vtt.feature.tabletop.VttSceneTransform(
-                    world.x(), world.y(), 1.0, 1.0, 0.0));
-            child.setSize(new com.petrick.vtt.feature.tabletop.VttSceneSize(
-                    childDefinition.defaultWidth(), childDefinition.defaultHeight()));
-            var defaultState = childDefinition.states().get(childDefinition.defaultStateId());
-            var state = new com.petrick.vtt.feature.tabletop.VttSceneState(
-                    childDefinition.defaultStateId(), defaultState == null || defaultState.visible(), false);
-            if (defaultState != null) state.setTintColorRgb(defaultState.tintColorRgb());
-            child.setState(state);
             child.setLayerIndex(layer++);
             VttAttachmentBinding binding = copyAttachmentBinding(node.binding());
             if (binding != null) binding.setTargetObjectId(ids.getOrDefault(
                     binding.getTargetObjectId(), binding.getTargetObjectId()));
             child.setAttachmentBinding(binding);
-            VttClientAttachmentLifecycleSync.sendCreateObject(child);
-            sendCompositeLights(node.lights(), childId, world);
+            objects.add(child);
+            lights.addAll(compositeLights(node.lights(), childId, world));
         }
-        sendCompositeLights(template.rootLights(), rootId, world);
+        lights.addAll(compositeLights(template.rootLights(), rootId, world));
+        String json = NETWORK_GSON.toJson(
+                new VttCompositeAttachmentPlacementData(objects, lights));
+        if (json.length() > VttCompositeAttachmentPlacementPayload.MAX_JSON_LENGTH) return false;
+        PacketDistributor.sendToServer(new VttCompositeAttachmentPlacementPayload(
+                session.getNetworkAuthorityRevision(), session.getActiveScene().getId(), json));
+        return true;
     }
 
     private Map<String, String> compositeRuntimeIds(
@@ -7229,9 +7238,10 @@ public final class VTTScreen extends Screen {
         }
     }
 
-    private void sendCompositeLights(
+    private List<VttLight> compositeLights(
             List<VttLight> templates, String ownerId, Vec2d world
     ) {
+        List<VttLight> result = new ArrayList<>();
         for (VttLight source : templates) {
             VttLight light = copySubtreeLight(source);
             light.setId("light_" + UUID.randomUUID().toString()
@@ -7239,8 +7249,9 @@ public final class VTTScreen extends Screen {
             light.setAttachedToObjectId(ownerId);
             light.setX(world.x());
             light.setY(world.y());
-            VttClientEnvironmentCommandSync.sendLight(session, light);
+            result.add(light);
         }
+        return result;
     }
 
     private boolean handleMapCatalogContextMouseClicked(

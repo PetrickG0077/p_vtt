@@ -37,6 +37,7 @@ import com.petrick.vtt.network.payload.VttSceneHistoryCommandPayload;
 import com.petrick.vtt.network.VttSceneFingerprint;
 import com.petrick.vtt.feature.tabletop.VttFogArea;
 import com.petrick.vtt.network.payload.VttTokenLifecycleRequestPayload;
+import com.petrick.vtt.network.payload.VttCompositeAttachmentPlacementData;
 import com.petrick.vtt.network.payload.VttTokenLifecycleUpdatePayload;
 import com.petrick.vtt.network.payload.VttAssetFolderCommandPayload;
 import com.petrick.vtt.feature.map.MapTextureMode;
@@ -1433,6 +1434,108 @@ public final class VttServerTabletopState {
             return null;
         }
     }
+
+    public synchronized CompositeAttachmentPlacementResult applyCompositeAttachmentPlacement(
+            VttCompositeAttachmentPlacementData data, String playerId
+    ) {
+        if (activeScene == null || data == null || playerId == null
+                || data.objects().isEmpty() || data.objects().size() > 65
+                || data.lights().size() > 2_080
+                || activeScene.getObjects().size() + data.objects().size() > VttSceneLimits.MAX_TOKENS
+                || activeScene.getLights().size() + data.lights().size() > VttSceneLimits.MAX_LIGHTS) {
+            return null;
+        }
+        java.util.LinkedHashSet<String> objectIds = new java.util.LinkedHashSet<>();
+        java.util.LinkedHashSet<String> lightIds = new java.util.LinkedHashSet<>();
+        for (VttSceneObject object : data.objects()) {
+            if (!validSceneObject(object) || !object.isAttachment()
+                    || !objectIds.add(object.getId())
+                    || activeScene.getObjects().stream().anyMatch(existing ->
+                    existing != null && object.getId().equals(existing.getId()))) return null;
+        }
+        String rootId = data.objects().get(0).getId();
+        if (data.objects().get(0).getAttachmentBinding() != null
+                && data.objects().get(0).getAttachmentBinding().isBound()) return null;
+        Map<String, VttSceneObject> requestedObjects = new HashMap<>();
+        data.objects().forEach(object -> requestedObjects.put(object.getId(), object));
+        for (int index = 1; index < data.objects().size(); index++) {
+            VttSceneObject object = data.objects().get(index);
+            var binding = object.getAttachmentBinding();
+            if (binding == null || !binding.isBound()
+                    || !objectIds.contains(binding.getTargetObjectId())) return null;
+            Set<String> visited = new HashSet<>();
+            String current = object.getId();
+            boolean reachesRoot = false;
+            for (int depth = 0;
+                 depth <= com.petrick.vtt.feature.attachment.AttachmentBindingService.MAX_BINDING_DEPTH;
+                 depth++) {
+                if (!visited.add(current)) return null;
+                if (rootId.equals(current)) { reachesRoot = true; break; }
+                VttSceneObject currentObject = requestedObjects.get(current);
+                var currentBinding = currentObject == null
+                        ? null : currentObject.getAttachmentBinding();
+                if (currentBinding == null || !currentBinding.isBound()) break;
+                current = currentBinding.getTargetObjectId();
+            }
+            if (!reachesRoot) return null;
+        }
+        for (VttLight light : data.lights()) {
+            if (!validCompositeLight(light) || !lightIds.add(light.getId())
+                    || light.getAttachedToObjectId() == null
+                    || !objectIds.contains(light.getAttachedToObjectId())
+                    || activeScene.getLights().stream().anyMatch(existing ->
+                    existing != null && light.getId().equals(existing.getId()))) return null;
+        }
+
+        List<VttTokenLifecycleUpdatePayload> objectUpdates = new ArrayList<>();
+        List<VttEnvironmentCommandUpdatePayload> lightUpdates = new ArrayList<>();
+        int layer = activeScene.getObjects().size();
+        for (VttSceneObject object : data.objects()) {
+            object.setLayerIndex(layer++);
+            activeScene.addObject(object);
+            objectSpatialIndex.addOrUpdate(object);
+        }
+        for (VttLight light : data.lights()) {
+            activeScene.addLight(light);
+        }
+        // Resolve the complete hierarchy only after every referenced parent and light exists.
+        synchronizeAttachmentDependencies(data.objects().get(0).getId());
+        for (VttSceneObject object : data.objects()) {
+            objectUpdates.add(new VttTokenLifecycleUpdatePayload(
+                    "CREATE", object.getId(), object.getId(), GSON.toJson(object), playerId));
+        }
+        for (VttLight light : data.lights()) {
+            String key = VttEnvironmentCommandPayload.LIGHT + "\u0000" + light.getId();
+            lightUpdates.add(new VttEnvironmentCommandUpdatePayload(
+                    authorityRevision, nextRevision(environmentRevisions, key), 0L,
+                    VttEnvironmentCommandPayload.UPSERT, activeScene.getId(),
+                    VttEnvironmentCommandPayload.LIGHT, light.getId(),
+                    GSON.toJson(light), playerId));
+        }
+        normalizeLayerIndices();
+        markActiveSceneDirty();
+        flushActiveSceneNow("composite attachment placement");
+        return new CompositeAttachmentPlacementResult(
+                List.copyOf(objectUpdates), List.copyOf(lightUpdates));
+    }
+
+    private boolean validCompositeLight(VttLight light) {
+        return light != null && light.getId() != null && !light.getId().isBlank()
+                && Double.isFinite(light.getX()) && Double.isFinite(light.getY())
+                && Double.isFinite(light.getInnerRadius())
+                && Double.isFinite(light.getOuterRadius())
+                && Double.isFinite(light.getIntensity())
+                && light.getInnerRadius() >= 0.0 && light.getOuterRadius() >= 1.0
+                && light.getInnerRadius() <= light.getOuterRadius()
+                && light.getOuterRadius() <= 100_000.0
+                && light.getIntensity() >= VttLight.MIN_INTENSITY
+                && light.getIntensity() <= VttLight.MAX_INTENSITY;
+    }
+
+    public record CompositeAttachmentPlacementResult(
+            List<VttTokenLifecycleUpdatePayload> objects,
+            List<VttEnvironmentCommandUpdatePayload> lights
+    ) {}
 
     private VttTokenLifecycleUpdatePayload deleteSceneToken(String objectId, String playerId) {
         VttSceneObject object = activeScene.getObjects().stream()
