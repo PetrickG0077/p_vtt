@@ -4,6 +4,7 @@ import com.petrick.vtt.editor.hud.EditorHudTheme;
 import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
+import com.petrick.vtt.feature.media.VttAudioPlayerService;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -21,7 +22,8 @@ public final class MediaLibraryOverlay {
     private static final int MUTED = 0xFF99999F;
     private Tab tab = Tab.MUSICS;
 
-    public void render(VRenderContext context, Font font, AssetLibraryScanResult scan) {
+    public void render(VRenderContext context, Font font, AssetLibraryScanResult scan,
+                       VttAudioPlayerService audio) {
         Bounds bounds = bounds(context.screenWidth(), context.screenHeight());
         context.graphics().fill(bounds.x, bounds.y, bounds.right(), bounds.bottom(), PANEL);
         context.graphics().fill(bounds.x, bounds.y, bounds.right(), bounds.y + 36, HEADER);
@@ -48,28 +50,85 @@ public final class MediaLibraryOverlay {
                     rowY + 21, ROW);
             context.graphics().drawString(font, entry.relativePath(), bounds.x + 15,
                     rowY + 7, TEXT, false);
-            context.graphics().drawString(font, "[ ready ]", bounds.right() - 64,
+            boolean active = entry.absolutePath().equals(audio.track());
+            context.graphics().drawString(font, active && audio.isPlaying()
+                            ? audio.isPaused() ? "[ resume ]" : "[ pause ]" : "[ play ]",
+                    bounds.right() - 70,
                     rowY + 7, MUTED, false);
             rowY += 23;
         }
         context.graphics().fill(bounds.x + 8, bounds.bottom() - 47,
                 bounds.right() - 8, bounds.bottom() - 8, HEADER);
         context.graphics().drawString(font,
-                tab == Tab.MUSICS ? "Player: stopped  |  Master volume: 100%"
+                tab == Tab.MUSICS ? playerText(audio)
                         : "Presentation: inactive",
                 bounds.x + 17, bounds.bottom() - 31, TEXT, false);
+        if (tab == Tab.MUSICS) {
+            int trackX = bounds.x + 17;
+            int trackY = bounds.bottom() - 17;
+            int trackWidth = bounds.width - 145;
+            context.graphics().fill(trackX, trackY, trackX + trackWidth, trackY + 4,
+                    0xFF55555D);
+            int progress = audio.durationSeconds() <= 0.0 ? 0 : (int) Math.round(trackWidth
+                    * audio.positionSeconds() / audio.durationSeconds());
+            context.graphics().fill(trackX, trackY, trackX + Math.max(0, progress),
+                    trackY + 4, EditorHudTheme.selection());
+            context.graphics().drawString(font, audio.isLoop() ? "Loop: ON" : "Loop: off",
+                    bounds.right() - 112, trackY - 4, TEXT, false);
+        }
     }
 
     public boolean mouseClicked(double mouseX, double mouseY,
-                                int screenWidth, int screenHeight) {
+                                int screenWidth, int screenHeight,
+                                AssetLibraryScanResult scan, VttAudioPlayerService audio) {
         Bounds bounds = bounds(screenWidth, screenHeight);
         if (!bounds.contains(mouseX, mouseY)) return false;
         if (inside(mouseX, mouseY, bounds.x + 150, bounds.y + 7, 92, 22)) {
             tab = Tab.MUSICS;
         } else if (inside(mouseX, mouseY, bounds.x + 246, bounds.y + 7, 92, 22)) {
             tab = Tab.SHOWS;
+        } else if (tab == Tab.MUSICS) {
+            List<AssetLibraryEntry> entries = entries(scan);
+            int row = (int) ((mouseY - bounds.y - 45) / 23);
+            if (row >= 0 && row < Math.min(entries.size(), 10)
+                    && mouseY <= bounds.y + 45 + row * 23 + 21) {
+                AssetLibraryEntry entry = entries.get(row);
+                if (entry.absolutePath().equals(audio.track()) && audio.isPlaying()) {
+                    audio.togglePause();
+                } else {
+                    audio.play(entry.absolutePath());
+                }
+            } else if (mouseY >= bounds.bottom() - 22) {
+                int trackX = bounds.x + 17;
+                int trackWidth = bounds.width - 145;
+                if (mouseX >= trackX && mouseX <= trackX + trackWidth) {
+                    audio.seek((mouseX - trackX) / trackWidth);
+                } else if (mouseX >= bounds.right() - 120) {
+                    audio.setLoop(!audio.isLoop());
+                }
+            } else if (mouseY >= bounds.bottom() - 47) {
+                if (mouseX < bounds.x + 105) audio.stop();
+                else if (mouseX < bounds.x + 210) audio.togglePause();
+                else if (mouseX > bounds.right() - 150) {
+                    float next = audio.masterVolume() <= 0.01F ? 1.0F
+                            : Math.max(0.0F, audio.masterVolume() - 0.1F);
+                    audio.setMasterVolume(next);
+                }
+            }
         }
         return true;
+    }
+
+    private String playerText(VttAudioPlayerService audio) {
+        String state = !audio.isPlaying() ? "stopped" : audio.isPaused() ? "paused" : "playing";
+        return "Stop | Pause | " + state + "  " + time(audio.positionSeconds()) + "/"
+                + time(audio.durationSeconds()) + "  Volume: "
+                + Math.round(audio.masterVolume() * 100.0F) + "%";
+    }
+
+    private String time(double seconds) {
+        int value = Math.max(0, (int) Math.round(seconds));
+        return String.format("%d:%02d", value / 60, value % 60);
     }
 
     private List<AssetLibraryEntry> entries(AssetLibraryScanResult scan) {

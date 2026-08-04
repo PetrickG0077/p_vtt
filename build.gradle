@@ -115,6 +115,16 @@ dependencies {
     // And its provides the option to then use net.minecraft as the group, and one of; client, server or joined as the module name, plus the game version as version.
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
+    implementation "io.github.jseproject:jse-spi-mp3:1.1.0"
+    implementation "io.github.jseproject:jse-spi-vorbis:1.1.0"
+    localRuntime "io.github.jseproject:jse-spi-mp3:1.1.0"
+    localRuntime "io.github.jseproject:jse-spi-vorbis:1.1.0"
+    jarJar("io.github.jseproject:jse-spi-mp3:[1.1.0]") {
+        version { prefer "1.1.0" }
+    }
+    jarJar("io.github.jseproject:jse-spi-vorbis:[1.1.0]") {
+        version { prefer "1.1.0" }
+    }
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

@@ -72,6 +72,7 @@ import com.petrick.vtt.feature.tabletop.VttLight;
 import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.map.MapDefinition;
+import com.petrick.vtt.feature.media.VttAudioPlayerService;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
@@ -175,6 +176,7 @@ public final class VTTScreen extends Screen {
 
     private final EditorHudOverlay editorHudOverlay;
     private final MediaLibraryOverlay mediaLibraryOverlay;
+    private final VttAudioPlayerService audioPlayerService;
 
     private final EditorSettingsOverlay editorSettingsOverlay;
     private final AssetManagerOverlay assetManagerOverlay;
@@ -413,6 +415,7 @@ public final class VTTScreen extends Screen {
                 this::saveTokenCollisionAsDefault);
         this.editorHudOverlay = new EditorHudOverlay();
         this.mediaLibraryOverlay = new MediaLibraryOverlay();
+        this.audioPlayerService = new VttAudioPlayerService();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
         this.assetManagerOverlay.setAttachmentRegistry(attachmentDefinitionRegistry);
         this.editorSettingsOverlay = new EditorSettingsOverlay();
@@ -859,7 +862,8 @@ public final class VTTScreen extends Screen {
         editorHudOverlay.render(context, this.font, editorHudState());
         if (hudMediaOpen && master) {
             mediaLibraryOverlay.render(
-                    context, this.font, session.getAssetLibraryScanResult());
+                    context, this.font, session.getAssetLibraryScanResult(),
+                    audioPlayerService);
         }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && mapPickerTarget != MapPickerTarget.ACTIVE_SCENE) {
@@ -2744,7 +2748,8 @@ public final class VTTScreen extends Screen {
             return true;
         }
         if (hudMediaOpen && mediaLibraryOverlay.mouseClicked(
-                mouseX, mouseY, this.width, this.height)) return true;
+                mouseX, mouseY, this.width, this.height,
+                session.getAssetLibraryScanResult(), audioPlayerService)) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseClicked(
@@ -8561,6 +8566,7 @@ public final class VTTScreen extends Screen {
         inputController.cancelDoorEditing();
         inputController.cancelFogDrawing();
         CursorManager.reset();
+        audioPlayerService.close();
         super.removed();
     }
 
