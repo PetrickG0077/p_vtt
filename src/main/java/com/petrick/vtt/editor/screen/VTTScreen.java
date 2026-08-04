@@ -4974,6 +4974,7 @@ public final class VTTScreen extends Screen {
         if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
             return canvasTokenContextMenuOverlay.mouseReleasedColorPicker();
         }
+        if (hudMediaOpen && mediaLibraryOverlay.mouseReleased(session)) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseReleased(
@@ -5076,6 +5077,8 @@ public final class VTTScreen extends Screen {
             return canvasTokenContextMenuOverlay.mouseDraggedColorPicker(
                     mouseX, mouseY, this.width, this.height);
         }
+        if (hudMediaOpen && mediaLibraryOverlay.mouseDragged(
+                mouseX, mouseY, this.width, this.height, session)) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseDragged(

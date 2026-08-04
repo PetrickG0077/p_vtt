@@ -30,6 +30,8 @@ public final class VttAudioPlayerService implements AutoCloseable {
     private volatile double positionSeconds;
     private volatile double durationSeconds;
     private volatile long generation;
+    private volatile long fadeGeneration;
+    private volatile float fadeVolume = 1.0F;
     private volatile SourceDataLine line;
     private volatile String status = "Stopped";
     private volatile String error = "";
@@ -51,6 +53,48 @@ public final class VttAudioPlayerService implements AutoCloseable {
         Thread.ofVirtual().name("vtt-audio-player").start(() -> run(run, safeStart));
     }
 
+    /** Fades the current track out, swaps it, then fades the new track in. */
+    public void transitionTo(Path file, double startSeconds, boolean startPaused) {
+        if (file == null) return;
+        long fade = ++fadeGeneration;
+        Thread.ofVirtual().name("vtt-audio-crossfade").start(() -> {
+            if (isPlaying()) fade(fade, fadeVolume, 0.0F, 250L);
+            if (fade != fadeGeneration) return;
+            synchronized (this) {
+                play(file, startSeconds, startPaused);
+                fadeVolume = startPaused ? 1.0F : 0.0F;
+            }
+            if (!startPaused) {
+                long fadeIn = ++fadeGeneration;
+                fade(fadeIn, 0.0F, 1.0F, 350L);
+            }
+        });
+    }
+
+    /** Stops playback after a short fade instead of cutting the audio abruptly. */
+    public void fadeOutAndStop() {
+        long fade = ++fadeGeneration;
+        Thread.ofVirtual().name("vtt-audio-fade-stop").start(() -> {
+            fade(fade, fadeVolume, 0.0F, 300L);
+            if (fade == fadeGeneration) stop();
+        });
+    }
+
+    private void fade(long fade, float from, float to, long durationMillis) {
+        int steps = Math.max(1, (int) (durationMillis / 20L));
+        for (int step = 1; step <= steps && fade == fadeGeneration; step++) {
+            fadeVolume = from + (to - from) * step / steps;
+            SourceDataLine current = line;
+            if (current != null && current.isOpen()) applyVolume(current);
+            try {
+                Thread.sleep(20L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
     public synchronized void togglePause() {
         if (!playing) return;
         paused = !paused;
@@ -62,6 +106,7 @@ public final class VttAudioPlayerService implements AutoCloseable {
     }
 
     public synchronized void stop() {
+        fadeGeneration++;
         playing = false;
         paused = false;
         generation++;
@@ -74,6 +119,7 @@ public final class VttAudioPlayerService implements AutoCloseable {
         }
         positionSeconds = 0.0;
         status = "Stopped";
+        fadeVolume = 1.0F;
     }
 
     public synchronized void seek(double ratio) {
@@ -217,7 +263,8 @@ public final class VttAudioPlayerService implements AutoCloseable {
     private void applyVolume(SourceDataLine output) {
         if (!output.isControlSupported(FloatControl.Type.MASTER_GAIN)) return;
         FloatControl gain = (FloatControl) output.getControl(FloatControl.Type.MASTER_GAIN);
-        float linear = Math.max(0.0001F, Math.min(1.0F, trackVolume * masterVolume));
+        float linear = Math.max(0.0001F,
+                Math.min(1.0F, trackVolume * masterVolume * fadeVolume));
         gain.setValue(Math.max(gain.getMinimum(), Math.min(gain.getMaximum(),
                 (float) (20.0 * Math.log10(linear)))));
     }

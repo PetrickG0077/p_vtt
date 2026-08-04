@@ -4,6 +4,7 @@ import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.feature.media.VttMusicPreferences;
 import com.petrick.vtt.network.payload.VttMusicCommandPayload;
 import com.petrick.vtt.network.payload.VttMusicUpdatePayload;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -12,11 +13,21 @@ import java.nio.file.Path;
 
 /** Process-wide music player and client/server transport bridge. */
 public final class VttClientMusicSync {
-    private static final VttAudioPlayerService PLAYER = new VttAudioPlayerService();
+    private static final VttAudioPlayerService PLAYER = createPlayer();
 
     private VttClientMusicSync() {}
 
     public static VttAudioPlayerService player() { return PLAYER; }
+
+    private static VttAudioPlayerService createPlayer() {
+        VttAudioPlayerService player = new VttAudioPlayerService();
+        player.setMasterVolume(VttMusicPreferences.loadMasterVolume());
+        return player;
+    }
+
+    public static void persistVolume() {
+        VttMusicPreferences.saveMasterVolume(PLAYER.masterVolume());
+    }
 
     public static void reset() { PLAYER.stop(); }
 
@@ -26,7 +37,7 @@ public final class VttClientMusicSync {
             send(VttMusicCommandPayload.PLAY, relativePath, 0.0,
                     PLAYER.isLoop(), PLAYER.trackVolume(), PLAYER.masterVolume());
         } else {
-            PLAYER.play(localPath);
+            PLAYER.transitionTo(localPath, 0.0, false);
         }
     }
 
@@ -42,7 +53,7 @@ public final class VttClientMusicSync {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) send(VttMusicCommandPayload.STOP, path(session),
                     0.0, PLAYER.isLoop(), PLAYER.trackVolume(), PLAYER.masterVolume());
-        } else PLAYER.stop();
+        } else PLAYER.fadeOutAndStop();
     }
 
     public static void seek(VTTSession session, double ratio) {
@@ -69,13 +80,22 @@ public final class VttClientMusicSync {
         }
     }
 
+    public static void previewMasterVolume(float value) {
+        PLAYER.setMasterVolume(value);
+    }
+
+    public static void commitMasterVolume(VTTSession session) {
+        setMasterVolume(session, PLAYER.masterVolume());
+        persistVolume();
+    }
+
     public static void accept(VttMusicUpdatePayload update) {
         if (update == null) return;
         PLAYER.setLoop(update.loop());
         PLAYER.setTrackVolume(update.trackVolume());
         PLAYER.setMasterVolume(update.masterVolume());
         if (!update.playing()) {
-            PLAYER.stop();
+            PLAYER.fadeOutAndStop();
             return;
         }
         Path file = resolve(update.relativePath());
@@ -84,15 +104,20 @@ public final class VttClientMusicSync {
                     update.relativePath());
             return;
         }
+        double synchronizedPosition = update.positionSeconds();
+        if (!update.paused()) {
+            synchronizedPosition += Math.max(0L,
+                    System.currentTimeMillis() - update.serverEpochMillis()) / 1000.0;
+        }
         if (VttMusicCommandPayload.PLAY.equals(update.operation())
                 || "STATE".equals(update.operation())
                 || PLAYER.track() == null || !PLAYER.track().equals(file)) {
-            PLAYER.play(file, update.positionSeconds(), update.paused());
+            PLAYER.transitionTo(file, synchronizedPosition, update.paused());
         } else if (VttMusicCommandPayload.PAUSE.equals(update.operation())) {
             if (PLAYER.isPaused() != update.paused()) PLAYER.togglePause();
         } else if (VttMusicCommandPayload.SEEK.equals(update.operation())) {
             double ratio = PLAYER.durationSeconds() <= 0.0 ? 0.0
-                    : update.positionSeconds() / PLAYER.durationSeconds();
+                    : synchronizedPosition / PLAYER.durationSeconds();
             PLAYER.seek(ratio);
         }
     }

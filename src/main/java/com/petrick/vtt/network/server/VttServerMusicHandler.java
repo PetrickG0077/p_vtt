@@ -13,6 +13,7 @@ import java.util.Locale;
 /** Validates master music commands and retains the current transport state. */
 public final class VttServerMusicHandler {
     private static MusicState state = MusicState.stopped();
+    private static long positionAnchorMillis = System.currentTimeMillis();
 
     private VttServerMusicHandler() {}
 
@@ -37,13 +38,20 @@ public final class VttServerMusicHandler {
                 state = new MusicState(path, Math.max(0.0, command.positionSeconds()),
                         true, false, command.loop(), clamp(command.trackVolume()),
                         clamp(command.masterVolume()));
+                positionAnchorMillis = System.currentTimeMillis();
             } else if (VttMusicCommandPayload.PAUSE.equals(operation)) {
-                state = state.withPaused(state.playing && !state.paused);
+                state = new MusicState(state.path,
+                        Math.max(0.0, command.positionSeconds()), state.playing,
+                        state.playing && !state.paused, state.loop,
+                        state.trackVolume, state.masterVolume);
+                positionAnchorMillis = System.currentTimeMillis();
             } else if (VttMusicCommandPayload.STOP.equals(operation)) {
                 state = new MusicState(state.path, 0.0, false, false, state.loop,
                         state.trackVolume, state.masterVolume);
+                positionAnchorMillis = System.currentTimeMillis();
             } else if (VttMusicCommandPayload.SEEK.equals(operation)) {
                 state = state.withPosition(Math.max(0.0, command.positionSeconds()));
+                positionAnchorMillis = System.currentTimeMillis();
             } else if (VttMusicCommandPayload.LOOP.equals(operation)) {
                 state = state.withLoop(command.loop());
             } else if (VttMusicCommandPayload.VOLUME.equals(operation)) {
@@ -89,9 +97,14 @@ public final class VttServerMusicHandler {
     }
 
     private static VttMusicUpdatePayload update(String operation) {
-        return new VttMusicUpdatePayload(operation, state.path, state.position,
+        long now = System.currentTimeMillis();
+        double position = state.position;
+        if (state.playing && !state.paused) {
+            position += Math.max(0L, now - positionAnchorMillis) / 1000.0;
+        }
+        return new VttMusicUpdatePayload(operation, state.path, position,
                 state.playing, state.paused, state.loop,
-                state.trackVolume, state.masterVolume);
+                state.trackVolume, state.masterVolume, now);
     }
 
     private static String validMusicPath(String value) {

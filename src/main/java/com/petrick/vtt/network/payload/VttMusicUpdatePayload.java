@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 public record VttMusicUpdatePayload(
         String operation, String relativePath, double positionSeconds,
         boolean playing, boolean paused, boolean loop,
-        float trackVolume, float masterVolume
+        float trackVolume, float masterVolume, long serverEpochMillis
 ) implements CustomPacketPayload {
     public static final Type<VttMusicUpdatePayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "music_update"));
@@ -20,7 +20,8 @@ public record VttMusicUpdatePayload(
         public VttMusicUpdatePayload decode(RegistryFriendlyByteBuf buffer) {
             return new VttMusicUpdatePayload(buffer.readUtf(16), buffer.readUtf(512),
                     buffer.readDouble(), buffer.readBoolean(), buffer.readBoolean(),
-                    buffer.readBoolean(), buffer.readFloat(), buffer.readFloat());
+                    buffer.readBoolean(), buffer.readFloat(), buffer.readFloat(),
+                    buffer.readLong());
         }
 
         @Override
@@ -33,6 +34,7 @@ public record VttMusicUpdatePayload(
             buffer.writeBoolean(payload.loop());
             buffer.writeFloat(payload.trackVolume());
             buffer.writeFloat(payload.masterVolume());
+            buffer.writeLong(payload.serverEpochMillis());
         }
     };
 

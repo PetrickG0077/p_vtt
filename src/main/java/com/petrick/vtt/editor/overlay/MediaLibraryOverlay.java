@@ -23,6 +23,9 @@ public final class MediaLibraryOverlay {
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF99999F;
     private Tab tab = Tab.MUSICS;
+    private boolean draggingProgress;
+    private boolean draggingVolume;
+    private double draggedProgressRatio;
 
     public void render(VRenderContext context, Font font, AssetLibraryScanResult scan,
                        VttAudioPlayerService audio) {
@@ -69,17 +72,38 @@ public final class MediaLibraryOverlay {
                         : "Presentation: inactive",
                 bounds.x + 17, bounds.bottom() - 31, TEXT, false);
         if (tab == Tab.MUSICS) {
-            int trackX = bounds.x + 17;
+            int trackX = bounds.x + 132;
             int trackY = bounds.bottom() - 17;
-            int trackWidth = bounds.width - 145;
+            int trackWidth = bounds.width - 270;
+            button(context, font, bounds.x + 14, bounds.bottom() - 23, 48, 18,
+                    "Stop", audio.isPlaying());
+            button(context, font, bounds.x + 67, bounds.bottom() - 23, 58, 18,
+                    audio.isPaused() ? "Resume" : "Pause", audio.isPlaying());
             context.graphics().fill(trackX, trackY, trackX + trackWidth, trackY + 4,
                     0xFF55555D);
-            int progress = audio.durationSeconds() <= 0.0 ? 0 : (int) Math.round(trackWidth
-                    * audio.positionSeconds() / audio.durationSeconds());
+            double progressRatio = draggingProgress ? draggedProgressRatio
+                    : audio.durationSeconds() <= 0.0 ? 0.0
+                    : audio.positionSeconds() / audio.durationSeconds();
+            progressRatio = Math.max(0.0, Math.min(1.0, progressRatio));
+            int progress = (int) Math.round(trackWidth * progressRatio);
             context.graphics().fill(trackX, trackY, trackX + Math.max(0, progress),
                     trackY + 4, EditorHudTheme.selection());
-            context.graphics().drawString(font, audio.isLoop() ? "Loop: ON" : "Loop: off",
-                    bounds.right() - 112, trackY - 4, TEXT, false);
+            int volumeX = bounds.right() - 112;
+            int volumeWidth = 62;
+            context.graphics().fill(volumeX, trackY, volumeX + volumeWidth, trackY + 4,
+                    0xFF55555D);
+            context.graphics().fill(volumeX, trackY,
+                    volumeX + Math.round(volumeWidth * audio.masterVolume()), trackY + 4,
+                    EditorHudTheme.selection());
+            context.graphics().drawString(font, "Vol", volumeX - 24, trackY - 3,
+                    MUTED, false);
+            context.graphics().drawString(font, audio.isLoop() ? "Loop ON" : "Loop",
+                    bounds.right() - 46, trackY - 4,
+                    audio.isLoop() ? TEXT : MUTED, false);
+            if (audio.status().startsWith("Opening")) {
+                context.graphics().drawString(font, "Loading / synchronizing...",
+                        bounds.x + 12, bounds.bottom() - 60, 0xFFFFCC55, false);
+            }
             if (!audio.error().isBlank()) {
                 context.graphics().drawString(font, trim(audio.error(), 70), bounds.x + 12,
                         bounds.bottom() - 60, 0xFFFF6666, false);
@@ -109,29 +133,59 @@ public final class MediaLibraryOverlay {
                 } else {
                     VttClientMusicSync.play(session, entry.relativePath(), entry.absolutePath());
                 }
-            } else if (mouseY >= bounds.bottom() - 22) {
-                int trackX = bounds.x + 17;
-                int trackWidth = bounds.width - 145;
+            } else if (inside(mouseX, mouseY, bounds.x + 14,
+                    bounds.bottom() - 23, 48, 18)) {
+                VttClientMusicSync.stop(session);
+            } else if (inside(mouseX, mouseY, bounds.x + 67,
+                    bounds.bottom() - 23, 58, 18)) {
+                VttClientMusicSync.togglePause(session);
+            } else if (mouseY >= bounds.bottom() - 24) {
+                int trackX = bounds.x + 132;
+                int trackWidth = bounds.width - 270;
+                int volumeX = bounds.right() - 112;
                 if (mouseX >= trackX && mouseX <= trackX + trackWidth) {
-                    VttClientMusicSync.seek(session, (mouseX - trackX) / trackWidth);
-                } else if (mouseX >= bounds.right() - 120) {
+                    draggingProgress = true;
+                    draggedProgressRatio = (mouseX - trackX) / trackWidth;
+                } else if (mouseX >= volumeX && mouseX <= volumeX + 62) {
+                    draggingVolume = true;
+                    VttClientMusicSync.previewMasterVolume(
+                            (float) ((mouseX - volumeX) / 62.0));
+                } else if (mouseX >= bounds.right() - 48) {
                     VttClientMusicSync.toggleLoop(session);
-                }
-            } else if (mouseY >= bounds.bottom() - 47) {
-                if (mouseX < bounds.x + 105) VttClientMusicSync.stop(session);
-                else if (mouseX < bounds.x + 210) VttClientMusicSync.togglePause(session);
-                else if (mouseX > bounds.right() - 150) {
-                    float next = audio.masterVolume() <= 0.01F ? 1.0F
-                            : Math.max(0.0F, audio.masterVolume() - 0.1F);
-                    VttClientMusicSync.setMasterVolume(session, next);
                 }
             }
         }
         return true;
     }
 
+    public boolean mouseDragged(double mouseX, double mouseY, int screenWidth,
+                                int screenHeight, VTTSession session) {
+        if (!draggingProgress && !draggingVolume) return false;
+        Bounds bounds = bounds(screenWidth, screenHeight);
+        if (draggingProgress) {
+            int x = bounds.x + 132;
+            int width = bounds.width - 270;
+            draggedProgressRatio = Math.max(0.0,
+                    Math.min(1.0, (mouseX - x) / width));
+        } else {
+            int x = bounds.right() - 112;
+            VttClientMusicSync.previewMasterVolume(
+                    (float) Math.max(0.0, Math.min(1.0, (mouseX - x) / 62.0)));
+        }
+        return true;
+    }
+
+    public boolean mouseReleased(VTTSession session) {
+        boolean handled = draggingProgress || draggingVolume;
+        if (draggingProgress) VttClientMusicSync.seek(session, draggedProgressRatio);
+        if (draggingVolume) VttClientMusicSync.commitMasterVolume(session);
+        draggingProgress = false;
+        draggingVolume = false;
+        return handled;
+    }
+
     private String playerText(VttAudioPlayerService audio) {
-        return "Stop | Pause | " + audio.status() + "  " + time(audio.positionSeconds()) + "/"
+        return audio.status() + "  " + time(audio.positionSeconds()) + "/"
                 + time(audio.durationSeconds()) + "  Volume: "
                 + Math.round(audio.masterVolume() * 100.0F) + "%";
     }
@@ -164,6 +218,16 @@ public final class MediaLibraryOverlay {
                 selected ? EditorHudTheme.selection() : 0xD8202026);
         border(context, x, y, width, 22, EditorHudTheme.outline());
         context.graphics().drawCenteredString(font, label, x + width / 2, y + 7, TEXT);
+    }
+
+    private void button(VRenderContext context, Font font, int x, int y, int width,
+                        int height, String label, boolean enabled) {
+        context.graphics().fill(x, y, x + width, y + height,
+                enabled ? 0xE038383F : 0xA028282D);
+        border(context, x, y, width, height,
+                enabled ? EditorHudTheme.outline() : 0xFF66666A);
+        context.graphics().drawCenteredString(font, label, x + width / 2,
+                y + 5, enabled ? TEXT : MUTED);
     }
 
     private Bounds bounds(int screenWidth, int screenHeight) {
