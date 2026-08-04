@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.core.session.VttPlayerRosterEntry;
 import com.petrick.vtt.core.session.VttRole;
+import com.petrick.vtt.feature.asset.library.AssetLibraryConfig;
+import com.petrick.vtt.feature.asset.library.AssetLibraryService;
 import com.petrick.vtt.network.payload.VttIdentityPayload;
 import com.petrick.vtt.network.payload.VttPlayerRosterPayload;
 import net.minecraft.server.MinecraftServer;
@@ -14,6 +16,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +30,13 @@ public final class VttServerPlayerEvents {
     private static final Map<UUID, VttRole> LAST_ROLES = new HashMap<>();
 
     private VttServerPlayerEvents() {
+    }
+
+    /** Creates the public media library before a dedicated server accepts players. */
+    @SubscribeEvent
+    public static void onServerStarting(ServerStartingEvent event) {
+        new AssetLibraryService(new AssetLibraryConfig(FMLPaths.GAMEDIR.get()))
+                .ensureDirectoriesExist();
     }
 
     public static boolean isMaster(ServerPlayer player) {

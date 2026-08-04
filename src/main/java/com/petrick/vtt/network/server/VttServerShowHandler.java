@@ -5,10 +5,13 @@ import com.petrick.vtt.network.payload.VttShowCommandPayload;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.Locale;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /** Authoritative state and asset delivery for fullscreen image shows. */
 public final class VttServerShowHandler {
@@ -29,7 +32,8 @@ public final class VttServerShowHandler {
         if (VttShowCommandPayload.SHOW.equals(command.operation())) {
             String selected = validPath(command.relativePath());
             if (selected == null) {
-                VttServerFeedback.show(requester, "Invalid VTT show image");
+                VttServerFeedback.show(requester,
+                        "Show file is missing or unsupported on this server");
                 return;
             }
             synchronized (VttServerShowHandler.class) {
@@ -81,6 +85,10 @@ public final class VttServerShowHandler {
         if (!(lower.endsWith(".png") || lower.endsWith(".jpg")
                 || lower.endsWith(".jpeg") || lower.endsWith(".gif")
                 || lower.endsWith(".webp"))) return null;
+        Path assetsRoot = FMLPaths.GAMEDIR.get().resolve("config/vtt_assets/assets")
+                .toAbsolutePath().normalize();
+        Path file = assetsRoot.resolve(normalized).toAbsolutePath().normalize();
+        if (!file.startsWith(assetsRoot) || !Files.isRegularFile(file)) return null;
         return normalized;
     }
 }
