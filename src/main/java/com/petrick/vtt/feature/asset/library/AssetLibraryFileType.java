@@ -9,6 +9,8 @@ public enum AssetLibraryFileType {
 
     IMAGE,
     ANIMATED_IMAGE,
+    AUDIO,
+    VIDEO,
     DOCUMENT,
     UNKNOWN;
 
@@ -29,6 +31,9 @@ public enum AssetLibraryFileType {
              * Futuramente podemos inspecionar o arquivo para detectar animação real.
              */
             case "webp" -> IMAGE;
+
+            case "mp3", "ogg", "wav", "flac", "m4a", "aac" -> AUDIO;
+            case "mp4", "webm", "mkv", "mov" -> VIDEO;
 
             case "txt", "md", "pdf" -> DOCUMENT;
             default -> UNKNOWN;

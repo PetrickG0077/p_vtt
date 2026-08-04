@@ -536,6 +536,8 @@ public final class AssetCatalogOverlay {
         int color = switch (entry.fileType()) {
             case IMAGE -> 0xFF3F6EA8;
             case ANIMATED_IMAGE -> 0xFF3FA86A;
+            case AUDIO -> 0xFF8A5CA8;
+            case VIDEO -> 0xFFA86A3F;
             case DOCUMENT -> 0xFF666666;
             case UNKNOWN -> 0xFF883F88;
         };

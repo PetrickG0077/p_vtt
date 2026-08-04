@@ -14,6 +14,8 @@ public enum AssetLibraryDefaultFolder {
     PORTRAITS("portraits"),
     DOCUMENTS("documents"),
     ITEMS("items"),
+    MUSICS("musics"),
+    SHOWS("shows"),
     MISC("misc");
 
     private final String folderName;

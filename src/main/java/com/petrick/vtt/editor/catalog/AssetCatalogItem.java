@@ -66,6 +66,8 @@ public sealed interface AssetCatalogItem
             return switch (entry.fileType()) {
                 case IMAGE -> "Library Image";
                 case ANIMATED_IMAGE -> "Animated Image";
+                case AUDIO -> "Library Audio";
+                case VIDEO -> "Library Video";
                 case DOCUMENT -> "Library Document";
                 case UNKNOWN -> "Library File";
             };

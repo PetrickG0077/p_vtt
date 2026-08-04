@@ -143,6 +143,9 @@ public final class EditorHudOverlay {
             bottomX += size + GAP;
             result.add(button(Action.CREATION, bottomX, bottomY, size, "", "Asset Manager",
                     true, state.creationOpen()));
+            int mediaX = screenWidth - MARGIN - PADDING - size;
+            result.add(button(Action.MEDIA, mediaX, bottomY, size, "", "Show / Musics",
+                    true, state.mediaOpen()));
         }
         return result;
     }
@@ -181,6 +184,9 @@ public final class EditorHudOverlay {
             renderPanel(context, (screenWidth - bottomWidth) / 2,
                     screenHeight - MARGIN - PADDING * 2 - size,
                     bottomWidth, size + PADDING * 2);
+            renderPanel(context, screenWidth - MARGIN - PADDING * 2 - size,
+                    screenHeight - MARGIN - PADDING * 2 - size,
+                    size + PADDING * 2, size + PADDING * 2);
         }
     }
 
@@ -595,6 +601,7 @@ public final class EditorHudOverlay {
     private ResourceLocation icon(Action action) {
         String fileName = action == Action.ATTACHMENTS ? "attachs.png"
                 : action == Action.RELOAD ? "redo.png"
+                : action == Action.MEDIA ? "creation.png"
                 : action.name().toLowerCase(Locale.ROOT) + ".png";
         return ResourceLocation.fromNamespaceAndPath(
                 VTT.MOD_ID, "textures/gui/editor_hud/" + fileName);
@@ -637,10 +644,11 @@ public final class EditorHudOverlay {
         MAPS,
         TOKENS,
         ATTACHMENTS,
-        CREATION;
+        CREATION,
+        MEDIA;
 
         private boolean isPopup() {
-            return this == PLAYERS || this == SETTINGS || this == CREATION;
+            return this == PLAYERS || this == SETTINGS || this == CREATION || this == MEDIA;
         }
     }
 
@@ -656,6 +664,7 @@ public final class EditorHudOverlay {
             boolean playersOpen,
             boolean settingsOpen,
             boolean creationOpen,
+            boolean mediaOpen,
             boolean scenesOpen,
             boolean mapsOpen,
             boolean tokensOpen,

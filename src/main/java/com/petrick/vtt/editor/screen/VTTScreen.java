@@ -38,6 +38,7 @@ import com.petrick.vtt.editor.overlay.TokenCatalogOverlay;
 import com.petrick.vtt.editor.overlay.CanvasTokenContextMenuOverlay;
 import com.petrick.vtt.editor.overlay.CanvasAttachmentContextMenuOverlay;
 import com.petrick.vtt.editor.overlay.CanvasEmptyContextMenuOverlay;
+import com.petrick.vtt.editor.overlay.MediaLibraryOverlay;
 import com.petrick.vtt.editor.panel.EditorPanelVisibility;
 import com.petrick.vtt.editor.placement.TokenPlacementService;
 import com.petrick.vtt.editor.scene.SceneBackgroundEditor;
@@ -173,6 +174,7 @@ public final class VTTScreen extends Screen {
     private final InputController inputController;
 
     private final EditorHudOverlay editorHudOverlay;
+    private final MediaLibraryOverlay mediaLibraryOverlay;
 
     private final EditorSettingsOverlay editorSettingsOverlay;
     private final AssetManagerOverlay assetManagerOverlay;
@@ -314,6 +316,7 @@ public final class VTTScreen extends Screen {
     private boolean hudSettingsOpen;
 
     private boolean hudCreationOpen;
+    private boolean hudMediaOpen;
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
     private String returnToAssetManagerFolder;
@@ -409,6 +412,7 @@ public final class VTTScreen extends Screen {
                 session::getLocalRole, session::getLocalPlayerId, session::isLocalSpectator,
                 this::saveTokenCollisionAsDefault);
         this.editorHudOverlay = new EditorHudOverlay();
+        this.mediaLibraryOverlay = new MediaLibraryOverlay();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
         this.assetManagerOverlay.setAttachmentRegistry(attachmentDefinitionRegistry);
         this.editorSettingsOverlay = new EditorSettingsOverlay();
@@ -831,6 +835,7 @@ public final class VTTScreen extends Screen {
         boolean spectator = session.isLocalSpectator();
         if (!master) {
             hudCreationOpen = false;
+            hudMediaOpen = false;
             pendingAssetDeletion = null;
             pendingAssetFolderDeletion = null;
             pendingAssetBatchDeletion = null;
@@ -843,6 +848,7 @@ public final class VTTScreen extends Screen {
         if (spectator) {
             hudSettingsOpen = false;
             hudCreationOpen = false;
+            hudMediaOpen = false;
             pendingAssetDeletion = null;
             pendingAssetFolderDeletion = null;
             pendingAssetBatchDeletion = null;
@@ -851,6 +857,10 @@ public final class VTTScreen extends Screen {
             closeAssetFolderDialog();
         }
         editorHudOverlay.render(context, this.font, editorHudState());
+        if (hudMediaOpen && master) {
+            mediaLibraryOverlay.render(
+                    context, this.font, session.getAssetLibraryScanResult());
+        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && mapPickerTarget != MapPickerTarget.ACTIVE_SCENE) {
             editorSettingsOverlay.render(
@@ -884,7 +894,7 @@ public final class VTTScreen extends Screen {
                         && inputController.canRedoEditorAction(),
                 inputController.nextUndoDescription(),
                 inputController.nextRedoDescription(),
-                hudPlayersOpen, hudSettingsOpen, hudCreationOpen,
+                hudPlayersOpen, hudSettingsOpen, hudCreationOpen, hudMediaOpen,
                 panelVisibility.isSceneListVisible(), panelVisibility.isMapCatalogVisible(),
                 panelVisibility.isTokenCatalogVisible(),
                 panelVisibility.isAttachmentCatalogVisible(),
@@ -2392,6 +2402,7 @@ public final class VTTScreen extends Screen {
                 hudPlayersOpen = !hudPlayersOpen;
                 hudSettingsOpen = false;
                 hudCreationOpen = false;
+                hudMediaOpen = false;
             }
             case ASSIGN_SELECTED_TOKEN_OWNER ->
                     setSelectedSceneTokenOwner(editorHudOverlay.getSelectedPlayerId());
@@ -2407,6 +2418,7 @@ public final class VTTScreen extends Screen {
                 hudSettingsOpen = !hudSettingsOpen;
                 hudPlayersOpen = false;
                 hudCreationOpen = false;
+                hudMediaOpen = false;
                 if (closing) persistGridSettings();
             }
             case RELOAD -> {
@@ -2498,6 +2510,16 @@ public final class VTTScreen extends Screen {
                     if (hudCreationOpen) panelVisibility.hideBottomCatalogs();
                     hudPlayersOpen = false;
                     hudSettingsOpen = false;
+                    hudMediaOpen = false;
+                }
+            }
+            case MEDIA -> {
+                if (master) {
+                    hudMediaOpen = !hudMediaOpen;
+                    hudPlayersOpen = false;
+                    hudSettingsOpen = false;
+                    hudCreationOpen = false;
+                    if (hudMediaOpen) panelVisibility.hideBottomCatalogs();
                 }
             }
             case NONE -> {
@@ -2580,6 +2602,7 @@ public final class VTTScreen extends Screen {
         hudPlayersOpen = false;
         hudSettingsOpen = false;
         hudCreationOpen = false;
+        hudMediaOpen = false;
         pendingAssetDeletion = null;
         pendingAssetFolderDeletion = null;
         pendingAssetBatchDeletion = null;
@@ -2720,6 +2743,8 @@ public final class VTTScreen extends Screen {
         if (handleAssetDeleteConfirmationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
+        if (hudMediaOpen && mediaLibraryOverlay.mouseClicked(
+                mouseX, mouseY, this.width, this.height)) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseClicked(
