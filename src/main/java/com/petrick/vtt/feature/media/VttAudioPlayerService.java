@@ -35,15 +35,20 @@ public final class VttAudioPlayerService implements AutoCloseable {
     private volatile String error = "";
 
     public synchronized void play(Path file) {
+        play(file, 0.0, false);
+    }
+
+    public synchronized void play(Path file, double startSeconds, boolean startPaused) {
         if (file == null) return;
         stop();
         track = file.toAbsolutePath().normalize();
         error = "";
         status = "Opening " + track.getFileName();
         playing = true;
-        paused = false;
+        paused = startPaused;
         long run = ++generation;
-        Thread.ofVirtual().name("vtt-audio-player").start(() -> run(run, 0.0));
+        double safeStart = Math.max(0.0, startSeconds);
+        Thread.ofVirtual().name("vtt-audio-player").start(() -> run(run, safeStart));
     }
 
     public synchronized void togglePause() {

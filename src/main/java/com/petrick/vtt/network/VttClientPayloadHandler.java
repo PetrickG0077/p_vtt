@@ -33,6 +33,8 @@ import com.petrick.vtt.network.payload.VttVisionSourcesPayload;
 import com.petrick.vtt.network.payload.VttPlayerReplicationPayload;
 import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.payload.VttPresentationUpdatePayload;
+import com.petrick.vtt.network.payload.VttMusicUpdatePayload;
+import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
 import com.petrick.vtt.network.payload.VttAssetManagerChangePayload;
@@ -186,6 +188,12 @@ public final class VttClientPayloadHandler {
     ) {
         var session = VTT.getApplication().getActiveSession();
         VttClientPresentationState.accept(payload, !session.isLocalMaster());
+    }
+
+    public static void handleMusicUpdate(
+            VttMusicUpdatePayload payload, IPayloadContext context
+    ) {
+        VttClientMusicSync.accept(payload);
     }
 
     public static void handleAssetFolderResult(

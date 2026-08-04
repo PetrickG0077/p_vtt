@@ -5,6 +5,8 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.core.session.VTTSession;
+import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 
@@ -87,7 +89,8 @@ public final class MediaLibraryOverlay {
 
     public boolean mouseClicked(double mouseX, double mouseY,
                                 int screenWidth, int screenHeight,
-                                AssetLibraryScanResult scan, VttAudioPlayerService audio) {
+                                AssetLibraryScanResult scan, VttAudioPlayerService audio,
+                                VTTSession session) {
         Bounds bounds = bounds(screenWidth, screenHeight);
         if (!bounds.contains(mouseX, mouseY)) return false;
         if (inside(mouseX, mouseY, bounds.x + 150, bounds.y + 7, 92, 22)) {
@@ -102,25 +105,25 @@ public final class MediaLibraryOverlay {
                     bounds.y + 47 + row * 23, 66, 17)) {
                 AssetLibraryEntry entry = entries.get(row);
                 if (entry.absolutePath().equals(audio.track()) && audio.isPlaying()) {
-                    audio.togglePause();
+                    VttClientMusicSync.togglePause(session);
                 } else {
-                    audio.play(entry.absolutePath());
+                    VttClientMusicSync.play(session, entry.relativePath(), entry.absolutePath());
                 }
             } else if (mouseY >= bounds.bottom() - 22) {
                 int trackX = bounds.x + 17;
                 int trackWidth = bounds.width - 145;
                 if (mouseX >= trackX && mouseX <= trackX + trackWidth) {
-                    audio.seek((mouseX - trackX) / trackWidth);
+                    VttClientMusicSync.seek(session, (mouseX - trackX) / trackWidth);
                 } else if (mouseX >= bounds.right() - 120) {
-                    audio.setLoop(!audio.isLoop());
+                    VttClientMusicSync.toggleLoop(session);
                 }
             } else if (mouseY >= bounds.bottom() - 47) {
-                if (mouseX < bounds.x + 105) audio.stop();
-                else if (mouseX < bounds.x + 210) audio.togglePause();
+                if (mouseX < bounds.x + 105) VttClientMusicSync.stop(session);
+                else if (mouseX < bounds.x + 210) VttClientMusicSync.togglePause(session);
                 else if (mouseX > bounds.right() - 150) {
                     float next = audio.masterVolume() <= 0.01F ? 1.0F
                             : Math.max(0.0F, audio.masterVolume() - 0.1F);
-                    audio.setMasterVolume(next);
+                    VttClientMusicSync.setMasterVolume(session, next);
                 }
             }
         }

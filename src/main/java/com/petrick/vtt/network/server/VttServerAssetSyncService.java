@@ -81,6 +81,22 @@ public final class VttServerAssetSyncService {
         sendActiveSceneAssets(player, scene, false, null);
     }
 
+    /** Offers one library asset without replacing the client's current scene cache scope. */
+    public static void sendLibraryAsset(
+            ServerPlayer player, String relativePath, Runnable completion
+    ) {
+        String normalized = relativePath == null ? ""
+                : relativePath.replace('\\', '/');
+        while (normalized.startsWith("/")) normalized = normalized.substring(1);
+        if (normalized.isBlank() || normalized.contains("../")) {
+            if (completion != null) completion.run();
+            return;
+        }
+        prepareSync(player, new AssetScope(
+                "library:" + normalized, Set.of(), Set.of(), Set.of()),
+                false, false, completion);
+    }
+
     public static void sendActiveSceneAssets(ServerPlayer player, VttScene scene, boolean includeAllTokens) {
         sendActiveSceneAssets(player, scene, includeAllTokens, null);
     }

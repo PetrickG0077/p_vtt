@@ -73,6 +73,7 @@ import com.petrick.vtt.feature.tabletop.VttDoor;
 import com.petrick.vtt.feature.tabletop.persistence.VttSceneToCanvasSceneMapper;
 import com.petrick.vtt.feature.map.MapDefinition;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.feature.map.MapDefinitionRegistry;
 import com.petrick.vtt.feature.map.MapTextureMode;
 import com.petrick.vtt.feature.map.persistence.CreatedMapStorage;
@@ -415,7 +416,7 @@ public final class VTTScreen extends Screen {
                 this::saveTokenCollisionAsDefault);
         this.editorHudOverlay = new EditorHudOverlay();
         this.mediaLibraryOverlay = new MediaLibraryOverlay();
-        this.audioPlayerService = new VttAudioPlayerService();
+        this.audioPlayerService = VttClientMusicSync.player();
         this.assetManagerOverlay = new AssetManagerOverlay(session.getTabletopStorage());
         this.assetManagerOverlay.setAttachmentRegistry(attachmentDefinitionRegistry);
         this.editorSettingsOverlay = new EditorSettingsOverlay();
@@ -2749,7 +2750,7 @@ public final class VTTScreen extends Screen {
         }
         if (hudMediaOpen && mediaLibraryOverlay.mouseClicked(
                 mouseX, mouseY, this.width, this.height,
-                session.getAssetLibraryScanResult(), audioPlayerService)) return true;
+                session.getAssetLibraryScanResult(), audioPlayerService, session)) return true;
         if (sceneBackgroundEditor.isActive()) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && renderState != null) {
                 return inputController.mouseClicked(
@@ -8566,7 +8567,6 @@ public final class VTTScreen extends Screen {
         inputController.cancelDoorEditing();
         inputController.cancelFogDrawing();
         CursorManager.reset();
-        audioPlayerService.close();
         super.removed();
     }
 
