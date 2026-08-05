@@ -77,6 +77,14 @@ public final class VttClientShowState {
                 safePosition, System.currentTimeMillis()));
     }
 
+    public static void resetPlayback(VTTSession session) {
+        if (session.isNetworkAuthorityActive()) {
+            if (session.isLocalMaster()) PacketDistributor.sendToServer(
+                    new VttShowCommandPayload(VttShowCommandPayload.RESET, "", 0L));
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, false,
+                0L, System.currentTimeMillis()));
+    }
+
     public static synchronized void accept(VttShowUpdatePayload update) {
         if (update == null) return;
         float current = alpha();
@@ -113,8 +121,10 @@ public final class VttClientShowState {
     public static boolean isActive() { return targetActive; }
     public static boolean isPlaying() { return playing; }
     public static long playbackMillis() {
-        return playing ? playbackPositionMillis + Math.max(0L,
+        long position = playing ? playbackPositionMillis + Math.max(0L,
                 System.currentTimeMillis() - playbackReceivedAtMillis) : playbackPositionMillis;
+        long duration = VttVideoFrameService.durationMillis();
+        return duration > 0L ? Math.min(position, duration) : position;
     }
     public static boolean isVideo() { return relativePath.toLowerCase().endsWith(".mp4"); }
     public static boolean blocksInput() { return targetActive || alpha() > 0.01F; }

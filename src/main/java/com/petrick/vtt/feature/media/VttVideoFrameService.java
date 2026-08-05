@@ -19,6 +19,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Client-only MP4 decoder. Decoding and color conversion run off the render thread;
@@ -27,6 +29,8 @@ import java.util.concurrent.ConcurrentMap;
 public final class VttVideoFrameService {
     private static final int TARGET_FPS = 15;
     private static final int MAX_WIDTH = 960;
+    private static final int MAX_PRELOAD_WIDTH = 640;
+    private static final long MAX_PRELOAD_BYTES = 384L * 1024L * 1024L;
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "VTT MP4 decoder");
         thread.setDaemon(true);
@@ -52,6 +56,7 @@ public final class VttVideoFrameService {
     private static DynamicTexture dynamicTexture;
     private static int width;
     private static int height;
+    private static int cachedFrameIndex = -1;
     private static String failure = "";
 
     private VttVideoFrameService() {}
@@ -59,9 +64,24 @@ public final class VttVideoFrameService {
     public static Frame frame(Path file, boolean playing, long positionMillis) {
         if (file == null || !Files.isRegularFile(file)) return Frame.empty();
         String requested = file.toAbsolutePath().normalize().toString();
-        if (!requested.equals(loadedPath)) start(file, requested);
+        PreloadState preload = PRELOADS.get(requested);
+        if (!requested.equals(loadedPath)) {
+            if (preload != null && preload.complete && !preload.frames.isEmpty()) {
+                startCached(requested, preload);
+            } else {
+                start(file, requested);
+            }
+        }
         requestedPlaying = playing;
         requestedPositionMillis = Math.max(0L, positionMillis);
+        if (preload != null && preload.complete && !preload.frames.isEmpty()) {
+            int index = Math.max(0, Math.min(preload.frames.size() - 1,
+                    (int) (requestedPositionMillis * preload.framesPerSecond / 1_000L)));
+            if (index != cachedFrameIndex) {
+                cachedFrameIndex = index;
+                pendingFrame = preload.frames.get(index);
+            }
+        }
         uploadNewestFrame();
         return texture == null ? Frame.empty() : new Frame(texture, width, height);
     }
@@ -116,6 +136,7 @@ public final class VttVideoFrameService {
         dynamicTexture = null;
         width = 0;
         height = 0;
+        cachedFrameIndex = -1;
         failure = "";
         loading = false;
         loadingStartedAt = 0L;
@@ -132,15 +153,56 @@ public final class VttVideoFrameService {
         DECODER.execute(() -> decode(file, requested, taskGeneration));
     }
 
+    private static void startCached(String requested, PreloadState state) {
+        clear();
+        loadedPath = requested;
+        durationMillis = state.durationMillis;
+        loading = true;
+        loadingStartedAt = System.currentTimeMillis();
+        cachedFrameIndex = 0;
+        pendingFrame = state.frames.getFirst();
+    }
+
     private static void warmVideo(Path file, String key, PreloadState state) {
         try (SeekableByteChannel channel = NIOUtils.readableChannel(file.toFile())) {
             FrameGrab grab = FrameGrab.createFrameGrab(channel);
             int totalFrames = Math.max(1, grab.getVideoTrack().getMeta().getTotalFrames());
+            double durationSeconds = Math.max(0.001,
+                    grab.getVideoTrack().getMeta().getTotalDuration());
+            double sourceFps = totalFrames / durationSeconds;
+            int targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * TARGET_FPS));
+            Picture first = grab.getNativeFrame();
+            if (first == null) throw new IllegalArgumentException("Video has no frames");
+            double aspect = first.getWidth() / (double) Math.max(1, first.getHeight());
+            long bytesPerFrame = Math.max(1L, MAX_PRELOAD_BYTES / targetFrames);
+            int memoryWidth = (int) Math.floor(Math.sqrt(bytesPerFrame * aspect / 4.0));
+            int preloadWidth = Math.max(160,
+                    Math.min(MAX_PRELOAD_WIDTH, memoryWidth));
+            long minimumFrameBytes = Math.max(1L, Math.round(
+                    preloadWidth * (preloadWidth / aspect) * 4.0));
+            int maximumCachedFrames = Math.max(1,
+                    (int) Math.min(Integer.MAX_VALUE, MAX_PRELOAD_BYTES / minimumFrameBytes));
+            int preloadFps = Math.max(2, Math.min(TARGET_FPS,
+                    (int) Math.floor(maximumCachedFrames / durationSeconds)));
+            targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * preloadFps));
+            List<DecodedFrame> frames = new ArrayList<>(targetFrames);
+            frames.add(convert(first, preloadWidth));
             int decoded = 0;
-            while (grab.getNativeFrame() != null) {
+            int nextTargetFrame = Math.max(1,
+                    (int) Math.round(sourceFps / preloadFps));
+            Picture picture;
+            while ((picture = grab.getNativeFrame()) != null) {
                 decoded++;
+                if (decoded >= nextTargetFrame) {
+                    frames.add(convert(picture, preloadWidth));
+                    nextTargetFrame = Math.max(decoded + 1,
+                            (int) Math.round(frames.size() * sourceFps / preloadFps));
+                }
                 state.progress = Math.min(0.999F, decoded / (float) totalFrames);
             }
+            state.frames = List.copyOf(frames);
+            state.durationMillis = Math.round(durationSeconds * 1_000.0);
+            state.framesPerSecond = preloadFps;
             state.progress = 1.0F;
             state.complete = true;
         } catch (Exception exception) {
@@ -252,11 +314,15 @@ public final class VttVideoFrameService {
     }
 
     private static DecodedFrame convert(Picture source) {
+        return convert(source, MAX_WIDTH);
+    }
+
+    private static DecodedFrame convert(Picture source, int maximumWidth) {
         Transform transform = ColorUtil.getTransform(source.getColor(), ColorSpace.RGB);
         if (transform == null) throw new IllegalArgumentException("Unsupported MP4 color space: " + source.getColor());
         Picture rgb = Picture.create(source.getWidth(), source.getHeight(), ColorSpace.RGB);
         transform.transform(source, rgb);
-        int targetWidth = Math.min(source.getWidth(), MAX_WIDTH);
+        int targetWidth = Math.min(source.getWidth(), maximumWidth);
         int targetHeight = Math.max(1, Math.round(source.getHeight() * (targetWidth / (float) source.getWidth())));
         int[] abgr = new int[targetWidth * targetHeight];
         byte[] pixels = rgb.getPlaneData(0);
@@ -285,6 +351,9 @@ public final class VttVideoFrameService {
         private volatile float progress;
         private volatile boolean complete;
         private volatile String failure = "";
+        private volatile long durationMillis;
+        private volatile int framesPerSecond = TARGET_FPS;
+        private volatile List<DecodedFrame> frames = List.of();
     }
     public record Frame(ResourceLocation texture, int width, int height) {
         private static Frame empty() { return new Frame(null, 0, 0); }

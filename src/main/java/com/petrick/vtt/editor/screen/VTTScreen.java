@@ -827,6 +827,14 @@ public final class VTTScreen extends Screen {
         if (session.isLocalMaster()) {
             if (VttClientShowState.isVideo()) {
                 int playX = context.screenWidth() - 150;
+                int resetX = context.screenWidth() - 218;
+                context.graphics().fill(resetX, 14, resetX + 58, 38, 0xE0222228);
+                context.graphics().hLine(resetX, resetX + 58, 14, 0xFFFFFFFF);
+                context.graphics().hLine(resetX, resetX + 58, 38, 0xFFFFFFFF);
+                context.graphics().vLine(resetX, 14, 38, 0xFFFFFFFF);
+                context.graphics().vLine(resetX + 58, 14, 38, 0xFFFFFFFF);
+                context.graphics().drawCenteredString(this.font, "Reset",
+                        resetX + 29, 22, 0xFFFFFFFF);
                 context.graphics().fill(playX, 14, playX + 58, 38, 0xE0222228);
                 context.graphics().hLine(playX, playX + 58, 14, 0xFFFFFFFF);
                 context.graphics().hLine(playX, playX + 58, 38, 0xFFFFFFFF);
@@ -2861,6 +2869,13 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
+            if (session.isLocalMaster() && VttClientShowState.isVideo()
+                    && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && mouseX >= this.width - 218 && mouseX <= this.width - 160
+                    && mouseY >= 14 && mouseY <= 38) {
+                VttClientShowState.resetPlayback(session);
+                return true;
+            }
             if (session.isLocalMaster() && VttClientShowState.isVideo()
                     && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && VttVideoFrameService.durationMillis() > 0L) {

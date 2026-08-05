@@ -15,6 +15,7 @@ public record VttShowCommandPayload(String operation, String relativePath, long 
     public static final String PAUSE = "PAUSE";
     public static final String SEEK = "SEEK";
     public static final String PRELOAD = "PRELOAD";
+    public static final String RESET = "RESET";
     public static final Type<VttShowCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "show_command"));
     public static final StreamCodec<RegistryFriendlyByteBuf, VttShowCommandPayload>
