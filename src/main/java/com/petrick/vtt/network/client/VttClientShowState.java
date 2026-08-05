@@ -34,6 +34,10 @@ public final class VttClientShowState {
             VttVideoPreferences.load();
     private static float videoVolume = VIDEO_PREFERENCES.volume();
     private static boolean videoMuted = VIDEO_PREFERENCES.muted();
+    private static int videoCacheMemoryMb = VIDEO_PREFERENCES.cacheMemoryMb();
+    static {
+        VttVideoFrameService.setPreloadMemoryLimitMb(videoCacheMemoryMb);
+    }
     private static float transitionStartAlpha;
     private static long transitionStartedAt;
     private static String preloadPath = "";
@@ -306,12 +310,18 @@ public final class VttClientShowState {
     public static void setVideoVolume(float value, boolean save) {
         videoVolume = Math.max(0.0F, Math.min(1.0F, value));
         applyVideoVolume(alpha());
-        if (save) VttVideoPreferences.save(videoVolume, videoMuted);
+        if (save) VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
     }
     public static void toggleVideoMute() {
         videoMuted = !videoMuted;
         applyVideoVolume(alpha());
-        VttVideoPreferences.save(videoVolume, videoMuted);
+        VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
+    }
+    public static int videoCacheMemoryMb() { return videoCacheMemoryMb; }
+    public static void setVideoCacheMemoryMb(int value) {
+        videoCacheMemoryMb = VttVideoPreferences.clampCacheMemory(value);
+        VttVideoFrameService.setPreloadMemoryLimitMb(videoCacheMemoryMb);
+        VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
     }
     public static synchronized long playbackMillis() {
         long position = rawPlaybackMillis();

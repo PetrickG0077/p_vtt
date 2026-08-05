@@ -32,7 +32,8 @@ public final class VttVideoFrameService {
     private static final int TARGET_FPS = 15;
     private static final int MAX_WIDTH = 960;
     private static final int MAX_PRELOAD_WIDTH = 640;
-    private static final long MAX_PRELOAD_BYTES = 384L * 1024L * 1024L;
+    private static volatile long preloadMemoryLimitBytes =
+            VttVideoPreferences.DEFAULT_CACHE_MEMORY_MB * 1024L * 1024L;
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "VTT MP4 decoder");
         thread.setDaemon(true);
@@ -45,6 +46,7 @@ public final class VttVideoFrameService {
     });
     private static final ConcurrentMap<String, PreloadState> PRELOADS = new ConcurrentHashMap<>();
     private static volatile int generation;
+    private static volatile int preloadGeneration;
     private static volatile boolean requestedPlaying;
     private static volatile long requestedPositionMillis;
     private static volatile DecodedFrame pendingFrame;
@@ -106,7 +108,8 @@ public final class VttVideoFrameService {
         if (current != null && (current.complete || current.failure.isBlank())) return;
         PreloadState state = new PreloadState();
         PRELOADS.put(key, state);
-        PRELOADER.execute(() -> warmVideo(file, key, state));
+        int taskGeneration = preloadGeneration;
+        PRELOADER.execute(() -> warmVideo(file, key, state, taskGeneration));
     }
 
     public static boolean isPreloading(Path file) {
@@ -129,7 +132,27 @@ public final class VttVideoFrameService {
         return state == null ? "" : state.failure;
     }
 
+    public static int preloadMemoryLimitMb() {
+        return (int) (preloadMemoryLimitBytes / (1024L * 1024L));
+    }
+
+    public static void setPreloadMemoryLimitMb(int value) {
+        int safe = VttVideoPreferences.clampCacheMemory(value);
+        long bytes = safe * 1024L * 1024L;
+        if (bytes == preloadMemoryLimitBytes) return;
+        preloadMemoryLimitBytes = bytes;
+        resetPlayback();
+        preloadGeneration++;
+        PRELOADS.clear();
+    }
+
     public static void clear() {
+        resetPlayback();
+        preloadGeneration++;
+        PRELOADS.clear();
+    }
+
+    private static void resetPlayback() {
         generation++;
         requestedPlaying = false;
         requestedPositionMillis = 0L;
@@ -151,7 +174,7 @@ public final class VttVideoFrameService {
     }
 
     private static void start(Path file, String requested) {
-        clear();
+        resetPlayback();
         loadedPath = requested;
         loading = true;
         loadingStartedAt = System.currentTimeMillis();
@@ -160,7 +183,7 @@ public final class VttVideoFrameService {
     }
 
     private static void startCached(String requested, PreloadState state) {
-        clear();
+        resetPlayback();
         loadedPath = requested;
         durationMillis = state.durationMillis;
         loading = true;
@@ -169,7 +192,9 @@ public final class VttVideoFrameService {
         pendingFrame = state.frames.getFirst().frame();
     }
 
-    private static void warmVideo(Path file, String key, PreloadState state) {
+    private static void warmVideo(
+            Path file, String key, PreloadState state, int taskGeneration
+    ) {
         try (SeekableByteChannel channel = NIOUtils.readableChannel(file.toFile())) {
             FrameGrab grab = FrameGrab.createFrameGrab(channel);
             int totalFrames = Math.max(1, grab.getVideoTrack().getMeta().getTotalFrames());
@@ -181,14 +206,15 @@ public final class VttVideoFrameService {
             if (firstMetadata == null) throw new IllegalArgumentException("Video has no frames");
             Picture first = firstMetadata.getPicture();
             double aspect = first.getWidth() / (double) Math.max(1, first.getHeight());
-            long bytesPerFrame = Math.max(1L, MAX_PRELOAD_BYTES / targetFrames);
+            long memoryLimit = preloadMemoryLimitBytes;
+            long bytesPerFrame = Math.max(1L, memoryLimit / targetFrames);
             int memoryWidth = (int) Math.floor(Math.sqrt(bytesPerFrame * aspect / 4.0));
             int preloadWidth = Math.max(160,
                     Math.min(MAX_PRELOAD_WIDTH, memoryWidth));
             long minimumFrameBytes = Math.max(1L, Math.round(
                     preloadWidth * (preloadWidth / aspect) * 4.0));
             int maximumCachedFrames = Math.max(1,
-                    (int) Math.min(Integer.MAX_VALUE, MAX_PRELOAD_BYTES / minimumFrameBytes));
+                    (int) Math.min(Integer.MAX_VALUE, memoryLimit / minimumFrameBytes));
             int preloadFps = Math.max(2, Math.min(TARGET_FPS,
                     (int) Math.floor(maximumCachedFrames / durationSeconds)));
             targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * preloadFps));
@@ -200,7 +226,8 @@ public final class VttVideoFrameService {
             int nextTargetFrame = Math.max(1,
                     (int) Math.round(sourceFps / preloadFps));
             PictureWithMetadata metadata;
-            while ((metadata = grab.getNativeFrameWithMetadata()) != null) {
+            while (taskGeneration == preloadGeneration
+                    && (metadata = grab.getNativeFrameWithMetadata()) != null) {
                 decoded++;
                 if (decoded >= nextTargetFrame) {
                     frames.add(new CachedFrame(Math.max(0L,
@@ -211,6 +238,7 @@ public final class VttVideoFrameService {
                 }
                 state.progress = Math.min(0.999F, decoded / (float) totalFrames);
             }
+            if (taskGeneration != preloadGeneration) return;
             frames.sort(Comparator.comparingLong(CachedFrame::timestampMillis));
             state.frames = List.copyOf(frames);
             state.durationMillis = Math.round(durationSeconds * 1_000.0);

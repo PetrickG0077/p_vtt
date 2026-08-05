@@ -5,6 +5,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneGrid;
 import com.petrick.vtt.feature.tabletop.VttSceneLighting;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
+import com.petrick.vtt.network.client.VttClientShowState;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
@@ -36,6 +37,7 @@ public final class EditorSettingsOverlay {
     private boolean draggingOpacity;
     private boolean draggingVisionQuality;
     private boolean draggingVisionPixels;
+    private boolean draggingMediaCache;
     private Category selectedCategory = Category.GRID;
     private boolean focusedGridHexColor;
     private String gridHexBuffer = "";
@@ -75,10 +77,14 @@ public final class EditorSettingsOverlay {
                 selectedCategory == Category.HUD);
         renderCategory(context, font, lightingCategoryBounds(panel), "Lighting",
                 selectedCategory == Category.LIGHTING);
+        renderCategory(context, font, mediaCategoryBounds(panel), "Media",
+                selectedCategory == Category.MEDIA);
         context.graphics().vLine(panel.x() + CATEGORY_WIDTH + 8,
                 panel.y() + 29, panel.bottom() - 8, 0xFF66666C);
 
-        if (selectedCategory == Category.HUD) {
+        if (selectedCategory == Category.MEDIA) {
+            renderMedia(context, font, panel);
+        } else if (selectedCategory == Category.HUD) {
             renderHudTheme(context, font, panel);
         } else if (selectedCategory == Category.LIGHTING) {
             renderLighting(context, font, panel, scene.getLighting(), editable);
@@ -144,6 +150,19 @@ public final class EditorSettingsOverlay {
             selectedCategory = Category.LIGHTING;
             draggingOpacity = false;
             clearColorFocus();
+            return Interaction.CONSUMED;
+        }
+        if (mediaCategoryBounds(panel).contains(mouseX, mouseY)) {
+            selectedCategory = Category.MEDIA;
+            clearColorFocus();
+            return Interaction.CONSUMED;
+        }
+        if (selectedCategory == Category.MEDIA) {
+            Bounds cache = mediaCacheSliderBounds(panel);
+            if (cache.contains(mouseX, mouseY)) {
+                draggingMediaCache = true;
+                updateMediaCache(cache, mouseX);
+            }
             return Interaction.CONSUMED;
         }
         if (selectedCategory == Category.HUD) {
@@ -326,6 +345,10 @@ public final class EditorSettingsOverlay {
             updateVisionPixelSize(scene.getLighting(), visionPixelSizeSliderBounds(panel), mouseX);
             return true;
         }
+        if (selectedCategory == Category.MEDIA && draggingMediaCache) {
+            updateMediaCache(mediaCacheSliderBounds(panel), mouseX);
+            return true;
+        }
         return false;
     }
 
@@ -339,7 +362,7 @@ public final class EditorSettingsOverlay {
     ) {
         if (colorPicker.isOpen()) return colorPicker.mouseReleased();
         if (button != 0 || !draggingOpacity && !draggingVisionQuality
-                && !draggingVisionPixels) return false;
+                && !draggingVisionPixels && !draggingMediaCache) return false;
         if (scene != null) {
             Bounds panel = bounds(screenWidth, screenHeight);
             if (draggingOpacity) {
@@ -352,10 +375,14 @@ public final class EditorSettingsOverlay {
                 updateVisionPixelSize(
                         scene.getLighting(), visionPixelSizeSliderBounds(panel), mouseX);
             }
+            if (draggingMediaCache) {
+                updateMediaCache(mediaCacheSliderBounds(panel), mouseX);
+            }
         }
         draggingOpacity = false;
         draggingVisionQuality = false;
         draggingVisionPixels = false;
+        draggingMediaCache = false;
         return true;
     }
 
@@ -712,6 +739,38 @@ public final class EditorSettingsOverlay {
                 contentX, panel.y() + 227, MUTED, false);
     }
 
+    private void renderMedia(VRenderContext context, Font font, Bounds panel) {
+        int contentX = panel.x() + CATEGORY_WIDTH + 20;
+        context.graphics().drawString(font, "Media", contentX,
+                panel.y() + 31, TEXT, false);
+        Bounds slider = mediaCacheSliderBounds(panel);
+        int memory = VttClientShowState.videoCacheMemoryMb();
+        context.graphics().drawString(font,
+                "Video Preload Memory  " + memory + " MB",
+                slider.x(), slider.y() - 14, TEXT, false);
+        renderLightingSlider(context, slider,
+                (memory - 64) / (double) (1024 - 64), true);
+        context.graphics().drawString(font,
+                "Higher values keep better resolution and FPS",
+                contentX, panel.y() + 92, MUTED, false);
+        context.graphics().drawString(font,
+                "for long videos, but use more client RAM.",
+                contentX, panel.y() + 105, MUTED, false);
+        context.graphics().drawString(font,
+                "Changing this value clears prepared video frames.",
+                contentX, panel.y() + 130, 0xFFFFCC66, false);
+        context.graphics().drawString(font,
+                "The cache is also cleared when leaving the world.",
+                contentX, panel.y() + 143, MUTED, false);
+    }
+
+    private void updateMediaCache(Bounds slider, double mouseX) {
+        double progress = Math.max(0.0,
+                Math.min(1.0, (mouseX - slider.x()) / slider.width()));
+        int value = 64 + (int) Math.round(progress * 15.0) * 64;
+        VttClientShowState.setVideoCacheMemoryMb(value);
+    }
+
     private void renderLightingSlider(
             VRenderContext context, Bounds slider, double progress, boolean editable
     ) {
@@ -996,6 +1055,15 @@ public final class EditorSettingsOverlay {
         return new Bounds(panel.x() + 8, panel.y() + 118, CATEGORY_WIDTH - 9, 22);
     }
 
+    private Bounds mediaCategoryBounds(Bounds panel) {
+        return new Bounds(panel.x() + 8, panel.y() + 143, CATEGORY_WIDTH - 9, 22);
+    }
+
+    private Bounds mediaCacheSliderBounds(Bounds panel) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 20,
+                panel.y() + 68, 210, 10);
+    }
+
     private Bounds darknessColorBounds(Bounds panel, int index) {
         return new Bounds(
                 panel.x() + CATEGORY_WIDTH + 40 + index * 18,
@@ -1139,7 +1207,8 @@ public final class EditorSettingsOverlay {
         GRID,
         SCENE,
         HUD,
-        LIGHTING
+        LIGHTING,
+        MEDIA
     }
 
     private enum ThemeColor {
