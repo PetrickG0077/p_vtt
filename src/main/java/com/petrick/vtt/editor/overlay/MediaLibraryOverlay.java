@@ -65,6 +65,8 @@ public final class MediaLibraryOverlay {
             boolean video = tab == Tab.SHOWS
                     && entry.fileType() == AssetLibraryFileType.VIDEO;
             boolean preloading = video && VttVideoFrameService.isPreloading(entry.absolutePath());
+            boolean allReady = !video
+                    || VttClientShowState.allPreloadClientsReady(entry.relativePath());
             if (video) {
                 int preloadX = bounds.right() - 148;
                 context.graphics().fill(preloadX, rowY + 2, preloadX + 66,
@@ -86,10 +88,11 @@ public final class MediaLibraryOverlay {
                 }
             }
             context.graphics().fill(buttonX, rowY + 2, bounds.right() - 12,
-                    rowY + 19, preloading ? 0xA028282D
+                    rowY + 19, preloading || !allReady ? 0xA028282D
                             : active ? EditorHudTheme.selection() : 0xE038383F);
             border(context, buttonX, rowY + 2, 66, 17, EditorHudTheme.outline());
-            String action = tab == Tab.SHOWS ? active ? "Showing" : "Show"
+            String action = tab == Tab.SHOWS ? active ? "Showing"
+                    : !allReady ? "Waiting" : "Show"
                     : active && audio.isPlaying()
                     ? audio.isPaused() ? "Resume" : "Pause" : "Play";
             context.graphics().drawCenteredString(font, action,
@@ -142,6 +145,9 @@ public final class MediaLibraryOverlay {
                         bounds.bottom() - 60, 0xFFFF6666, false);
             }
         }
+        if (tab == Tab.SHOWS && !VttClientShowState.preloadPath().isBlank()) {
+            renderPreloadStatus(context, font, bounds);
+        }
     }
 
     public boolean mouseClicked(double mouseX, double mouseY,
@@ -149,7 +155,16 @@ public final class MediaLibraryOverlay {
                                 AssetLibraryScanResult scan, VttAudioPlayerService audio,
                                 VTTSession session) {
         Bounds bounds = bounds(screenWidth, screenHeight);
-        if (!bounds.contains(mouseX, mouseY)) return false;
+        if (!bounds.contains(mouseX, mouseY)) {
+            if (tab != Tab.SHOWS || VttClientShowState.preloadPath().isBlank()) return false;
+            Bounds status = preloadStatusBounds(bounds, screenWidth, screenHeight);
+            if (!status.contains(mouseX, mouseY)) return false;
+            if (inside(mouseX, mouseY, status.x + 8, status.bottom() - 27,
+                    status.width - 16, 19)) {
+                VttClientShowState.forceShow(session, VttClientShowState.preloadPath());
+            }
+            return true;
+        }
         if (inside(mouseX, mouseY, bounds.x + 150, bounds.y + 7, 92, 22)) {
             tab = Tab.MUSICS;
         } else if (inside(mouseX, mouseY, bounds.x + 246, bounds.y + 7, 92, 22)) {
@@ -188,6 +203,13 @@ public final class MediaLibraryOverlay {
                 }
             }
         } else {
+            Bounds status = preloadStatusBounds(bounds, screenWidth, screenHeight);
+            if (!VttClientShowState.preloadPath().isBlank()
+                    && inside(mouseX, mouseY, status.x + 8, status.bottom() - 27,
+                    status.width - 16, 19)) {
+                VttClientShowState.forceShow(session, VttClientShowState.preloadPath());
+                return true;
+            }
             List<AssetLibraryEntry> entries = entries(scan);
             int row = (int) Math.floor((mouseY - bounds.y - 45) / 23.0);
             if (row >= 0 && row < Math.min(entries.size(), 10)
@@ -201,7 +223,9 @@ public final class MediaLibraryOverlay {
                     && inside(mouseX, mouseY, bounds.right() - 78,
                     bounds.y + 47 + row * 23, 66, 17)) {
                 AssetLibraryEntry entry = entries.get(row);
-                if (!VttVideoFrameService.isPreloading(entry.absolutePath())) {
+                if (!VttVideoFrameService.isPreloading(entry.absolutePath())
+                        && (entry.fileType() != AssetLibraryFileType.VIDEO
+                        || VttClientShowState.allPreloadClientsReady(entry.relativePath()))) {
                     VttClientShowState.show(session, entry.relativePath());
                 }
             }
@@ -279,6 +303,56 @@ public final class MediaLibraryOverlay {
                 enabled ? EditorHudTheme.outline() : 0xFF66666A);
         context.graphics().drawCenteredString(font, label, x + width / 2,
                 y + 5, enabled ? TEXT : MUTED);
+    }
+
+    private void renderPreloadStatus(VRenderContext context, Font font, Bounds owner) {
+        List<VttClientShowState.PreloadClientStatus> statuses =
+                VttClientShowState.preloadStatuses();
+        Bounds panel = preloadStatusBounds(owner, context.screenWidth(), context.screenHeight());
+        context.graphics().fill(panel.x, panel.y, panel.right(), panel.bottom(), PANEL);
+        border(context, panel.x, panel.y, panel.width, panel.height,
+                EditorHudTheme.outline());
+        context.graphics().drawString(font, "Client preload", panel.x + 8,
+                panel.y + 8, TEXT, false);
+        int y = panel.y + 25;
+        if (statuses.isEmpty()) {
+            context.graphics().drawString(font, "Waiting for clients...",
+                    panel.x + 8, y, MUTED, false);
+        }
+        for (int index = 0; index < Math.min(12, statuses.size()); index++) {
+            VttClientShowState.PreloadClientStatus status = statuses.get(index);
+            String progress = switch (status.status()) {
+                case "READY" -> "Ready";
+                case "FAILED" -> "Failed";
+                case "LOADING" -> Math.round(status.progress() * 100.0F) + "%";
+                default -> "Waiting";
+            };
+            int color = "FAILED".equals(status.status()) ? 0xFFFF6666
+                    : "READY".equals(status.status()) ? 0xFF77FF99 : TEXT;
+            context.graphics().drawString(font, trim(status.playerName(), 16),
+                    panel.x + 8, y, color, false);
+            context.graphics().drawString(font, progress,
+                    panel.right() - 8 - font.width(progress), y, color, false);
+            y += 16;
+        }
+        int buttonY = panel.bottom() - 27;
+        context.graphics().fill(panel.x + 8, buttonY, panel.right() - 8,
+                buttonY + 19, 0xE0553828);
+        border(context, panel.x + 8, buttonY, panel.width - 16, 19,
+                EditorHudTheme.outline());
+        context.graphics().drawCenteredString(font, "Force Show",
+                panel.x + panel.width / 2, buttonY + 6, TEXT);
+    }
+
+    private Bounds preloadStatusBounds(Bounds owner, int screenWidth, int screenHeight) {
+        int count = Math.min(12, VttClientShowState.preloadStatuses().size());
+        int height = Math.max(74, 25 + Math.max(1, count) * 16 + 35);
+        int width = 210;
+        int x = owner.right() + 8 + width <= screenWidth
+                ? owner.right() + 8 : owner.x - width - 8;
+        x = Math.max(4, Math.min(screenWidth - width - 4, x));
+        int y = Math.max(4, Math.min(screenHeight - height - 4, owner.y));
+        return new Bounds(x, y, width, height);
     }
 
     private Bounds bounds(int screenWidth, int screenHeight) {

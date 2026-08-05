@@ -19,6 +19,7 @@ public record VttShowCommandPayload(String operation, String relativePath, long 
     public static final String TOGGLE_LOOP = "TOGGLE_LOOP";
     public static final String END = "END";
     public static final String RESTART = "RESTART";
+    public static final String FORCE_SHOW = "FORCE_SHOW";
     public static final Type<VttShowCommandPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "show_command"));
     public static final StreamCodec<RegistryFriendlyByteBuf, VttShowCommandPayload>

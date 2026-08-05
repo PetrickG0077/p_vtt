@@ -44,6 +44,7 @@ public final class ClientGameEvents {
         VttClientTokenTransformSync.tick(VTT.getApplication().getActiveSession());
         VttClientSceneSnapshotReceiver.tick();
         VttClientAssetCache.tick();
+        VttClientShowState.tickPreload(VTT.getApplication().getActiveSession());
 
         Minecraft minecraft = Minecraft.getInstance();
 

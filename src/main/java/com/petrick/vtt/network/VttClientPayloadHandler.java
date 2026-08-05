@@ -37,6 +37,7 @@ import com.petrick.vtt.network.payload.VttMusicUpdatePayload;
 import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
 import com.petrick.vtt.network.payload.VttShowPreloadPayload;
+import com.petrick.vtt.network.payload.VttShowPreloadStatusPayload;
 import com.petrick.vtt.network.client.VttClientShowState;
 import com.petrick.vtt.network.payload.VttAssetFolderResultPayload;
 import com.petrick.vtt.network.client.VttClientAssetFolderResultState;
@@ -209,6 +210,12 @@ public final class VttClientPayloadHandler {
             VttShowPreloadPayload payload, IPayloadContext context
     ) {
         VttClientShowState.acceptPreload(payload.relativePath());
+    }
+
+    public static void handleShowPreloadStatus(
+            VttShowPreloadStatusPayload payload, IPayloadContext context
+    ) {
+        VttClientShowState.acceptPreloadStatus(payload);
     }
 
     public static void handleAssetFolderResult(

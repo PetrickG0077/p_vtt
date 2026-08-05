@@ -4,6 +4,8 @@ import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.editor.screen.VTTScreen;
 import com.petrick.vtt.network.payload.VttShowCommandPayload;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
+import com.petrick.vtt.network.payload.VttShowPreloadProgressPayload;
+import com.petrick.vtt.network.payload.VttShowPreloadStatusPayload;
 import com.petrick.vtt.feature.media.VttVideoFrameService;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
 import com.petrick.vtt.feature.media.VttVideoPreferences;
@@ -11,9 +13,13 @@ import com.petrick.vtt.VTT;
 import java.nio.file.Path;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.network.PacketDistributor;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.util.List;
 
 /** Client presentation state with local fade timing. */
 public final class VttClientShowState {
+    private static final Gson GSON = new Gson();
     private static final long FADE_IN_MILLIS = 450L;
     private static final long FADE_OUT_MILLIS = 350L;
     private static String relativePath = "";
@@ -30,6 +36,11 @@ public final class VttClientShowState {
     private static boolean videoMuted = VIDEO_PREFERENCES.muted();
     private static float transitionStartAlpha;
     private static long transitionStartedAt;
+    private static String preloadPath = "";
+    private static List<PreloadClientStatus> preloadStatuses = List.of();
+    private static String lastReportedPreloadStatus = "";
+    private static float lastReportedPreloadProgress = -1.0F;
+    private static long lastPreloadReportAt;
 
     private VttClientShowState() {}
 
@@ -41,6 +52,13 @@ public final class VttClientShowState {
                 0L, System.currentTimeMillis()));
     }
 
+    public static void forceShow(VTTSession session, String path) {
+        if (session.isNetworkAuthorityActive()) {
+            if (session.isLocalMaster()) PacketDistributor.sendToServer(
+                    new VttShowCommandPayload(VttShowCommandPayload.FORCE_SHOW, path, 0L));
+        } else show(session, path);
+    }
+
     public static void preload(VTTSession session, String path) {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
@@ -50,12 +68,67 @@ public final class VttClientShowState {
 
     public static void acceptPreload(String path) {
         if (path == null || path.isBlank()) return;
+        preloadPath = path;
+        lastReportedPreloadStatus = "";
+        lastReportedPreloadProgress = -1.0F;
         var session = VTT.getApplication().getActiveSession();
         if (session.getAssetLibraryScanResult() == null) return;
         session.getAssetLibraryScanResult().entries().stream()
                 .filter(entry -> entry.relativePath().replace('\\', '/').equals(path))
                 .map(entry -> entry.absolutePath()).findFirst()
                 .ifPresent(VttVideoFrameService::preload);
+    }
+
+    public static void acceptPreloadStatus(VttShowPreloadStatusPayload payload) {
+        if (payload == null) return;
+        preloadPath = payload.relativePath() == null ? "" : payload.relativePath();
+        try {
+            List<PreloadClientStatus> decoded = GSON.fromJson(payload.statusesJson(),
+                    new TypeToken<List<PreloadClientStatus>>() {}.getType());
+            preloadStatuses = decoded == null ? List.of() : List.copyOf(decoded);
+        } catch (Exception exception) {
+            preloadStatuses = List.of();
+            VTT.LOGGER.warn("Could not decode VTT show preload status", exception);
+        }
+    }
+
+    public static void tickPreload(VTTSession session) {
+        if (preloadPath.isBlank() || session.getAssetLibraryScanResult() == null) return;
+        Path file = session.getAssetLibraryScanResult().entries().stream()
+                .filter(entry -> entry.relativePath().replace('\\', '/').equals(preloadPath))
+                .map(entry -> entry.absolutePath()).findFirst().orElse(null);
+        String status;
+        float progress;
+        if (file == null) {
+            status = "WAITING";
+            progress = 0.0F;
+        } else if (!VttVideoFrameService.preloadFailure(file).isBlank()) {
+            status = "FAILED";
+            progress = VttVideoFrameService.preloadProgress(file);
+        } else if (VttVideoFrameService.isPreloaded(file)) {
+            status = "READY";
+            progress = 1.0F;
+        } else {
+            if (!VttVideoFrameService.isPreloading(file)) {
+                VttVideoFrameService.preload(file);
+            }
+            status = "LOADING";
+            progress = VttVideoFrameService.preloadProgress(file);
+        }
+        long now = System.currentTimeMillis();
+        boolean changed = !status.equals(lastReportedPreloadStatus)
+                || Math.abs(progress - lastReportedPreloadProgress) >= 0.02F;
+        if (!changed && now - lastPreloadReportAt < 750L) return;
+        lastReportedPreloadStatus = status;
+        lastReportedPreloadProgress = progress;
+        lastPreloadReportAt = now;
+        if (session.isNetworkAuthorityActive()) {
+            PacketDistributor.sendToServer(new VttShowPreloadProgressPayload(
+                    preloadPath, status, progress));
+        } else {
+            preloadStatuses = List.of(new PreloadClientStatus(
+                    session.getLocalPlayerId(), "Local Player", status, progress));
+        }
     }
 
     public static void close(VTTSession session) {
@@ -167,6 +240,12 @@ public final class VttClientShowState {
     public static boolean isLoop() { return loop; }
     public static float videoVolume() { return videoVolume; }
     public static boolean isVideoMuted() { return videoMuted; }
+    public static String preloadPath() { return preloadPath; }
+    public static List<PreloadClientStatus> preloadStatuses() { return preloadStatuses; }
+    public static boolean allPreloadClientsReady(String path) {
+        return path != null && path.equals(preloadPath) && !preloadStatuses.isEmpty()
+                && preloadStatuses.stream().allMatch(status -> "READY".equals(status.status()));
+    }
     public static void setVideoVolume(float value, boolean save) {
         videoVolume = Math.max(0.0F, Math.min(1.0F, value));
         applyVideoVolume(alpha());
@@ -229,5 +308,14 @@ public final class VttClientShowState {
         VIDEO_AUDIO.stop();
         transitionStartAlpha = 0.0F;
         transitionStartedAt = 0L;
+        preloadPath = "";
+        preloadStatuses = List.of();
+        lastReportedPreloadStatus = "";
+        lastReportedPreloadProgress = -1.0F;
+        lastPreloadReportAt = 0L;
     }
+
+    public record PreloadClientStatus(
+            String playerId, String playerName, String status, float progress
+    ) {}
 }
