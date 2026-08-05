@@ -20,6 +20,7 @@ import com.petrick.vtt.network.client.VttClientPresentationState;
 import com.petrick.vtt.network.client.VttClientSceneHistorySync;
 import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.network.client.VttClientShowState;
+import com.petrick.vtt.feature.media.VttVideoFrameService;
 
 /**
  * Eventos do cliente executados durante o jogo.
@@ -60,6 +61,7 @@ public final class ClientGameEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         VttClientSceneSnapshotReceiver.reset();
         VttClientEditorNotice.reset();
+        VttVideoFrameService.clear();
         VttClientAssetCache.clearActiveServerCache();
         VttClientAssetCache.reset();
         VttClientPresentationState.reset();

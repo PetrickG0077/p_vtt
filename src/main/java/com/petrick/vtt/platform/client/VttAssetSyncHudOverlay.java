@@ -71,14 +71,11 @@ public final class VttAssetSyncHudOverlay {
     }
 
     private static String fileName(String path) {
-        if (path == null || path.isBlank()) return "";
-        String normalized = path.replace('\\', '/');
-        int separator = normalized.lastIndexOf('/');
-        return separator < 0 ? normalized : normalized.substring(separator + 1);
+        return "";
     }
 
     private static String fallback(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
+        return fallback;
     }
 
     private static String truncate(Font font, String text, int maximumWidth) {

@@ -8,10 +8,11 @@ import net.minecraft.resources.ResourceLocation;
 import org.jcodec.api.FrameGrab;
 import org.jcodec.common.io.NIOUtils;
 import org.jcodec.common.io.SeekableByteChannel;
+import org.jcodec.common.model.ColorSpace;
 import org.jcodec.common.model.Picture;
-import org.jcodec.scale.AWTUtil;
+import org.jcodec.scale.ColorUtil;
+import org.jcodec.scale.Transform;
 
-import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -88,8 +89,7 @@ public final class VttVideoFrameService {
     }
 
     private static void registerFrame(Picture picture, String name) {
-        BufferedImage buffered = AWTUtil.toBufferedImage(picture);
-        NativeImage image = toNativeImage(buffered);
+        NativeImage image = toNativeImage(picture);
         width = image.getWidth();
         height = image.getHeight();
         texture = Minecraft.getInstance().getTextureManager().register(
@@ -109,15 +109,22 @@ public final class VttVideoFrameService {
         ended = false;
     }
 
-    private static NativeImage toNativeImage(BufferedImage source) {
+    private static NativeImage toNativeImage(Picture source) {
+        Transform transform = ColorUtil.getTransform(source.getColor(), ColorSpace.RGB);
+        if (transform == null) {
+            throw new IllegalArgumentException("Unsupported MP4 color space: " + source.getColor());
+        }
+        Picture rgb = Picture.create(source.getWidth(), source.getHeight(), ColorSpace.RGB);
+        transform.transform(source, rgb);
+        byte[] pixels = rgb.getPlaneData(0);
         NativeImage image = new NativeImage(source.getWidth(), source.getHeight(), false);
+        int offset = 0;
         for (int y = 0; y < source.getHeight(); y++) {
             for (int x = 0; x < source.getWidth(); x++) {
-                int argb = source.getRGB(x, y);
-                int abgr = ((argb >>> 24) & 0xFF) << 24
-                        | (argb & 0xFF) << 16
-                        | ((argb >>> 8) & 0xFF) << 8
-                        | ((argb >>> 16) & 0xFF);
+                int red = (pixels[offset++] + 128) & 0xFF;
+                int green = (pixels[offset++] + 128) & 0xFF;
+                int blue = (pixels[offset++] + 128) & 0xFF;
+                int abgr = 0xFF000000 | blue << 16 | green << 8 | red;
                 image.setPixelRGBA(x, y, abgr);
             }
         }
