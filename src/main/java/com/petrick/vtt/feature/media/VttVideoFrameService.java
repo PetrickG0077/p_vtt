@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 import org.jcodec.api.FrameGrab;
+import org.jcodec.api.PictureWithMetadata;
 import org.jcodec.common.io.NIOUtils;
 import org.jcodec.common.io.SeekableByteChannel;
 import org.jcodec.common.model.ColorSpace;
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Comparator;
 
 /**
  * Client-only MP4 decoder. Decoding and color conversion run off the render thread;
@@ -75,11 +77,10 @@ public final class VttVideoFrameService {
         requestedPlaying = playing;
         requestedPositionMillis = Math.max(0L, positionMillis);
         if (preload != null && preload.complete && !preload.frames.isEmpty()) {
-            int index = Math.max(0, Math.min(preload.frames.size() - 1,
-                    (int) (requestedPositionMillis * preload.framesPerSecond / 1_000L)));
+            int index = findCachedFrameIndex(preload.frames, requestedPositionMillis);
             if (index != cachedFrameIndex) {
                 cachedFrameIndex = index;
-                pendingFrame = preload.frames.get(index);
+                pendingFrame = preload.frames.get(index).frame();
             }
         }
         uploadNewestFrame();
@@ -160,7 +161,7 @@ public final class VttVideoFrameService {
         loading = true;
         loadingStartedAt = System.currentTimeMillis();
         cachedFrameIndex = 0;
-        pendingFrame = state.frames.getFirst();
+        pendingFrame = state.frames.getFirst().frame();
     }
 
     private static void warmVideo(Path file, String key, PreloadState state) {
@@ -171,8 +172,9 @@ public final class VttVideoFrameService {
                     grab.getVideoTrack().getMeta().getTotalDuration());
             double sourceFps = totalFrames / durationSeconds;
             int targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * TARGET_FPS));
-            Picture first = grab.getNativeFrame();
-            if (first == null) throw new IllegalArgumentException("Video has no frames");
+            PictureWithMetadata firstMetadata = grab.getNativeFrameWithMetadata();
+            if (firstMetadata == null) throw new IllegalArgumentException("Video has no frames");
+            Picture first = firstMetadata.getPicture();
             double aspect = first.getWidth() / (double) Math.max(1, first.getHeight());
             long bytesPerFrame = Math.max(1L, MAX_PRELOAD_BYTES / targetFrames);
             int memoryWidth = (int) Math.floor(Math.sqrt(bytesPerFrame * aspect / 4.0));
@@ -185,26 +187,34 @@ public final class VttVideoFrameService {
             int preloadFps = Math.max(2, Math.min(TARGET_FPS,
                     (int) Math.floor(maximumCachedFrames / durationSeconds)));
             targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * preloadFps));
-            List<DecodedFrame> frames = new ArrayList<>(targetFrames);
-            frames.add(convert(first, preloadWidth));
+            List<CachedFrame> frames = new ArrayList<>(targetFrames);
+            frames.add(new CachedFrame(Math.max(0L,
+                    Math.round(firstMetadata.getTimestamp() * 1_000.0)),
+                    convert(first, preloadWidth)));
             int decoded = 0;
             int nextTargetFrame = Math.max(1,
                     (int) Math.round(sourceFps / preloadFps));
-            Picture picture;
-            while ((picture = grab.getNativeFrame()) != null) {
+            PictureWithMetadata metadata;
+            while ((metadata = grab.getNativeFrameWithMetadata()) != null) {
                 decoded++;
                 if (decoded >= nextTargetFrame) {
-                    frames.add(convert(picture, preloadWidth));
+                    frames.add(new CachedFrame(Math.max(0L,
+                            Math.round(metadata.getTimestamp() * 1_000.0)),
+                            convert(metadata.getPicture(), preloadWidth)));
                     nextTargetFrame = Math.max(decoded + 1,
                             (int) Math.round(frames.size() * sourceFps / preloadFps));
                 }
                 state.progress = Math.min(0.999F, decoded / (float) totalFrames);
             }
+            frames.sort(Comparator.comparingLong(CachedFrame::timestampMillis));
             state.frames = List.copyOf(frames);
             state.durationMillis = Math.round(durationSeconds * 1_000.0);
             state.framesPerSecond = preloadFps;
             state.progress = 1.0F;
             state.complete = true;
+            VTT.LOGGER.info("Preloaded VTT video {}: {} frames at {} FPS, {}x{}",
+                    key, frames.size(), preloadFps,
+                    frames.getFirst().frame().width(), frames.getFirst().frame().height());
         } catch (Exception exception) {
             state.failure = "Preload failed";
             VTT.LOGGER.warn("Failed to preload VTT MP4 show: {}", file, exception);
@@ -213,6 +223,20 @@ public final class VttVideoFrameService {
 
     private static String preloadKey(Path file) {
         return file == null ? "" : file.toAbsolutePath().normalize().toString();
+    }
+
+    private static int findCachedFrameIndex(List<CachedFrame> frames, long positionMillis) {
+        int low = 0;
+        int high = frames.size() - 1;
+        while (low <= high) {
+            int middle = (low + high) >>> 1;
+            if (frames.get(middle).timestampMillis() <= positionMillis) {
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return Math.max(0, Math.min(frames.size() - 1, high));
     }
 
     private static void decode(Path file, String requested, int taskGeneration) {
@@ -295,21 +319,39 @@ public final class VttVideoFrameService {
         if (frame == null) return;
         if (pendingFrame == frame) pendingFrame = null;
         loading = false;
-        NativeImage image = new NativeImage(frame.width(), frame.height(), false);
-        int index = 0;
-        for (int y = 0; y < frame.height(); y++) {
-            for (int x = 0; x < frame.width(); x++) image.setPixelRGBA(x, y, frame.abgr()[index++]);
-        }
         width = frame.width();
         height = frame.height();
         if (dynamicTexture == null) {
+            NativeImage image = new NativeImage(frame.width(), frame.height(), false);
+            copyPixels(frame, image);
             dynamicTexture = new DynamicTexture(image);
             texture = Minecraft.getInstance().getTextureManager().register(
                     "vtt_show_video/" + Integer.toUnsignedString(loadedPath.hashCode()),
                     dynamicTexture);
         } else {
-            dynamicTexture.setPixels(image);
+            NativeImage image = dynamicTexture.getPixels();
+            if (image == null || image.getWidth() != frame.width()
+                    || image.getHeight() != frame.height()) {
+                dynamicTexture.close();
+                image = new NativeImage(frame.width(), frame.height(), false);
+                copyPixels(frame, image);
+                dynamicTexture = new DynamicTexture(image);
+                texture = Minecraft.getInstance().getTextureManager().register(
+                        "vtt_show_video/" + Integer.toUnsignedString(loadedPath.hashCode()),
+                        dynamicTexture);
+                return;
+            }
+            copyPixels(frame, image);
             dynamicTexture.upload();
+        }
+    }
+
+    private static void copyPixels(DecodedFrame frame, NativeImage image) {
+        int index = 0;
+        for (int y = 0; y < frame.height(); y++) {
+            for (int x = 0; x < frame.width(); x++) {
+                image.setPixelRGBA(x, y, frame.abgr()[index++]);
+            }
         }
     }
 
@@ -347,13 +389,14 @@ public final class VttVideoFrameService {
     }
 
     private record DecodedFrame(int width, int height, int[] abgr) {}
+    private record CachedFrame(long timestampMillis, DecodedFrame frame) {}
     private static final class PreloadState {
         private volatile float progress;
         private volatile boolean complete;
         private volatile String failure = "";
         private volatile long durationMillis;
         private volatile int framesPerSecond = TARGET_FPS;
-        private volatile List<DecodedFrame> frames = List.of();
+        private volatile List<CachedFrame> frames = List.of();
     }
     public record Frame(ResourceLocation texture, int width, int height) {
         private static Frame empty() { return new Frame(null, 0, 0); }
