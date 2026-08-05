@@ -18,6 +18,8 @@ public final class VttServerShowHandler {
     private static String path = "";
     private static boolean active;
     private static boolean playing;
+    private static long playbackPositionMillis;
+    private static long playbackStartedAtMillis;
     private static long changedAtMillis;
 
     private VttServerShowHandler() {}
@@ -41,22 +43,29 @@ public final class VttServerShowHandler {
                 path = selected;
                 active = true;
                 playing = false;
+                playbackPositionMillis = 0L;
+                playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
             }
         } else if (VttShowCommandPayload.CLOSE.equals(command.operation())) {
             synchronized (VttServerShowHandler.class) {
                 active = false;
                 playing = false;
+                playbackPositionMillis = 0L;
+                playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
             }
         } else if (VttShowCommandPayload.PLAY.equals(command.operation()) && isVideo(path)) {
             synchronized (VttServerShowHandler.class) {
                 playing = true;
+                playbackStartedAtMillis = System.currentTimeMillis();
                 changedAtMillis = System.currentTimeMillis();
             }
         } else if (VttShowCommandPayload.PAUSE.equals(command.operation()) && isVideo(path)) {
             synchronized (VttServerShowHandler.class) {
+                playbackPositionMillis = currentPlaybackPosition();
                 playing = false;
+                playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
             }
         } else return;
@@ -79,7 +88,13 @@ public final class VttServerShowHandler {
     }
 
     private static synchronized VttShowUpdatePayload current() {
-        return new VttShowUpdatePayload(path, active, playing, changedAtMillis);
+        return new VttShowUpdatePayload(path, active, playing,
+                currentPlaybackPosition(), changedAtMillis);
+    }
+
+    private static long currentPlaybackPosition() {
+        return playing ? playbackPositionMillis + Math.max(0L,
+                System.currentTimeMillis() - playbackStartedAtMillis) : playbackPositionMillis;
     }
 
     private static String validPath(String value) {

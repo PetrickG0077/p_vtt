@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
  */
 public final class VttVideoFrameService {
     private static final int TARGET_FPS = 15;
+    private static final int SOURCE_FPS = 30;
     private static final int MAX_WIDTH = 960;
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "VTT MP4 decoder");
@@ -32,8 +33,11 @@ public final class VttVideoFrameService {
     });
     private static volatile int generation;
     private static volatile boolean requestedPlaying;
+    private static volatile long requestedPositionMillis;
     private static volatile DecodedFrame pendingFrame;
     private static volatile SeekableByteChannel activeChannel;
+    private static volatile boolean loading;
+    private static volatile long loadingStartedAt;
     private static String loadedPath = "";
     private static ResourceLocation texture;
     private static int width;
@@ -42,20 +46,24 @@ public final class VttVideoFrameService {
 
     private VttVideoFrameService() {}
 
-    public static Frame frame(Path file, boolean playing) {
+    public static Frame frame(Path file, boolean playing, long positionMillis) {
         if (file == null || !Files.isRegularFile(file)) return Frame.empty();
         String requested = file.toAbsolutePath().normalize().toString();
         if (!requested.equals(loadedPath)) start(file, requested);
         requestedPlaying = playing;
+        requestedPositionMillis = Math.max(0L, positionMillis);
         uploadNewestFrame();
         return texture == null ? Frame.empty() : new Frame(texture, width, height);
     }
 
     public static String failure() { return failure; }
+    public static boolean isLoading() { return loading; }
+    public static long loadingStartedAt() { return loadingStartedAt; }
 
     public static void clear() {
         generation++;
         requestedPlaying = false;
+        requestedPositionMillis = 0L;
         pendingFrame = null;
         closeActiveChannel();
         loadedPath = "";
@@ -63,11 +71,15 @@ public final class VttVideoFrameService {
         width = 0;
         height = 0;
         failure = "";
+        loading = false;
+        loadingStartedAt = 0L;
     }
 
     private static void start(Path file, String requested) {
         clear();
         loadedPath = requested;
+        loading = true;
+        loadingStartedAt = System.currentTimeMillis();
         int taskGeneration = ++generation;
         DECODER.execute(() -> decode(file, requested, taskGeneration));
     }
@@ -78,14 +90,18 @@ public final class VttVideoFrameService {
             FrameGrab grab = FrameGrab.createFrameGrab(channel);
             publish(grab.getNativeFrame(), taskGeneration);
             long frameMillis = 1_000L / TARGET_FPS;
+            long decodedFrame = 1L;
             while (taskGeneration == generation) {
                 if (!requestedPlaying) {
                     Thread.sleep(10L);
                     continue;
                 }
-                long started = System.currentTimeMillis();
+                long desiredFrame = requestedPositionMillis * SOURCE_FPS / 1_000L;
                 Picture picture = grab.getNativeFrame();
                 if (picture == null) return;
+                decodedFrame++;
+                if (decodedFrame < desiredFrame) continue;
+                long started = System.currentTimeMillis();
                 publish(picture, taskGeneration);
                 long remaining = frameMillis - (System.currentTimeMillis() - started);
                 if (remaining > 0L) Thread.sleep(remaining);
@@ -95,6 +111,7 @@ public final class VttVideoFrameService {
         } catch (Exception exception) {
             if (taskGeneration == generation) {
                 failure = "MP4 playback could not be decoded";
+                loading = false;
                 VTT.LOGGER.warn("Failed to decode VTT MP4 show: {}", file, exception);
             }
         } finally {
@@ -111,6 +128,7 @@ public final class VttVideoFrameService {
         DecodedFrame frame = pendingFrame;
         if (frame == null) return;
         pendingFrame = null;
+        loading = false;
         NativeImage image = new NativeImage(frame.width(), frame.height(), false);
         int index = 0;
         for (int y = 0; y < frame.height(); y++) {

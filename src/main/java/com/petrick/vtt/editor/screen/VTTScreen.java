@@ -766,7 +766,8 @@ public final class VTTScreen extends Screen {
         int sourceHeight = thumbnail == null ? 0 : thumbnail.height();
         if (entry != null && entry.fileType() == AssetLibraryFileType.VIDEO) {
             VttVideoFrameService.Frame frame = VttVideoFrameService.frame(
-                    entry.absolutePath(), VttClientShowState.isPlaying());
+                    entry.absolutePath(), VttClientShowState.isPlaying(),
+                    VttClientShowState.playbackMillis());
             showTexture = frame.texture();
             sourceWidth = frame.width();
             sourceHeight = frame.height();
@@ -800,9 +801,25 @@ public final class VTTScreen extends Screen {
                     sourceWidth, sourceHeight);
             context.graphics().setColor(1.0F, 1.0F, 1.0F, 1.0F);
         } else {
+            int centerX = context.screenWidth() / 2;
+            int centerY = context.screenHeight() / 2;
+            boolean loadingVideo = VttClientShowState.isVideo()
+                    && VttVideoFrameService.isLoading();
             context.graphics().drawCenteredString(this.font,
-                    "Loading presentation...", context.screenWidth() / 2,
-                    context.screenHeight() / 2, 0xFFFFFFFF);
+                    loadingVideo ? "Loading video..." : "Loading presentation...",
+                    centerX, centerY - 12, 0xFFFFFFFF);
+            if (loadingVideo) {
+                int barWidth = Math.min(240, Math.max(120, context.screenWidth() / 4));
+                int barX = centerX - barWidth / 2;
+                int barY = centerY + 5;
+                context.graphics().fill(barX, barY, barX + barWidth, barY + 5, 0xFF303038);
+                long elapsed = System.currentTimeMillis() - VttVideoFrameService.loadingStartedAt();
+                int sweep = (int) ((elapsed / 8L) % (barWidth + 42)) - 42;
+                int left = Math.max(barX, barX + sweep);
+                int right = Math.min(barX + barWidth, barX + sweep + 42);
+                if (right > left) context.graphics().fill(left, barY, right, barY + 5,
+                        EditorHudTheme.selection());
+            }
         }
         if (session.isLocalMaster()) {
             if (VttClientShowState.isVideo()) {
