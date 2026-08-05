@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -190,9 +191,49 @@ public final class VttAudioPlayerService implements AutoCloseable {
 
     private DecodedAudio decode(Path file) throws Exception {
         String name = file.getFileName().toString().toLowerCase();
+        if (name.endsWith(".mp4")) return decodeMp4(file);
         if (name.endsWith(".mp3")) return decodeMp3(file);
         if (name.endsWith(".ogg")) return decodeOgg(file);
         return decodeJavaSound(file);
+    }
+
+    private DecodedAudio decodeMp4(Path file) throws Exception {
+        try (org.jcodec.common.io.SeekableByteChannel channel =
+                     org.jcodec.common.io.NIOUtils.readableChannel(file.toFile())) {
+            org.jcodec.containers.mp4.demuxer.MP4Demuxer demuxer =
+                    org.jcodec.containers.mp4.demuxer.MP4Demuxer.createMP4Demuxer(channel);
+            java.util.List<org.jcodec.common.DemuxerTrack> tracks = demuxer.getAudioTracks();
+            if (tracks.isEmpty()) throw new IllegalArgumentException("MP4 has no audio track");
+            org.jcodec.common.DemuxerTrack track = tracks.getFirst();
+            org.jcodec.common.DemuxerTrackMeta meta = track.getMeta();
+            if (meta.getCodec() != org.jcodec.common.Codec.AAC) {
+                throw new IllegalArgumentException("Only AAC audio is supported in MP4");
+            }
+            org.jcodec.codecs.aac.AACDecoder decoder = new org.jcodec.codecs.aac.AACDecoder(
+                    meta.getCodecPrivate() == null ? ByteBuffer.allocate(0)
+                            : meta.getCodecPrivate().duplicate());
+            ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+            org.jcodec.common.AudioFormat decodedFormat = null;
+            org.jcodec.common.model.Packet packet;
+            while ((packet = track.nextFrame()) != null) {
+                org.jcodec.common.model.AudioBuffer decoded = decoder.decodeFrame(
+                        packet.getData(), ByteBuffer.allocate(64 * 1024));
+                decodedFormat = decoded.getFormat();
+                ByteBuffer data = decoded.getData().duplicate();
+                byte[] bytes = new byte[data.remaining()];
+                data.get(bytes);
+                pcm.write(bytes);
+            }
+            if (decodedFormat == null || pcm.size() == 0) {
+                throw new IllegalArgumentException("MP4 audio track is empty");
+            }
+            byte[] bytes = pcm.toByteArray();
+            AudioFormat format = new AudioFormat(decodedFormat.getSampleRate(),
+                    decodedFormat.getSampleSizeInBits(), decodedFormat.getChannels(),
+                    decodedFormat.isSigned(), decodedFormat.isBigEndian());
+            double duration = bytes.length / (format.getFrameRate() * format.getFrameSize());
+            return new DecodedAudio(bytes, format, duration);
+        }
     }
 
     private DecodedAudio decodeMp3(Path file) throws Exception {

@@ -24,7 +24,6 @@ import java.util.concurrent.Executors;
  */
 public final class VttVideoFrameService {
     private static final int TARGET_FPS = 15;
-    private static final int SOURCE_FPS = 30;
     private static final int MAX_WIDTH = 960;
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "VTT MP4 decoder");
@@ -38,8 +37,11 @@ public final class VttVideoFrameService {
     private static volatile SeekableByteChannel activeChannel;
     private static volatile boolean loading;
     private static volatile long loadingStartedAt;
+    private static volatile long durationMillis;
+    private static volatile long seekRequestMillis = -1L;
     private static String loadedPath = "";
     private static ResourceLocation texture;
+    private static DynamicTexture dynamicTexture;
     private static int width;
     private static int height;
     private static String failure = "";
@@ -59,6 +61,10 @@ public final class VttVideoFrameService {
     public static String failure() { return failure; }
     public static boolean isLoading() { return loading; }
     public static long loadingStartedAt() { return loadingStartedAt; }
+    public static long durationMillis() { return durationMillis; }
+    public static void requestSeek(long positionMillis) {
+        seekRequestMillis = Math.max(0L, positionMillis);
+    }
 
     public static void clear() {
         generation++;
@@ -68,11 +74,15 @@ public final class VttVideoFrameService {
         closeActiveChannel();
         loadedPath = "";
         texture = null;
+        if (dynamicTexture != null) dynamicTexture.close();
+        dynamicTexture = null;
         width = 0;
         height = 0;
         failure = "";
         loading = false;
         loadingStartedAt = 0L;
+        durationMillis = 0L;
+        seekRequestMillis = -1L;
     }
 
     private static void start(Path file, String requested) {
@@ -88,23 +98,58 @@ public final class VttVideoFrameService {
         try (SeekableByteChannel channel = NIOUtils.readableChannel(file.toFile())) {
             activeChannel = channel;
             FrameGrab grab = FrameGrab.createFrameGrab(channel);
+            double totalDurationSeconds = grab.getVideoTrack().getMeta().getTotalDuration();
+            int totalFrames = grab.getVideoTrack().getMeta().getTotalFrames();
+            double sourceFps = totalDurationSeconds > 0.0 && totalFrames > 0
+                    ? totalFrames / totalDurationSeconds : 30.0;
+            durationMillis = Math.max(0L, Math.round(totalDurationSeconds * 1_000.0));
             publish(grab.getNativeFrame(), taskGeneration);
-            long frameMillis = 1_000L / TARGET_FPS;
-            long decodedFrame = 1L;
+            long decodedFrame = 0L;
+            long publishedBucket = 0L;
             while (taskGeneration == generation) {
+                long requestedSeek = seekRequestMillis;
+                if (requestedSeek >= 0L) {
+                    seekRequestMillis = -1L;
+                    grab.seekToSecondPrecise(requestedSeek / 1_000.0);
+                    Picture sought = grab.getNativeFrame();
+                    decodedFrame = Math.max(0L,
+                            Math.round(requestedSeek * sourceFps / 1_000.0));
+                    publishedBucket = requestedSeek * TARGET_FPS / 1_000L;
+                    publish(sought, taskGeneration);
+                    continue;
+                }
                 if (!requestedPlaying) {
                     Thread.sleep(10L);
                     continue;
                 }
-                long desiredFrame = requestedPositionMillis * SOURCE_FPS / 1_000L;
-                Picture picture = grab.getNativeFrame();
-                if (picture == null) return;
-                decodedFrame++;
-                if (decodedFrame < desiredFrame) continue;
-                long started = System.currentTimeMillis();
-                publish(picture, taskGeneration);
-                long remaining = frameMillis - (System.currentTimeMillis() - started);
-                if (remaining > 0L) Thread.sleep(remaining);
+                long requestedMillis = requestedPositionMillis;
+                long desiredBucket = requestedMillis * TARGET_FPS / 1_000L;
+                if (desiredBucket <= publishedBucket) {
+                    Thread.sleep(2L);
+                    continue;
+                }
+
+                long desiredFrame = Math.max(0L,
+                        Math.round(requestedMillis * sourceFps / 1_000.0));
+                if (desiredFrame < decodedFrame || desiredFrame - decodedFrame > sourceFps * 2.0) {
+                    grab.seekToSecondPrecise(requestedMillis / 1_000.0);
+                    decodedFrame = desiredFrame;
+                }
+
+                Picture picture = null;
+                do {
+                    picture = grab.getNativeFrame();
+                    if (picture == null) {
+                        requestedPlaying = false;
+                        break;
+                    }
+                    decodedFrame++;
+                } while (decodedFrame < desiredFrame && taskGeneration == generation);
+
+                if (picture != null) {
+                    publish(picture, taskGeneration);
+                    publishedBucket = desiredBucket;
+                }
             }
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
@@ -127,7 +172,7 @@ public final class VttVideoFrameService {
     private static void uploadNewestFrame() {
         DecodedFrame frame = pendingFrame;
         if (frame == null) return;
-        pendingFrame = null;
+        if (pendingFrame == frame) pendingFrame = null;
         loading = false;
         NativeImage image = new NativeImage(frame.width(), frame.height(), false);
         int index = 0;
@@ -136,9 +181,15 @@ public final class VttVideoFrameService {
         }
         width = frame.width();
         height = frame.height();
-        texture = Minecraft.getInstance().getTextureManager().register(
-                "vtt_show_video/" + Integer.toUnsignedString(loadedPath.hashCode()),
-                new DynamicTexture(image));
+        if (dynamicTexture == null) {
+            dynamicTexture = new DynamicTexture(image);
+            texture = Minecraft.getInstance().getTextureManager().register(
+                    "vtt_show_video/" + Integer.toUnsignedString(loadedPath.hashCode()),
+                    dynamicTexture);
+        } else {
+            dynamicTexture.setPixels(image);
+            dynamicTexture.upload();
+        }
     }
 
     private static DecodedFrame convert(Picture source) {

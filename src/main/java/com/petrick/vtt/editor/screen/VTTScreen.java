@@ -805,8 +805,11 @@ public final class VTTScreen extends Screen {
             int centerY = context.screenHeight() / 2;
             boolean loadingVideo = VttClientShowState.isVideo()
                     && VttVideoFrameService.isLoading();
+            String videoFailure = VttClientShowState.isVideo()
+                    ? VttVideoFrameService.failure() : "";
             context.graphics().drawCenteredString(this.font,
-                    loadingVideo ? "Loading video..." : "Loading presentation...",
+                    !videoFailure.isBlank() ? videoFailure
+                            : loadingVideo ? "Loading video..." : "Loading presentation...",
                     centerX, centerY - 12, 0xFFFFFFFF);
             if (loadingVideo) {
                 int barWidth = Math.min(240, Math.max(120, context.screenWidth() / 4));
@@ -832,6 +835,23 @@ public final class VTTScreen extends Screen {
                 context.graphics().drawCenteredString(this.font,
                         VttClientShowState.isPlaying() ? "Pause" : "Play",
                         playX + 29, 22, 0xFFFFFFFF);
+                long duration = VttVideoFrameService.durationMillis();
+                if (duration > 0L) {
+                    int seekWidth = Math.min(420, Math.max(180, context.screenWidth() - 160));
+                    int seekX = (context.screenWidth() - seekWidth) / 2;
+                    int seekY = context.screenHeight() - 28;
+                    double ratio = Math.max(0.0, Math.min(1.0,
+                            VttClientShowState.playbackMillis() / (double) duration));
+                    context.graphics().fill(seekX, seekY, seekX + seekWidth, seekY + 6,
+                            0xFF303038);
+                    context.graphics().fill(seekX, seekY,
+                            seekX + (int) Math.round(seekWidth * ratio), seekY + 6,
+                            EditorHudTheme.selection());
+                    context.graphics().drawCenteredString(this.font,
+                            formatMediaTime(VttClientShowState.playbackMillis()) + " / "
+                                    + formatMediaTime(duration),
+                            context.screenWidth() / 2, seekY - 12, 0xFFFFFFFF);
+                }
             }
             int x = context.screenWidth() - 82;
             context.graphics().fill(x, 14, x + 66, 38, 0xE0222228);
@@ -842,6 +862,11 @@ public final class VTTScreen extends Screen {
             context.graphics().drawCenteredString(this.font, "Close",
                     x + 33, 22, 0xFFFFFFFF);
         }
+    }
+
+    private String formatMediaTime(long millis) {
+        long seconds = Math.max(0L, millis / 1_000L);
+        return String.format("%d:%02d", seconds / 60L, seconds % 60L);
     }
 
     private void applyPendingPresentationCamera() {
@@ -2835,6 +2860,21 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
+            if (session.isLocalMaster() && VttClientShowState.isVideo()
+                    && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && VttVideoFrameService.durationMillis() > 0L) {
+                int seekWidth = Math.min(420, Math.max(180, this.width - 160));
+                int seekX = (this.width - seekWidth) / 2;
+                int seekY = this.height - 28;
+                if (mouseX >= seekX && mouseX <= seekX + seekWidth
+                        && mouseY >= seekY - 3 && mouseY <= seekY + 10) {
+                    double ratio = Math.max(0.0,
+                            Math.min(1.0, (mouseX - seekX) / seekWidth));
+                    VttClientShowState.seek(session,
+                            Math.round(VttVideoFrameService.durationMillis() * ratio));
+                    return true;
+                }
+            }
             if (session.isLocalMaster() && VttClientShowState.isVideo()
                     && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && mouseX >= this.width - 150 && mouseX <= this.width - 92

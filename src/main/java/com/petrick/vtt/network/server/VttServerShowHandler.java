@@ -68,6 +68,13 @@ public final class VttServerShowHandler {
                 playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
             }
+        } else if (VttShowCommandPayload.SEEK.equals(command.operation()) && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                playbackPositionMillis = Math.max(0L,
+                        Math.min(86_400_000L, command.positionMillis()));
+                playbackStartedAtMillis = playing ? System.currentTimeMillis() : 0L;
+                changedAtMillis = System.currentTimeMillis();
+            }
         } else return;
         broadcast(requester.getServer());
         VTT.LOGGER.info("VTT fullscreen show {} by {}: {}", command.operation(),
