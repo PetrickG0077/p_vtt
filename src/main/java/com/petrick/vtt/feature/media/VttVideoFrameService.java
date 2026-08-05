@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Client-only MP4 decoder. Decoding and color conversion run off the render thread;
@@ -30,6 +32,12 @@ public final class VttVideoFrameService {
         thread.setDaemon(true);
         return thread;
     });
+    private static final ExecutorService PRELOADER = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "VTT MP4 preloader");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private static final ConcurrentMap<String, PreloadState> PRELOADS = new ConcurrentHashMap<>();
     private static volatile int generation;
     private static volatile boolean requestedPlaying;
     private static volatile long requestedPositionMillis;
@@ -66,6 +74,36 @@ public final class VttVideoFrameService {
         seekRequestMillis = Math.max(0L, positionMillis);
     }
 
+    public static void preload(Path file) {
+        if (file == null || !Files.isRegularFile(file)) return;
+        String key = preloadKey(file);
+        PreloadState current = PRELOADS.get(key);
+        if (current != null && (current.complete || current.failure.isBlank())) return;
+        PreloadState state = new PreloadState();
+        PRELOADS.put(key, state);
+        PRELOADER.execute(() -> warmVideo(file, key, state));
+    }
+
+    public static boolean isPreloading(Path file) {
+        PreloadState state = PRELOADS.get(preloadKey(file));
+        return state != null && !state.complete && state.failure.isBlank();
+    }
+
+    public static boolean isPreloaded(Path file) {
+        PreloadState state = PRELOADS.get(preloadKey(file));
+        return state != null && state.complete;
+    }
+
+    public static float preloadProgress(Path file) {
+        PreloadState state = PRELOADS.get(preloadKey(file));
+        return state == null ? 0.0F : Math.max(0.0F, Math.min(1.0F, state.progress));
+    }
+
+    public static String preloadFailure(Path file) {
+        PreloadState state = PRELOADS.get(preloadKey(file));
+        return state == null ? "" : state.failure;
+    }
+
     public static void clear() {
         generation++;
         requestedPlaying = false;
@@ -92,6 +130,27 @@ public final class VttVideoFrameService {
         loadingStartedAt = System.currentTimeMillis();
         int taskGeneration = ++generation;
         DECODER.execute(() -> decode(file, requested, taskGeneration));
+    }
+
+    private static void warmVideo(Path file, String key, PreloadState state) {
+        try (SeekableByteChannel channel = NIOUtils.readableChannel(file.toFile())) {
+            FrameGrab grab = FrameGrab.createFrameGrab(channel);
+            int totalFrames = Math.max(1, grab.getVideoTrack().getMeta().getTotalFrames());
+            int decoded = 0;
+            while (grab.getNativeFrame() != null) {
+                decoded++;
+                state.progress = Math.min(0.999F, decoded / (float) totalFrames);
+            }
+            state.progress = 1.0F;
+            state.complete = true;
+        } catch (Exception exception) {
+            state.failure = "Preload failed";
+            VTT.LOGGER.warn("Failed to preload VTT MP4 show: {}", file, exception);
+        }
+    }
+
+    private static String preloadKey(Path file) {
+        return file == null ? "" : file.toAbsolutePath().normalize().toString();
     }
 
     private static void decode(Path file, String requested, int taskGeneration) {
@@ -222,6 +281,11 @@ public final class VttVideoFrameService {
     }
 
     private record DecodedFrame(int width, int height, int[] abgr) {}
+    private static final class PreloadState {
+        private volatile float progress;
+        private volatile boolean complete;
+        private volatile String failure = "";
+    }
     public record Frame(ResourceLocation texture, int width, int height) {
         private static Frame empty() { return new Frame(null, 0, 0); }
     }

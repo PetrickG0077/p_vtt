@@ -964,6 +964,7 @@ public final class VTTScreen extends Screen {
     }
 
     private void renderEditorHud(VRenderContext context) {
+        if (VttClientShowState.blocksInput()) return;
         boolean master = session.isLocalMaster();
         boolean spectator = session.isLocalSpectator();
         if (!master) {

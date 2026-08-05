@@ -5,6 +5,7 @@ import com.petrick.vtt.feature.asset.library.AssetLibraryEntry;
 import com.petrick.vtt.feature.asset.library.AssetLibraryFileType;
 import com.petrick.vtt.feature.asset.library.AssetLibraryScanResult;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.feature.media.VttVideoFrameService;
 import com.petrick.vtt.core.session.VTTSession;
 import com.petrick.vtt.network.client.VttClientMusicSync;
 import com.petrick.vtt.network.client.VttClientShowState;
@@ -61,8 +62,32 @@ public final class MediaLibraryOverlay {
                     : entry.relativePath().equals(VttClientShowState.relativePath())
                     && VttClientShowState.isActive();
             int buttonX = bounds.right() - 78;
+            boolean video = tab == Tab.SHOWS
+                    && entry.fileType() == AssetLibraryFileType.VIDEO;
+            boolean preloading = video && VttVideoFrameService.isPreloading(entry.absolutePath());
+            if (video) {
+                int preloadX = bounds.right() - 148;
+                context.graphics().fill(preloadX, rowY + 2, preloadX + 66,
+                        rowY + 19, preloading ? 0xE02D5568 : 0xE038383F);
+                border(context, preloadX, rowY + 2, 66, 17, EditorHudTheme.outline());
+                String preloadText = VttVideoFrameService.isPreloaded(entry.absolutePath())
+                        ? "Ready"
+                        : preloading
+                        ? Math.round(VttVideoFrameService.preloadProgress(entry.absolutePath()) * 100.0F) + "%"
+                        : VttVideoFrameService.preloadFailure(entry.absolutePath()).isBlank()
+                        ? "Preload" : "Retry";
+                context.graphics().drawCenteredString(font, preloadText,
+                        preloadX + 33, rowY + 6, TEXT);
+                if (preloading) {
+                    int progress = Math.round(64 * VttVideoFrameService.preloadProgress(
+                            entry.absolutePath()));
+                    context.graphics().fill(preloadX + 1, rowY + 17,
+                            preloadX + 1 + progress, rowY + 19, EditorHudTheme.selection());
+                }
+            }
             context.graphics().fill(buttonX, rowY + 2, bounds.right() - 12,
-                    rowY + 19, active ? EditorHudTheme.selection() : 0xE038383F);
+                    rowY + 19, preloading ? 0xA028282D
+                            : active ? EditorHudTheme.selection() : 0xE038383F);
             border(context, buttonX, rowY + 2, 66, 17, EditorHudTheme.outline());
             String action = tab == Tab.SHOWS ? active ? "Showing" : "Show"
                     : active && audio.isPlaying()
@@ -166,10 +191,19 @@ public final class MediaLibraryOverlay {
             List<AssetLibraryEntry> entries = entries(scan);
             int row = (int) Math.floor((mouseY - bounds.y - 45) / 23.0);
             if (row >= 0 && row < Math.min(entries.size(), 10)
+                    && inside(mouseX, mouseY, bounds.right() - 148,
+                    bounds.y + 47 + row * 23, 66, 17)) {
+                AssetLibraryEntry entry = entries.get(row);
+                if (entry.fileType() == AssetLibraryFileType.VIDEO) {
+                    VttClientShowState.preload(session, entry.relativePath());
+                }
+            } else if (row >= 0 && row < Math.min(entries.size(), 10)
                     && inside(mouseX, mouseY, bounds.right() - 78,
                     bounds.y + 47 + row * 23, 66, 17)) {
                 AssetLibraryEntry entry = entries.get(row);
-                VttClientShowState.show(session, entry.relativePath());
+                if (!VttVideoFrameService.isPreloading(entry.absolutePath())) {
+                    VttClientShowState.show(session, entry.relativePath());
+                }
             }
         }
         return true;

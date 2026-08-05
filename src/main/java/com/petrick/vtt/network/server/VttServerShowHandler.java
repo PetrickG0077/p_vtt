@@ -3,6 +3,7 @@ package com.petrick.vtt.network.server;
 import com.petrick.vtt.VTT;
 import com.petrick.vtt.network.payload.VttShowCommandPayload;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
+import com.petrick.vtt.network.payload.VttShowPreloadPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
@@ -30,6 +31,23 @@ public final class VttServerShowHandler {
                 requester, VttServerRequestRateLimiter.Category.PRESENTATION)) return;
         if (!VttServerPlayerEvents.isMaster(requester)) {
             VttServerFeedback.show(requester, "Only a master can control VTT shows");
+            return;
+        }
+        if (VttShowCommandPayload.PRELOAD.equals(command.operation())) {
+            String selected = validPath(command.relativePath());
+            if (selected == null || !isVideo(selected)) {
+                VttServerFeedback.show(requester, "Video is missing or unsupported on this server");
+                return;
+            }
+            MinecraftServer server = requester.getServer();
+            if (server != null) {
+                VttShowPreloadPayload preload = new VttShowPreloadPayload(selected);
+                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                    PacketDistributor.sendToPlayer(player, preload);
+                }
+            }
+            VTT.LOGGER.info("VTT show preload requested by {}: {}",
+                    requester.getGameProfile().getName(), selected);
             return;
         }
         if (VttShowCommandPayload.SHOW.equals(command.operation())) {

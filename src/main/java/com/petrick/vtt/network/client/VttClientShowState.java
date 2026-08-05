@@ -33,6 +33,23 @@ public final class VttClientShowState {
         } else accept(new VttShowUpdatePayload(path, true, false, 0L, System.currentTimeMillis()));
     }
 
+    public static void preload(VTTSession session, String path) {
+        if (session.isNetworkAuthorityActive()) {
+            if (session.isLocalMaster()) PacketDistributor.sendToServer(
+                    new VttShowCommandPayload(VttShowCommandPayload.PRELOAD, path, 0L));
+        } else acceptPreload(path);
+    }
+
+    public static void acceptPreload(String path) {
+        if (path == null || path.isBlank()) return;
+        var session = VTT.getApplication().getActiveSession();
+        if (session.getAssetLibraryScanResult() == null) return;
+        session.getAssetLibraryScanResult().entries().stream()
+                .filter(entry -> entry.relativePath().replace('\\', '/').equals(path))
+                .map(entry -> entry.absolutePath()).findFirst()
+                .ifPresent(VttVideoFrameService::preload);
+    }
+
     public static void close(VTTSession session) {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
