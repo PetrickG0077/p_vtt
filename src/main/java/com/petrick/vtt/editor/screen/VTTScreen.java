@@ -828,6 +828,16 @@ public final class VTTScreen extends Screen {
             if (VttClientShowState.isVideo()) {
                 int playX = context.screenWidth() - 150;
                 int resetX = context.screenWidth() - 218;
+                int loopX = context.screenWidth() - 286;
+                context.graphics().fill(loopX, 14, loopX + 58, 38,
+                        VttClientShowState.isLoop()
+                                ? EditorHudTheme.selection() : 0xE0222228);
+                context.graphics().hLine(loopX, loopX + 58, 14, 0xFFFFFFFF);
+                context.graphics().hLine(loopX, loopX + 58, 38, 0xFFFFFFFF);
+                context.graphics().vLine(loopX, 14, 38, 0xFFFFFFFF);
+                context.graphics().vLine(loopX + 58, 14, 38, 0xFFFFFFFF);
+                context.graphics().drawCenteredString(this.font, "Loop",
+                        loopX + 29, 22, 0xFFFFFFFF);
                 context.graphics().fill(resetX, 14, resetX + 58, 38, 0xE0222228);
                 context.graphics().hLine(resetX, resetX + 58, 14, 0xFFFFFFFF);
                 context.graphics().hLine(resetX, resetX + 58, 38, 0xFFFFFFFF);
@@ -845,6 +855,7 @@ public final class VTTScreen extends Screen {
                         playX + 29, 22, 0xFFFFFFFF);
                 long duration = VttVideoFrameService.durationMillis();
                 if (duration > 0L) {
+                    VttClientShowState.updatePlaybackEnd(session, duration);
                     int seekWidth = Math.min(420, Math.max(180, context.screenWidth() - 160));
                     int seekX = (context.screenWidth() - seekWidth) / 2;
                     int seekY = context.screenHeight() - 28;
@@ -2869,6 +2880,13 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
+            if (session.isLocalMaster() && VttClientShowState.isVideo()
+                    && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && mouseX >= this.width - 286 && mouseX <= this.width - 228
+                    && mouseY >= 14 && mouseY <= 38) {
+                VttClientShowState.toggleLoop(session);
+                return true;
+            }
             if (session.isLocalMaster() && VttClientShowState.isVideo()
                     && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && mouseX >= this.width - 218 && mouseX <= this.width - 160

@@ -18,6 +18,8 @@ public final class VttClientShowState {
     private static String relativePath = "";
     private static boolean targetActive;
     private static boolean playing;
+    private static boolean loop;
+    private static boolean endCommandSent;
     private static long playbackPositionMillis;
     private static long playbackReceivedAtMillis;
     private static final VttAudioPlayerService VIDEO_AUDIO = new VttAudioPlayerService();
@@ -30,7 +32,8 @@ public final class VttClientShowState {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.SHOW, path, 0L));
-        } else accept(new VttShowUpdatePayload(path, true, false, 0L, System.currentTimeMillis()));
+        } else accept(new VttShowUpdatePayload(path, true, false, false,
+                0L, System.currentTimeMillis()));
     }
 
     public static void preload(VTTSession session, String path) {
@@ -54,17 +57,20 @@ public final class VttClientShowState {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.CLOSE, "", 0L));
-        } else accept(new VttShowUpdatePayload(relativePath, false, false, 0L,
+        } else accept(new VttShowUpdatePayload(relativePath, false, false, loop, 0L,
                 System.currentTimeMillis()));
     }
 
     public static void togglePlayback(VTTSession session) {
-        String operation = playing ? VttShowCommandPayload.PAUSE : VttShowCommandPayload.PLAY;
+        long duration = VttVideoFrameService.durationMillis();
+        boolean restartFromEnd = !playing && duration > 0L && playbackMillis() >= duration;
+        String operation = restartFromEnd ? VttShowCommandPayload.RESTART
+                : playing ? VttShowCommandPayload.PAUSE : VttShowCommandPayload.PLAY;
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(operation, "", playbackMillis()));
-        } else accept(new VttShowUpdatePayload(relativePath, targetActive, !playing,
-                playbackMillis(),
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, !playing, loop,
+                restartFromEnd ? 0L : playbackMillis(),
                 System.currentTimeMillis()));
     }
 
@@ -73,7 +79,7 @@ public final class VttClientShowState {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.SEEK, "", safePosition));
-        } else accept(new VttShowUpdatePayload(relativePath, targetActive, playing,
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, playing, loop,
                 safePosition, System.currentTimeMillis()));
     }
 
@@ -81,8 +87,30 @@ public final class VttClientShowState {
         if (session.isNetworkAuthorityActive()) {
             if (session.isLocalMaster()) PacketDistributor.sendToServer(
                     new VttShowCommandPayload(VttShowCommandPayload.RESET, "", 0L));
-        } else accept(new VttShowUpdatePayload(relativePath, targetActive, false,
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, false, loop,
                 0L, System.currentTimeMillis()));
+    }
+
+    public static void toggleLoop(VTTSession session) {
+        if (session.isNetworkAuthorityActive()) {
+            if (session.isLocalMaster()) PacketDistributor.sendToServer(
+                    new VttShowCommandPayload(VttShowCommandPayload.TOGGLE_LOOP, "", 0L));
+        } else accept(new VttShowUpdatePayload(relativePath, targetActive, playing,
+                !loop, playbackMillis(), System.currentTimeMillis()));
+    }
+
+    public static synchronized void updatePlaybackEnd(VTTSession session, long durationMillis) {
+        if (!playing || durationMillis <= 0L || playbackMillis() < durationMillis
+                || endCommandSent || !session.isLocalMaster()) return;
+        endCommandSent = true;
+        String operation = loop ? VttShowCommandPayload.RESTART : VttShowCommandPayload.END;
+        if (session.isNetworkAuthorityActive()) {
+            PacketDistributor.sendToServer(new VttShowCommandPayload(
+                    operation, "", durationMillis));
+        } else {
+            accept(new VttShowUpdatePayload(relativePath, targetActive, loop, loop,
+                    loop ? 0L : durationMillis, System.currentTimeMillis()));
+        }
     }
 
     public static synchronized void accept(VttShowUpdatePayload update) {
@@ -94,6 +122,8 @@ public final class VttClientShowState {
         transitionStartAlpha = current;
         targetActive = update.active();
         playing = update.playing();
+        loop = update.loop();
+        endCommandSent = false;
         playbackPositionMillis = Math.max(0L, update.positionMillis());
         playbackReceivedAtMillis = System.currentTimeMillis();
         if (isVideo()) VttVideoFrameService.requestSeek(playbackPositionMillis);
@@ -120,6 +150,7 @@ public final class VttClientShowState {
     public static String relativePath() { return relativePath; }
     public static boolean isActive() { return targetActive; }
     public static boolean isPlaying() { return playing; }
+    public static boolean isLoop() { return loop; }
     public static long playbackMillis() {
         long position = playing ? playbackPositionMillis + Math.max(0L,
                 System.currentTimeMillis() - playbackReceivedAtMillis) : playbackPositionMillis;
@@ -159,6 +190,8 @@ public final class VttClientShowState {
         relativePath = "";
         targetActive = false;
         playing = false;
+        loop = false;
+        endCommandSent = false;
         playbackPositionMillis = 0L;
         playbackReceivedAtMillis = 0L;
         VIDEO_AUDIO.stop();

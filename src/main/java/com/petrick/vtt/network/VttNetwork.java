@@ -76,7 +76,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = VTT.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class VttNetwork {
 
-    private static final String PROTOCOL_VERSION = "56";
+    private static final String PROTOCOL_VERSION = "57";
 
     private VttNetwork() {
     }

@@ -19,6 +19,7 @@ public final class VttServerShowHandler {
     private static String path = "";
     private static boolean active;
     private static boolean playing;
+    private static boolean loop;
     private static long playbackPositionMillis;
     private static long playbackStartedAtMillis;
     private static long changedAtMillis;
@@ -61,6 +62,7 @@ public final class VttServerShowHandler {
                 path = selected;
                 active = true;
                 playing = false;
+                loop = false;
                 playbackPositionMillis = 0L;
                 playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
@@ -69,6 +71,7 @@ public final class VttServerShowHandler {
             synchronized (VttServerShowHandler.class) {
                 active = false;
                 playing = false;
+                loop = false;
                 playbackPositionMillis = 0L;
                 playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
@@ -100,6 +103,27 @@ public final class VttServerShowHandler {
                 playbackStartedAtMillis = 0L;
                 changedAtMillis = System.currentTimeMillis();
             }
+        } else if (VttShowCommandPayload.TOGGLE_LOOP.equals(command.operation())
+                && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                loop = !loop;
+                changedAtMillis = System.currentTimeMillis();
+            }
+        } else if (VttShowCommandPayload.END.equals(command.operation()) && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                playbackPositionMillis = Math.max(0L,
+                        Math.min(86_400_000L, command.positionMillis()));
+                playing = false;
+                playbackStartedAtMillis = 0L;
+                changedAtMillis = System.currentTimeMillis();
+            }
+        } else if (VttShowCommandPayload.RESTART.equals(command.operation()) && isVideo(path)) {
+            synchronized (VttServerShowHandler.class) {
+                playbackPositionMillis = 0L;
+                playing = true;
+                playbackStartedAtMillis = System.currentTimeMillis();
+                changedAtMillis = System.currentTimeMillis();
+            }
         } else return;
         broadcast(requester.getServer());
         VTT.LOGGER.info("VTT fullscreen show {} by {}: {}", command.operation(),
@@ -120,7 +144,7 @@ public final class VttServerShowHandler {
     }
 
     private static synchronized VttShowUpdatePayload current() {
-        return new VttShowUpdatePayload(path, active, playing,
+        return new VttShowUpdatePayload(path, active, playing, loop,
                 currentPlaybackPosition(), changedAtMillis);
     }
 
