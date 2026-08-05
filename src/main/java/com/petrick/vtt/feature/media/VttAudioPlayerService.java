@@ -316,9 +316,17 @@ public final class VttAudioPlayerService implements AutoCloseable {
     public boolean isLoop() { return loop; }
     public void setLoop(boolean loop) { this.loop = loop; }
     public float trackVolume() { return trackVolume; }
-    public void setTrackVolume(float value) { trackVolume = clamp(value); }
+    public void setTrackVolume(float value) {
+        trackVolume = clamp(value);
+        SourceDataLine current = line;
+        if (current != null && current.isOpen()) applyVolume(current);
+    }
     public float masterVolume() { return masterVolume; }
-    public void setMasterVolume(float value) { masterVolume = clamp(value); }
+    public void setMasterVolume(float value) {
+        masterVolume = clamp(value);
+        SourceDataLine current = line;
+        if (current != null && current.isOpen()) applyVolume(current);
+    }
     public double positionSeconds() { return positionSeconds; }
     public double durationSeconds() { return durationSeconds; }
     public String status() { return status; }

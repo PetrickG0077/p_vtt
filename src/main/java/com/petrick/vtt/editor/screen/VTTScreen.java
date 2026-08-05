@@ -326,6 +326,8 @@ public final class VTTScreen extends Screen {
 
     private boolean hudCreationOpen;
     private boolean hudMediaOpen;
+    private boolean videoVolumeOpen;
+    private boolean draggingVideoVolume;
 
     private AssetManagerOverlay.Section returnToAssetManagerSection;
     private String returnToAssetManagerFolder;
@@ -824,6 +826,7 @@ public final class VTTScreen extends Screen {
                         EditorHudTheme.selection());
             }
         }
+        if (VttClientShowState.isVideo()) renderVideoVolumeControl(context);
         if (session.isLocalMaster()) {
             if (VttClientShowState.isVideo()) {
                 int playX = context.screenWidth() - 150;
@@ -886,6 +889,59 @@ public final class VTTScreen extends Screen {
     private String formatMediaTime(long millis) {
         long seconds = Math.max(0L, millis / 1_000L);
         return String.format("%d:%02d", seconds / 60L, seconds % 60L);
+    }
+
+    private void renderVideoVolumeControl(VRenderContext context) {
+        int buttonX = videoVolumeButtonX();
+        context.graphics().fill(buttonX, 14, buttonX + 58, 38,
+                VttClientShowState.isVideoMuted() ? 0xE0552828 : 0xE0222228);
+        context.graphics().hLine(buttonX, buttonX + 58, 14, 0xFFFFFFFF);
+        context.graphics().hLine(buttonX, buttonX + 58, 38, 0xFFFFFFFF);
+        context.graphics().vLine(buttonX, 14, 38, 0xFFFFFFFF);
+        context.graphics().vLine(buttonX + 58, 14, 38, 0xFFFFFFFF);
+        String label = VttClientShowState.isVideoMuted() ? "Muted"
+                : "Vol " + Math.round(VttClientShowState.videoVolume() * 100.0F);
+        context.graphics().drawCenteredString(this.font, label,
+                buttonX + 29, 22, 0xFFFFFFFF);
+        if (!videoVolumeOpen) return;
+
+        int panelX = videoVolumePanelX();
+        int panelY = 43;
+        context.graphics().fill(panelX, panelY, panelX + 140, panelY + 52,
+                0xF0222228);
+        context.graphics().hLine(panelX, panelX + 140, panelY, 0xFFFFFFFF);
+        context.graphics().hLine(panelX, panelX + 140, panelY + 52, 0xFFFFFFFF);
+        context.graphics().vLine(panelX, panelY, panelY + 52, 0xFFFFFFFF);
+        context.graphics().vLine(panelX + 140, panelY, panelY + 52, 0xFFFFFFFF);
+        int sliderX = panelX + 10;
+        int sliderY = panelY + 12;
+        int sliderWidth = 120;
+        context.graphics().fill(sliderX, sliderY, sliderX + sliderWidth,
+                sliderY + 5, 0xFF55555D);
+        context.graphics().fill(sliderX, sliderY,
+                sliderX + Math.round(sliderWidth * VttClientShowState.videoVolume()),
+                sliderY + 5, EditorHudTheme.selection());
+        context.graphics().fill(panelX + 10, panelY + 25, panelX + 130,
+                panelY + 44, VttClientShowState.isVideoMuted()
+                        ? EditorHudTheme.selection() : 0xE038383F);
+        context.graphics().drawCenteredString(this.font,
+                VttClientShowState.isVideoMuted() ? "Unmute" : "Mute",
+                panelX + 70, panelY + 31, 0xFFFFFFFF);
+    }
+
+    private int videoVolumeButtonX() {
+        return Math.max(8, session.isLocalMaster() ? this.width - 354 : this.width - 82);
+    }
+
+    private int videoVolumePanelX() {
+        return Math.max(8, Math.min(this.width - 148, videoVolumeButtonX() - 82));
+    }
+
+    private void updateVideoVolumeFromMouse(double mouseX, boolean save) {
+        int sliderX = videoVolumePanelX() + 10;
+        float volume = (float) Math.max(0.0,
+                Math.min(1.0, (mouseX - sliderX) / 120.0));
+        VttClientShowState.setVideoVolume(volume, save);
     }
 
     private void applyPendingPresentationCamera() {
@@ -2880,6 +2936,33 @@ public final class VTTScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
+            if (VttClientShowState.isVideo()
+                    && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                int volumeX = videoVolumeButtonX();
+                if (mouseX >= volumeX && mouseX <= volumeX + 58
+                        && mouseY >= 14 && mouseY <= 38) {
+                    videoVolumeOpen = !videoVolumeOpen;
+                    draggingVideoVolume = false;
+                    return true;
+                }
+                if (videoVolumeOpen) {
+                    int panelX = videoVolumePanelX();
+                    if (mouseX >= panelX + 10 && mouseX <= panelX + 130
+                            && mouseY >= 52 && mouseY <= 66) {
+                        draggingVideoVolume = true;
+                        updateVideoVolumeFromMouse(mouseX, false);
+                        return true;
+                    }
+                    if (mouseX >= panelX + 10 && mouseX <= panelX + 130
+                            && mouseY >= 68 && mouseY <= 87) {
+                        VttClientShowState.toggleVideoMute();
+                        return true;
+                    }
+                    if (mouseX >= panelX && mouseX <= panelX + 140
+                            && mouseY >= 43 && mouseY <= 95) return true;
+                    videoVolumeOpen = false;
+                }
+            }
             if (session.isLocalMaster() && VttClientShowState.isVideo()
                     && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && mouseX >= this.width - 286 && mouseX <= this.width - 228
@@ -5154,7 +5237,13 @@ public final class VTTScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (VttClientShowState.blocksInput()) return true;
+        if (VttClientShowState.blocksInput()) {
+            if (draggingVideoVolume) {
+                updateVideoVolumeFromMouse(mouseX, true);
+                draggingVideoVolume = false;
+            }
+            return true;
+        }
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {
@@ -5257,7 +5346,10 @@ public final class VTTScreen extends Screen {
             double dragX,
             double dragY
     ) {
-        if (VttClientShowState.blocksInput()) return true;
+        if (VttClientShowState.blocksInput()) {
+            if (draggingVideoVolume) updateVideoVolumeFromMouse(mouseX, false);
+            return true;
+        }
         if (pendingAssetDeletion != null || pendingAssetFolderDeletion != null
                 || pendingAssetBatchDeletion != null) return true;
         if (canvasTokenContextMenuOverlay.isColorPickerOpen()) {

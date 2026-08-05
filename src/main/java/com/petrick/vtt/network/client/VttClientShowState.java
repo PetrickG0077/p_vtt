@@ -6,6 +6,7 @@ import com.petrick.vtt.network.payload.VttShowCommandPayload;
 import com.petrick.vtt.network.payload.VttShowUpdatePayload;
 import com.petrick.vtt.feature.media.VttVideoFrameService;
 import com.petrick.vtt.feature.media.VttAudioPlayerService;
+import com.petrick.vtt.feature.media.VttVideoPreferences;
 import com.petrick.vtt.VTT;
 import java.nio.file.Path;
 import net.minecraft.client.Minecraft;
@@ -23,6 +24,10 @@ public final class VttClientShowState {
     private static long playbackPositionMillis;
     private static long playbackReceivedAtMillis;
     private static final VttAudioPlayerService VIDEO_AUDIO = new VttAudioPlayerService();
+    private static final VttVideoPreferences.State VIDEO_PREFERENCES =
+            VttVideoPreferences.load();
+    private static float videoVolume = VIDEO_PREFERENCES.volume();
+    private static boolean videoMuted = VIDEO_PREFERENCES.muted();
     private static float transitionStartAlpha;
     private static long transitionStartedAt;
 
@@ -138,19 +143,40 @@ public final class VttClientShowState {
     }
 
     public static synchronized float alpha() {
-        if (transitionStartedAt == 0L) return targetActive ? 1.0F : 0.0F;
+        if (transitionStartedAt == 0L) {
+            float result = targetActive ? 1.0F : 0.0F;
+            applyVideoVolume(result);
+            return result;
+        }
         long duration = targetActive ? FADE_IN_MILLIS : FADE_OUT_MILLIS;
         float progress = Math.min(1.0F,
                 (System.currentTimeMillis() - transitionStartedAt) / (float) duration);
-        return targetActive
+        float result = targetActive
                 ? transitionStartAlpha + (1.0F - transitionStartAlpha) * progress
                 : transitionStartAlpha * (1.0F - progress);
+        applyVideoVolume(result);
+        if (!targetActive && result <= 0.001F && VIDEO_AUDIO.isPlaying()) {
+            VIDEO_AUDIO.stop();
+        }
+        return result;
     }
 
     public static String relativePath() { return relativePath; }
     public static boolean isActive() { return targetActive; }
     public static boolean isPlaying() { return playing; }
     public static boolean isLoop() { return loop; }
+    public static float videoVolume() { return videoVolume; }
+    public static boolean isVideoMuted() { return videoMuted; }
+    public static void setVideoVolume(float value, boolean save) {
+        videoVolume = Math.max(0.0F, Math.min(1.0F, value));
+        applyVideoVolume(alpha());
+        if (save) VttVideoPreferences.save(videoVolume, videoMuted);
+    }
+    public static void toggleVideoMute() {
+        videoMuted = !videoMuted;
+        applyVideoVolume(alpha());
+        VttVideoPreferences.save(videoVolume, videoMuted);
+    }
     public static long playbackMillis() {
         long position = playing ? playbackPositionMillis + Math.max(0L,
                 System.currentTimeMillis() - playbackReceivedAtMillis) : playbackPositionMillis;
@@ -161,10 +187,11 @@ public final class VttClientShowState {
     public static boolean blocksInput() { return targetActive || alpha() > 0.01F; }
 
     private static void syncVideoAudio() {
-        if (!targetActive || !isVideo()) {
+        if (!isVideo()) {
             VIDEO_AUDIO.stop();
             return;
         }
+        if (!targetActive) return;
         var session = VTT.getApplication().getActiveSession();
         if (session.getAssetLibraryScanResult() == null) return;
         Path file = session.getAssetLibraryScanResult().entries().stream()
@@ -184,6 +211,11 @@ public final class VttClientShowState {
             VIDEO_AUDIO.seek(position / VIDEO_AUDIO.durationSeconds());
         }
         if (playing == VIDEO_AUDIO.isPaused()) VIDEO_AUDIO.togglePause();
+    }
+
+    private static void applyVideoVolume(float presentationAlpha) {
+        VIDEO_AUDIO.setMasterVolume((videoMuted ? 0.0F : videoVolume)
+                * Math.max(0.0F, Math.min(1.0F, presentationAlpha)));
     }
 
     public static synchronized void reset() {
