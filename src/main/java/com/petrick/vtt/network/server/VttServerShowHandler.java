@@ -17,6 +17,8 @@ import java.util.Locale;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -30,8 +32,7 @@ public final class VttServerShowHandler {
     private static long playbackPositionMillis;
     private static long playbackStartedAtMillis;
     private static long changedAtMillis;
-    private static String preparedPath = "";
-    private static final Map<UUID, PreloadStatus> PRELOAD_STATUSES = new LinkedHashMap<>();
+    private static final Map<String, Map<UUID, PreloadStatus>> PRELOADS = new LinkedHashMap<>();
     private static long lastCheckpointAtMillis;
 
     private VttServerShowHandler() {}
@@ -53,12 +54,14 @@ public final class VttServerShowHandler {
             MinecraftServer server = requester.getServer();
             if (server != null) {
                 synchronized (VttServerShowHandler.class) {
-                    preparedPath = selected;
-                    PRELOAD_STATUSES.clear();
-                    for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                        PRELOAD_STATUSES.put(player.getUUID(), new PreloadStatus(
-                                player.getUUID().toString(),
-                                player.getGameProfile().getName(), "WAITING", 0.0F));
+                    if (!PRELOADS.containsKey(selected)) {
+                        Map<UUID, PreloadStatus> statuses = new LinkedHashMap<>();
+                        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                            statuses.put(player.getUUID(), new PreloadStatus(
+                                    player.getUUID().toString(),
+                                    player.getGameProfile().getName(), "WAITING", 0.0F));
+                        }
+                        PRELOADS.put(selected, statuses);
                     }
                 }
                 VttShowPreloadPayload preload = new VttShowPreloadPayload(selected);
@@ -161,12 +164,14 @@ public final class VttServerShowHandler {
         if (player == null) return;
         PacketDistributor.sendToPlayer(player, current());
         synchronized (VttServerShowHandler.class) {
-            if (!preparedPath.isBlank()) {
-                PRELOAD_STATUSES.put(player.getUUID(), new PreloadStatus(
-                        player.getUUID().toString(), player.getGameProfile().getName(),
-                        "WAITING", 0.0F));
-                PacketDistributor.sendToPlayer(player,
-                        new VttShowPreloadPayload(preparedPath));
+            if (!PRELOADS.isEmpty()) {
+                for (Map.Entry<String, Map<UUID, PreloadStatus>> entry : PRELOADS.entrySet()) {
+                    entry.getValue().put(player.getUUID(), new PreloadStatus(
+                            player.getUUID().toString(), player.getGameProfile().getName(),
+                            "WAITING", 0.0F));
+                    PacketDistributor.sendToPlayer(player,
+                            new VttShowPreloadPayload(entry.getKey()));
+                }
                 broadcastPreloadStatus(player.getServer());
             }
         }
@@ -189,10 +194,11 @@ public final class VttServerShowHandler {
             default -> "FAILED";
         };
         synchronized (VttServerShowHandler.class) {
-            if (preparedPath.isBlank() || !preparedPath.equals(payload.relativePath())) return;
+            Map<UUID, PreloadStatus> statuses = PRELOADS.get(payload.relativePath());
+            if (statuses == null) return;
             float progress = Float.isFinite(payload.progress())
                     ? Math.max(0.0F, Math.min(1.0F, payload.progress())) : 0.0F;
-            PRELOAD_STATUSES.put(player.getUUID(), new PreloadStatus(
+            statuses.put(player.getUUID(), new PreloadStatus(
                     player.getUUID().toString(), player.getGameProfile().getName(),
                     status, progress));
         }
@@ -209,10 +215,15 @@ public final class VttServerShowHandler {
 
     private static synchronized void broadcastPreloadStatus(MinecraftServer server) {
         if (server == null) return;
-        PRELOAD_STATUSES.keySet().removeIf(
-                playerId -> server.getPlayerList().getPlayer(playerId) == null);
+        PRELOADS.values().forEach(statuses -> statuses.keySet().removeIf(
+                playerId -> server.getPlayerList().getPlayer(playerId) == null));
+        List<PreparedPreloadStatus> snapshot = new ArrayList<>();
+        for (Map.Entry<String, Map<UUID, PreloadStatus>> entry : PRELOADS.entrySet()) {
+            snapshot.add(new PreparedPreloadStatus(entry.getKey(),
+                    List.copyOf(entry.getValue().values())));
+        }
         VttShowPreloadStatusPayload payload = new VttShowPreloadStatusPayload(
-                preparedPath, GSON.toJson(PRELOAD_STATUSES.values()));
+                GSON.toJson(snapshot));
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             PacketDistributor.sendToPlayer(player, payload);
         }
@@ -221,9 +232,11 @@ public final class VttServerShowHandler {
     private static synchronized boolean allPlayersReady(
             String selected, MinecraftServer server
     ) {
-        if (server == null || !selected.equals(preparedPath)) return false;
+        if (server == null) return false;
+        Map<UUID, PreloadStatus> statuses = PRELOADS.get(selected);
+        if (statuses == null) return false;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            PreloadStatus status = PRELOAD_STATUSES.get(player.getUUID());
+            PreloadStatus status = statuses.get(player.getUUID());
             if (status == null || !"READY".equals(status.status())) return false;
         }
         return true;
@@ -262,4 +275,5 @@ public final class VttServerShowHandler {
     private record PreloadStatus(
             String playerId, String playerName, String status, float progress
     ) {}
+    private record PreparedPreloadStatus(String relativePath, List<PreloadStatus> players) {}
 }

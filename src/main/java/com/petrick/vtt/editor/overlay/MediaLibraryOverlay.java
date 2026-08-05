@@ -25,6 +25,8 @@ public final class MediaLibraryOverlay {
     private static final int TEXT = 0xFFF4F4F4;
     private static final int MUTED = 0xFF99999F;
     private Tab tab = Tab.MUSICS;
+    /** The preload panel is optional: closing it must not discard queued videos. */
+    private boolean preloadStatusOpen;
     private boolean draggingProgress;
     private boolean draggingVolume;
     private double draggedProgressRatio;
@@ -145,7 +147,8 @@ public final class MediaLibraryOverlay {
                         bounds.bottom() - 60, 0xFFFF6666, false);
             }
         }
-        if (tab == Tab.SHOWS && !VttClientShowState.preloadPath().isBlank()) {
+        if (tab == Tab.SHOWS && preloadStatusOpen
+                && !VttClientShowState.preloadVideos().isEmpty()) {
             renderPreloadStatus(context, font, bounds);
         }
     }
@@ -156,14 +159,11 @@ public final class MediaLibraryOverlay {
                                 VTTSession session) {
         Bounds bounds = bounds(screenWidth, screenHeight);
         if (!bounds.contains(mouseX, mouseY)) {
-            if (tab != Tab.SHOWS || VttClientShowState.preloadPath().isBlank()) return false;
+            if (tab != Tab.SHOWS || !preloadStatusOpen
+                    || VttClientShowState.preloadVideos().isEmpty()) return false;
             Bounds status = preloadStatusBounds(bounds, screenWidth, screenHeight);
             if (!status.contains(mouseX, mouseY)) return false;
-            if (inside(mouseX, mouseY, status.x + 8, status.bottom() - 27,
-                    status.width - 16, 19)) {
-                VttClientShowState.forceShow(session, VttClientShowState.preloadPath());
-            }
-            return true;
+            return handlePreloadStatusClick(mouseX, mouseY, status, session);
         }
         if (inside(mouseX, mouseY, bounds.x + 150, bounds.y + 7, 92, 22)) {
             tab = Tab.MUSICS;
@@ -204,10 +204,9 @@ public final class MediaLibraryOverlay {
             }
         } else {
             Bounds status = preloadStatusBounds(bounds, screenWidth, screenHeight);
-            if (!VttClientShowState.preloadPath().isBlank()
-                    && inside(mouseX, mouseY, status.x + 8, status.bottom() - 27,
-                    status.width - 16, 19)) {
-                VttClientShowState.forceShow(session, VttClientShowState.preloadPath());
+            if (preloadStatusOpen && !VttClientShowState.preloadVideos().isEmpty()
+                    && status.contains(mouseX, mouseY)) {
+                handlePreloadStatusClick(mouseX, mouseY, status, session);
                 return true;
             }
             List<AssetLibraryEntry> entries = entries(scan);
@@ -218,6 +217,7 @@ public final class MediaLibraryOverlay {
                 AssetLibraryEntry entry = entries.get(row);
                 if (entry.fileType() == AssetLibraryFileType.VIDEO) {
                     VttClientShowState.preload(session, entry.relativePath());
+                    preloadStatusOpen = true;
                 }
             } else if (row >= 0 && row < Math.min(entries.size(), 10)
                     && inside(mouseX, mouseY, bounds.right() - 78,
@@ -306,53 +306,83 @@ public final class MediaLibraryOverlay {
     }
 
     private void renderPreloadStatus(VRenderContext context, Font font, Bounds owner) {
-        List<VttClientShowState.PreloadClientStatus> statuses =
-                VttClientShowState.preloadStatuses();
+        List<VttClientShowState.PreparedPreloadStatus> videos =
+                VttClientShowState.preloadVideos();
         Bounds panel = preloadStatusBounds(owner, context.screenWidth(), context.screenHeight());
         context.graphics().fill(panel.x, panel.y, panel.right(), panel.bottom(), PANEL);
         border(context, panel.x, panel.y, panel.width, panel.height,
                 EditorHudTheme.outline());
-        context.graphics().drawString(font, "Client preload", panel.x + 8,
+        context.graphics().drawString(font, "Video preload", panel.x + 8,
                 panel.y + 8, TEXT, false);
+        int closeX = panel.right() - 31;
+        context.graphics().fill(closeX, panel.y + 3, panel.right() - 4, panel.y + 22,
+                HEADER);
+        border(context, closeX, panel.y + 3, 27, 19, EditorHudTheme.outline());
+        context.graphics().drawCenteredString(font, "X", closeX + 13, panel.y + 8, TEXT);
         int y = panel.y + 25;
-        if (statuses.isEmpty()) {
-            context.graphics().drawString(font, "Waiting for clients...",
+        if (videos.isEmpty()) {
+            context.graphics().drawString(font, "Waiting for videos...",
                     panel.x + 8, y, MUTED, false);
         }
-        for (int index = 0; index < Math.min(12, statuses.size()); index++) {
-            VttClientShowState.PreloadClientStatus status = statuses.get(index);
-            String progress = switch (status.status()) {
-                case "READY" -> "Ready";
-                case "FAILED" -> "Failed";
-                case "LOADING" -> Math.round(status.progress() * 100.0F) + "%";
-                default -> "Waiting";
-            };
-            int color = "FAILED".equals(status.status()) ? 0xFFFF6666
-                    : "READY".equals(status.status()) ? 0xFF77FF99 : TEXT;
-            context.graphics().drawString(font, trim(status.playerName(), 16),
-                    panel.x + 8, y, color, false);
-            context.graphics().drawString(font, progress,
-                    panel.right() - 8 - font.width(progress), y, color, false);
-            y += 16;
+        for (int index = 0; index < Math.min(6, videos.size()); index++) {
+            VttClientShowState.PreparedPreloadStatus video = videos.get(index);
+            int rowY = y + index * 35;
+            String state = preloadState(video);
+            int color = "Failed".equals(state) ? 0xFFFF6666
+                    : "Ready".equals(state) ? 0xFF77FF99 : TEXT;
+            context.graphics().drawString(font, trim(video.relativePath(), 26),
+                    panel.x + 8, rowY, color, false);
+            context.graphics().drawString(font, state, panel.x + 8, rowY + 13, color, false);
+            context.graphics().fill(panel.right() - 78, rowY + 3, panel.right() - 8,
+                    rowY + 21, 0xE0553828);
+            border(context, panel.right() - 78, rowY + 3, 70, 18,
+                    EditorHudTheme.outline());
+            context.graphics().drawCenteredString(font, "Force Show", panel.right() - 43,
+                    rowY + 8, TEXT);
         }
-        int buttonY = panel.bottom() - 27;
-        context.graphics().fill(panel.x + 8, buttonY, panel.right() - 8,
-                buttonY + 19, 0xE0553828);
-        border(context, panel.x + 8, buttonY, panel.width - 16, 19,
-                EditorHudTheme.outline());
-        context.graphics().drawCenteredString(font, "Force Show",
-                panel.x + panel.width / 2, buttonY + 6, TEXT);
     }
 
     private Bounds preloadStatusBounds(Bounds owner, int screenWidth, int screenHeight) {
-        int count = Math.min(12, VttClientShowState.preloadStatuses().size());
-        int height = Math.max(74, 25 + Math.max(1, count) * 16 + 35);
-        int width = 210;
+        int count = Math.min(6, VttClientShowState.preloadVideos().size());
+        int height = Math.max(64, 27 + Math.max(1, count) * 35 + 4);
+        int width = 270;
         int x = owner.right() + 8 + width <= screenWidth
                 ? owner.right() + 8 : owner.x - width - 8;
         x = Math.max(4, Math.min(screenWidth - width - 4, x));
         int y = Math.max(4, Math.min(screenHeight - height - 4, owner.y));
         return new Bounds(x, y, width, height);
+    }
+
+    private boolean handlePreloadStatusClick(double mouseX, double mouseY, Bounds panel,
+                                             VTTSession session) {
+        if (inside(mouseX, mouseY, panel.right() - 35, panel.y, 35, 26)) {
+            preloadStatusOpen = false;
+            return true;
+        }
+        List<VttClientShowState.PreparedPreloadStatus> videos =
+                VttClientShowState.preloadVideos();
+        for (int index = 0; index < Math.min(6, videos.size()); index++) {
+            int rowY = panel.y + 25 + index * 35;
+            if (inside(mouseX, mouseY, panel.right() - 78, rowY + 3, 70, 18)) {
+                VttClientShowState.forceShow(session, videos.get(index).relativePath());
+                return true;
+            }
+        }
+        return true;
+    }
+
+    private String preloadState(VttClientShowState.PreparedPreloadStatus video) {
+        if (video.players().isEmpty()) return "Waiting";
+        if (video.players().stream().anyMatch(status -> "FAILED".equals(status.status()))) {
+            return "Failed";
+        }
+        if (video.players().stream().allMatch(status -> "READY".equals(status.status()))) {
+            return "Ready";
+        }
+        long progress = Math.round(video.players().stream()
+                .mapToDouble(VttClientShowState.PreloadClientStatus::progress)
+                .average().orElse(0.0) * 100.0);
+        return progress > 0 ? progress + "%" : "Waiting";
     }
 
     private Bounds bounds(int screenWidth, int screenHeight) {
