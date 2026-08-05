@@ -41,6 +41,14 @@ public final class VttClientShowState {
     private static String lastReportedPreloadStatus = "";
     private static float lastReportedPreloadProgress = -1.0F;
     private static long lastPreloadReportAt;
+    private static long lastServerChangedAt;
+    private static long lastReturnedPlaybackMillis;
+    private static long lastAudioSyncAt;
+    private static long synchronizationSuppressedUntil;
+    private static int softVideoCorrections;
+    private static int hardVideoCorrections;
+    private static int audioCorrections;
+    private static long lastCheckpointDeltaMillis;
 
     private VttClientShowState() {}
 
@@ -193,6 +201,33 @@ public final class VttClientShowState {
 
     public static synchronized void accept(VttShowUpdatePayload update) {
         if (update == null) return;
+        boolean checkpoint = update.changedAtMillis() == lastServerChangedAt
+                && update.active() == targetActive && update.playing() == playing
+                && update.loop() == loop
+                && (update.relativePath() == null || update.relativePath().isBlank()
+                || update.relativePath().equals(relativePath));
+        if (checkpoint && playing) {
+            long localPosition = rawPlaybackMillis();
+            long delta = update.positionMillis() - localPosition;
+            lastCheckpointDeltaMillis = delta;
+            long absoluteDelta = Math.abs(delta);
+            if (absoluteDelta < 120L) return;
+            if (absoluteDelta < 750L) {
+                playbackPositionMillis = Math.max(lastReturnedPlaybackMillis,
+                        localPosition + delta / 4L);
+                playbackReceivedAtMillis = System.currentTimeMillis();
+                softVideoCorrections++;
+                return;
+            }
+            playbackPositionMillis = Math.max(0L, update.positionMillis());
+            playbackReceivedAtMillis = System.currentTimeMillis();
+            lastReturnedPlaybackMillis = playbackPositionMillis;
+            hardVideoCorrections++;
+            synchronizationSuppressedUntil = System.currentTimeMillis() + 1_500L;
+            if (isVideo()) VttVideoFrameService.requestSeek(playbackPositionMillis);
+            synchronizeVideoAudioClock(true);
+            return;
+        }
         float current = alpha();
         if (update.relativePath() != null && !update.relativePath().isBlank()) {
             relativePath = update.relativePath();
@@ -202,8 +237,11 @@ public final class VttClientShowState {
         playing = update.playing();
         loop = update.loop();
         endCommandSent = false;
+        lastServerChangedAt = update.changedAtMillis();
         playbackPositionMillis = Math.max(0L, update.positionMillis());
         playbackReceivedAtMillis = System.currentTimeMillis();
+        synchronizationSuppressedUntil = playbackReceivedAtMillis + 1_500L;
+        lastReturnedPlaybackMillis = playbackPositionMillis;
         if (isVideo()) VttVideoFrameService.requestSeek(playbackPositionMillis);
         syncVideoAudio();
         transitionStartedAt = System.currentTimeMillis();
@@ -246,6 +284,25 @@ public final class VttClientShowState {
         return path != null && path.equals(preloadPath) && !preloadStatuses.isEmpty()
                 && preloadStatuses.stream().allMatch(status -> "READY".equals(status.status()));
     }
+    public static void tickPlaybackSynchronization() {
+        if (!targetActive || !playing || !isVideo()) return;
+        long now = System.currentTimeMillis();
+        if (now < synchronizationSuppressedUntil) return;
+        if (now - lastAudioSyncAt < 1_000L) return;
+        lastAudioSyncAt = now;
+        synchronizeVideoAudioClock(false);
+    }
+    public static String videoSyncDiagnostics() {
+        long authority = playbackMillis();
+        long videoDelta = VttVideoFrameService.displayedPositionMillis() - authority;
+        long audioDelta = VIDEO_AUDIO.isPlaying()
+                ? Math.round(VIDEO_AUDIO.positionSeconds() * 1_000.0) - authority : 0L;
+        return "Video sync: frame " + signed(videoDelta) + "ms, audio "
+                + signed(audioDelta) + "ms, checkpoint "
+                + signed(lastCheckpointDeltaMillis) + "ms, corrections "
+                + softVideoCorrections + "/" + hardVideoCorrections + "/"
+                + audioCorrections;
+    }
     public static void setVideoVolume(float value, boolean save) {
         videoVolume = Math.max(0.0F, Math.min(1.0F, value));
         applyVideoVolume(alpha());
@@ -256,11 +313,15 @@ public final class VttClientShowState {
         applyVideoVolume(alpha());
         VttVideoPreferences.save(videoVolume, videoMuted);
     }
-    public static long playbackMillis() {
-        long position = playing ? playbackPositionMillis + Math.max(0L,
-                System.currentTimeMillis() - playbackReceivedAtMillis) : playbackPositionMillis;
+    public static synchronized long playbackMillis() {
+        long position = rawPlaybackMillis();
         long duration = VttVideoFrameService.durationMillis();
-        return duration > 0L ? Math.min(position, duration) : position;
+        if (duration > 0L) position = Math.min(position, duration);
+        if (playing) {
+            position = Math.max(lastReturnedPlaybackMillis, position);
+            lastReturnedPlaybackMillis = position;
+        }
+        return position;
     }
     public static boolean isVideo() { return relativePath.toLowerCase().endsWith(".mp4"); }
     public static boolean blocksInput() { return targetActive || alpha() > 0.01F; }
@@ -297,6 +358,26 @@ public final class VttClientShowState {
                 * Math.max(0.0F, Math.min(1.0F, presentationAlpha)));
     }
 
+    private static long rawPlaybackMillis() {
+        return playing ? playbackPositionMillis + Math.max(0L,
+                System.currentTimeMillis() - playbackReceivedAtMillis) : playbackPositionMillis;
+    }
+
+    private static void synchronizeVideoAudioClock(boolean force) {
+        if (!VIDEO_AUDIO.isPlaying() || VIDEO_AUDIO.durationSeconds() <= 0.0) return;
+        long authority = rawPlaybackMillis();
+        long audio = Math.round(VIDEO_AUDIO.positionSeconds() * 1_000.0);
+        long delta = authority - audio;
+        if (!force && Math.abs(delta) < 900L) return;
+        double ratio = authority / (VIDEO_AUDIO.durationSeconds() * 1_000.0);
+        VIDEO_AUDIO.seek(Math.max(0.0, Math.min(1.0, ratio)));
+        audioCorrections++;
+    }
+
+    private static String signed(long value) {
+        return value > 0L ? "+" + value : Long.toString(value);
+    }
+
     public static synchronized void reset() {
         relativePath = "";
         targetActive = false;
@@ -313,6 +394,14 @@ public final class VttClientShowState {
         lastReportedPreloadStatus = "";
         lastReportedPreloadProgress = -1.0F;
         lastPreloadReportAt = 0L;
+        lastServerChangedAt = 0L;
+        lastReturnedPlaybackMillis = 0L;
+        lastAudioSyncAt = 0L;
+        synchronizationSuppressedUntil = 0L;
+        softVideoCorrections = 0;
+        hardVideoCorrections = 0;
+        audioCorrections = 0;
+        lastCheckpointDeltaMillis = 0L;
     }
 
     public record PreloadClientStatus(

@@ -15,6 +15,7 @@ public final class VttServerPersistenceEvents {
     public static void onServerTick(ServerTickEvent.Post event) {
         VttServerTabletopState.tickPersistenceIfInitialized();
         VttServerAssetSyncService.tick();
+        VttServerShowHandler.tick(event.getServer());
     }
 
     @SubscribeEvent

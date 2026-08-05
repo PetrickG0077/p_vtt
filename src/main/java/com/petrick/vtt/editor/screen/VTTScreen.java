@@ -884,6 +884,11 @@ public final class VTTScreen extends Screen {
             context.graphics().drawCenteredString(this.font, "Close",
                     x + 33, 22, 0xFFFFFFFF);
         }
+        if (VttClientShowState.isVideo() && panelVisibility.isDebugVisible()) {
+            context.graphics().drawString(this.font,
+                    VttClientShowState.videoSyncDiagnostics(), 10,
+                    context.screenHeight() - 44, 0xFF80D8FF, false);
+        }
     }
 
     private String formatMediaTime(long millis) {

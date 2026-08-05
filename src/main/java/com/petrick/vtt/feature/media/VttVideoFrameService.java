@@ -59,6 +59,7 @@ public final class VttVideoFrameService {
     private static int width;
     private static int height;
     private static int cachedFrameIndex = -1;
+    private static volatile long displayedPositionMillis;
     private static String failure = "";
 
     private VttVideoFrameService() {}
@@ -80,7 +81,9 @@ public final class VttVideoFrameService {
             int index = findCachedFrameIndex(preload.frames, requestedPositionMillis);
             if (index != cachedFrameIndex) {
                 cachedFrameIndex = index;
-                pendingFrame = preload.frames.get(index).frame();
+                CachedFrame cached = preload.frames.get(index);
+                displayedPositionMillis = cached.timestampMillis();
+                pendingFrame = cached.frame();
             }
         }
         uploadNewestFrame();
@@ -91,6 +94,7 @@ public final class VttVideoFrameService {
     public static boolean isLoading() { return loading; }
     public static long loadingStartedAt() { return loadingStartedAt; }
     public static long durationMillis() { return durationMillis; }
+    public static long displayedPositionMillis() { return displayedPositionMillis; }
     public static void requestSeek(long positionMillis) {
         seekRequestMillis = Math.max(0L, positionMillis);
     }
@@ -138,6 +142,7 @@ public final class VttVideoFrameService {
         width = 0;
         height = 0;
         cachedFrameIndex = -1;
+        displayedPositionMillis = 0L;
         failure = "";
         loading = false;
         loadingStartedAt = 0L;

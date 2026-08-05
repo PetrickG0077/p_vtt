@@ -32,6 +32,7 @@ public final class VttServerShowHandler {
     private static long changedAtMillis;
     private static String preparedPath = "";
     private static final Map<UUID, PreloadStatus> PRELOAD_STATUSES = new LinkedHashMap<>();
+    private static long lastCheckpointAtMillis;
 
     private VttServerShowHandler() {}
 
@@ -169,6 +170,14 @@ public final class VttServerShowHandler {
                 broadcastPreloadStatus(player.getServer());
             }
         }
+    }
+
+    public static synchronized void tick(MinecraftServer server) {
+        if (server == null || !active || !playing) return;
+        long now = System.currentTimeMillis();
+        if (now - lastCheckpointAtMillis < 2_000L) return;
+        lastCheckpointAtMillis = now;
+        broadcast(server);
     }
 
     public static void handlePreloadProgress(
