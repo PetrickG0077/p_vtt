@@ -6,6 +6,7 @@ import com.petrick.vtt.feature.tabletop.VttSceneLighting;
 import com.petrick.vtt.platform.render.VRenderContext;
 import net.minecraft.client.gui.Font;
 import com.petrick.vtt.network.client.VttClientShowState;
+import com.petrick.vtt.feature.media.VttVideoPreferences;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
@@ -158,6 +159,12 @@ public final class EditorSettingsOverlay {
             return Interaction.CONSUMED;
         }
         if (selectedCategory == Category.MEDIA) {
+            for (int index = 0; index < VttVideoPreferences.Quality.values().length; index++) {
+                if (mediaQualityBounds(panel, index).contains(mouseX, mouseY)) {
+                    VttClientShowState.setVideoQuality(VttVideoPreferences.Quality.values()[index]);
+                    return Interaction.CONSUMED;
+                }
+            }
             Bounds cache = mediaCacheSliderBounds(panel);
             if (cache.contains(mouseX, mouseY)) {
                 draggingMediaCache = true;
@@ -743,6 +750,20 @@ public final class EditorSettingsOverlay {
         int contentX = panel.x() + CATEGORY_WIDTH + 20;
         context.graphics().drawString(font, "Media", contentX,
                 panel.y() + 31, TEXT, false);
+        context.graphics().drawString(font, "Video Quality", contentX,
+                panel.y() + 50, TEXT, false);
+        VttVideoPreferences.Quality selected = VttClientShowState.videoQuality();
+        for (int index = 0; index < VttVideoPreferences.Quality.values().length; index++) {
+            VttVideoPreferences.Quality quality = VttVideoPreferences.Quality.values()[index];
+            Bounds qualityBounds = mediaQualityBounds(panel, index);
+            boolean active = selected == quality;
+            context.graphics().fill(qualityBounds.x(), qualityBounds.y(), qualityBounds.right(),
+                    qualityBounds.bottom(), active ? EditorHudTheme.selection() : CONTROL_BACKGROUND);
+            border(context, qualityBounds, active ? EditorHudTheme.outline() : 0xFF66666C);
+            context.graphics().drawCenteredString(font, quality.displayName(),
+                    qualityBounds.x() + qualityBounds.width() / 2, qualityBounds.y() + 5,
+                    active ? TEXT : MUTED);
+        }
         Bounds slider = mediaCacheSliderBounds(panel);
         int memory = VttClientShowState.videoCacheMemoryMb();
         context.graphics().drawString(font,
@@ -752,16 +773,16 @@ public final class EditorSettingsOverlay {
                 (memory - 64) / (double) (1024 - 64), true);
         context.graphics().drawString(font,
                 "Higher values keep better resolution and FPS",
-                contentX, panel.y() + 92, MUTED, false);
+                contentX, panel.y() + 124, MUTED, false);
         context.graphics().drawString(font,
                 "for long videos, but use more client RAM.",
-                contentX, panel.y() + 105, MUTED, false);
+                contentX, panel.y() + 137, MUTED, false);
         context.graphics().drawString(font,
                 "Changing this value clears prepared video frames.",
-                contentX, panel.y() + 130, 0xFFFFCC66, false);
+                contentX, panel.y() + 162, 0xFFFFCC66, false);
         context.graphics().drawString(font,
                 "The cache is also cleared when leaving the world.",
-                contentX, panel.y() + 143, MUTED, false);
+                contentX, panel.y() + 175, MUTED, false);
     }
 
     private void updateMediaCache(Bounds slider, double mouseX) {
@@ -1061,7 +1082,12 @@ public final class EditorSettingsOverlay {
 
     private Bounds mediaCacheSliderBounds(Bounds panel) {
         return new Bounds(panel.x() + CATEGORY_WIDTH + 20,
-                panel.y() + 68, 210, 10);
+                panel.y() + 100, 210, 10);
+    }
+
+    private Bounds mediaQualityBounds(Bounds panel, int index) {
+        return new Bounds(panel.x() + CATEGORY_WIDTH + 20 + index * 72,
+                panel.y() + 60, 68, 20);
     }
 
     private Bounds darknessColorBounds(Bounds panel, int index) {

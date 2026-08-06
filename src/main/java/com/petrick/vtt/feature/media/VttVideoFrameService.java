@@ -29,9 +29,10 @@ import java.util.Comparator;
  * the render thread only uploads the newest already-decoded frame.
  */
 public final class VttVideoFrameService {
-    private static final int TARGET_FPS = 15;
-    private static final int MAX_WIDTH = 960;
-    private static final int MAX_PRELOAD_WIDTH = 640;
+    private static volatile int targetFps = VttVideoPreferences.Quality.BALANCED.targetFps();
+    private static volatile int maxWidth = VttVideoPreferences.Quality.BALANCED.playbackWidth();
+    private static volatile int maxPreloadWidth =
+            VttVideoPreferences.Quality.BALANCED.preloadWidth();
     private static volatile long preloadMemoryLimitBytes =
             VttVideoPreferences.DEFAULT_CACHE_MEMORY_MB * 1024L * 1024L;
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor(task -> {
@@ -146,6 +147,20 @@ public final class VttVideoFrameService {
         PRELOADS.clear();
     }
 
+    /** Applies a local playback profile and invalidates frames built for the old profile. */
+    public static void setQuality(VttVideoPreferences.Quality quality) {
+        VttVideoPreferences.Quality safe = quality == null
+                ? VttVideoPreferences.Quality.BALANCED : quality;
+        if (targetFps == safe.targetFps() && maxWidth == safe.playbackWidth()
+                && maxPreloadWidth == safe.preloadWidth()) return;
+        targetFps = safe.targetFps();
+        maxWidth = safe.playbackWidth();
+        maxPreloadWidth = safe.preloadWidth();
+        resetPlayback();
+        preloadGeneration++;
+        PRELOADS.clear();
+    }
+
     public static void clear() {
         resetPlayback();
         preloadGeneration++;
@@ -201,7 +216,7 @@ public final class VttVideoFrameService {
             double durationSeconds = Math.max(0.001,
                     grab.getVideoTrack().getMeta().getTotalDuration());
             double sourceFps = totalFrames / durationSeconds;
-            int targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * TARGET_FPS));
+            int targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * targetFps));
             PictureWithMetadata firstMetadata = grab.getNativeFrameWithMetadata();
             if (firstMetadata == null) throw new IllegalArgumentException("Video has no frames");
             Picture first = firstMetadata.getPicture();
@@ -210,12 +225,12 @@ public final class VttVideoFrameService {
             long bytesPerFrame = Math.max(1L, memoryLimit / targetFrames);
             int memoryWidth = (int) Math.floor(Math.sqrt(bytesPerFrame * aspect / 4.0));
             int preloadWidth = Math.max(160,
-                    Math.min(MAX_PRELOAD_WIDTH, memoryWidth));
+                    Math.min(maxPreloadWidth, memoryWidth));
             long minimumFrameBytes = Math.max(1L, Math.round(
                     preloadWidth * (preloadWidth / aspect) * 4.0));
             int maximumCachedFrames = Math.max(1,
                     (int) Math.min(Integer.MAX_VALUE, memoryLimit / minimumFrameBytes));
-            int preloadFps = Math.max(2, Math.min(TARGET_FPS,
+            int preloadFps = Math.max(2, Math.min(targetFps,
                     (int) Math.floor(maximumCachedFrames / durationSeconds)));
             targetFrames = Math.max(1, (int) Math.ceil(durationSeconds * preloadFps));
             List<CachedFrame> frames = new ArrayList<>(targetFrames);
@@ -292,7 +307,7 @@ public final class VttVideoFrameService {
                     Picture sought = grab.getNativeFrame();
                     decodedFrame = Math.max(0L,
                             Math.round(requestedSeek * sourceFps / 1_000.0));
-                    publishedBucket = requestedSeek * TARGET_FPS / 1_000L;
+                    publishedBucket = requestedSeek * targetFps / 1_000L;
                     publish(sought, taskGeneration);
                     continue;
                 }
@@ -301,7 +316,7 @@ public final class VttVideoFrameService {
                     continue;
                 }
                 long requestedMillis = requestedPositionMillis;
-                long desiredBucket = requestedMillis * TARGET_FPS / 1_000L;
+                long desiredBucket = requestedMillis * targetFps / 1_000L;
                 if (desiredBucket <= publishedBucket) {
                     Thread.sleep(2L);
                     continue;
@@ -389,7 +404,7 @@ public final class VttVideoFrameService {
     }
 
     private static DecodedFrame convert(Picture source) {
-        return convert(source, MAX_WIDTH);
+        return convert(source, maxWidth);
     }
 
     private static DecodedFrame convert(Picture source, int maximumWidth) {
@@ -428,7 +443,7 @@ public final class VttVideoFrameService {
         private volatile boolean complete;
         private volatile String failure = "";
         private volatile long durationMillis;
-        private volatile int framesPerSecond = TARGET_FPS;
+        private volatile int framesPerSecond = targetFps;
         private volatile List<CachedFrame> frames = List.of();
     }
     public record Frame(ResourceLocation texture, int width, int height) {

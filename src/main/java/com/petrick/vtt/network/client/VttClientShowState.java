@@ -39,8 +39,10 @@ public final class VttClientShowState {
     private static float videoVolume = VIDEO_PREFERENCES.volume();
     private static boolean videoMuted = VIDEO_PREFERENCES.muted();
     private static int videoCacheMemoryMb = VIDEO_PREFERENCES.cacheMemoryMb();
+    private static VttVideoPreferences.Quality videoQuality = VIDEO_PREFERENCES.quality();
     static {
         VttVideoFrameService.setPreloadMemoryLimitMb(videoCacheMemoryMb);
+        VttVideoFrameService.setQuality(videoQuality);
     }
     private static float transitionStartAlpha;
     private static long transitionStartedAt;
@@ -321,18 +323,24 @@ public final class VttClientShowState {
     public static void setVideoVolume(float value, boolean save) {
         videoVolume = Math.max(0.0F, Math.min(1.0F, value));
         applyVideoVolume(alpha());
-        if (save) VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
+        if (save) saveVideoPreferences();
     }
     public static void toggleVideoMute() {
         videoMuted = !videoMuted;
         applyVideoVolume(alpha());
-        VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
+        saveVideoPreferences();
     }
     public static int videoCacheMemoryMb() { return videoCacheMemoryMb; }
     public static void setVideoCacheMemoryMb(int value) {
         videoCacheMemoryMb = VttVideoPreferences.clampCacheMemory(value);
         VttVideoFrameService.setPreloadMemoryLimitMb(videoCacheMemoryMb);
-        VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb);
+        saveVideoPreferences();
+    }
+    public static VttVideoPreferences.Quality videoQuality() { return videoQuality; }
+    public static void setVideoQuality(VttVideoPreferences.Quality quality) {
+        videoQuality = quality == null ? VttVideoPreferences.Quality.BALANCED : quality;
+        VttVideoFrameService.setQuality(videoQuality);
+        saveVideoPreferences();
     }
     public static synchronized long playbackMillis() {
         long position = rawPlaybackMillis();
@@ -397,6 +405,10 @@ public final class VttClientShowState {
 
     private static String signed(long value) {
         return value > 0L ? "+" + value : Long.toString(value);
+    }
+
+    private static void saveVideoPreferences() {
+        VttVideoPreferences.save(videoVolume, videoMuted, videoCacheMemoryMb, videoQuality);
     }
 
     public static synchronized void reset() {
