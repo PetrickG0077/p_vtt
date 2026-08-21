@@ -90,12 +90,15 @@ public final class CanvasTokenContextMenuOverlay {
             row(context, font, 2, "Color  >", true);
             row(context, font, 3, "Visible", true);
             toggle(context, x + MAIN_WIDTH - 24, y + 7 + 3 * ROW_HEIGHT, token.visible());
-            row(context, font, 4, "Vision  >", true);
-            row(context, font, 5, "Owner  >", true);
-            row(context, font, 6, "Copy", true);
-            row(context, font, 7, "Cut", true);
-            row(context, font, 8, "Duplicate", true);
-            row(context, font, 9, "Delete", true);
+            row(context, font, 4, "Above fog", true);
+            toggle(context, x + MAIN_WIDTH - 24, y + 7 + 4 * ROW_HEIGHT,
+                    sceneObject.getState().isRenderAboveMasks());
+            row(context, font, 5, "Vision  >", true);
+            row(context, font, 6, "Owner  >", true);
+            row(context, font, 7, "Copy", true);
+            row(context, font, 8, "Cut", true);
+            row(context, font, 9, "Duplicate", true);
+            row(context, font, 10, "Delete", true);
         } else {
             row(context, font, 0, "States  >", true);
             row(context, font, 1, "Color  >", true);
@@ -163,12 +166,13 @@ public final class CanvasTokenContextMenuOverlay {
                 case 1 -> openSubmenu(Submenu.STATES);
                 case 2 -> openSubmenu(Submenu.COLOR);
                 case 3 -> new Interaction(Action.TOGGLE_VISIBLE, null, 0, true);
-                case 4 -> openSubmenu(Submenu.VISION);
-                case 5 -> openSubmenu(Submenu.OWNER);
-                case 6 -> new Interaction(Action.COPY, null, 0, true);
-                case 7 -> new Interaction(Action.CUT, null, 0, true);
-                case 8 -> new Interaction(Action.DUPLICATE, null, 0, true);
-                case 9 -> new Interaction(Action.DELETE, null, 0, true);
+                case 4 -> new Interaction(Action.TOGGLE_ABOVE_FOG, null, 0, true);
+                case 5 -> openSubmenu(Submenu.VISION);
+                case 6 -> openSubmenu(Submenu.OWNER);
+                case 7 -> new Interaction(Action.COPY, null, 0, true);
+                case 8 -> new Interaction(Action.CUT, null, 0, true);
+                case 9 -> new Interaction(Action.DUPLICATE, null, 0, true);
+                case 10 -> new Interaction(Action.DELETE, null, 0, true);
                 default -> Interaction.handled();
             };
         }
@@ -598,7 +602,7 @@ public final class CanvasTokenContextMenuOverlay {
         return colorPicker.mouseReleased();
     }
 
-    private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 10 : 3); }
+    private int mainHeight() { return 10 + ROW_HEIGHT * (masterMenu ? 11 : 3); }
 
     private void fillPanel(VRenderContext context, int px, int py, int width, int height) {
         context.graphics().fill(px, py, px + width, py + height, PANEL);
@@ -621,7 +625,7 @@ public final class CanvasTokenContextMenuOverlay {
     public enum Action {
         NONE, EDIT, SET_STATE, SAVE_STATE, SAVE_STATE_TO_TOKEN,
         SAVE_ALL_STATES_TO_TOKEN, REMOVE_STATE_FROM_TOKEN, RESET_INSTANCE_STATE, SET_COLOR,
-        TOGGLE_VISIBLE, TOGGLE_VISION,
+        TOGGLE_VISIBLE, TOGGLE_ABOVE_FOG, TOGGLE_VISION,
         TOGGLE_OWN_LIGHT, SET_VISION_INNER, SET_VISION_OUTER, SET_OWNER,
         COPY, CUT, DUPLICATE, DELETE
     }

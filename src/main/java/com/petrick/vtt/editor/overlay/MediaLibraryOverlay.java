@@ -233,6 +233,12 @@ public final class MediaLibraryOverlay {
         return true;
     }
 
+    /** A visible preload panel owns pointer input so HUD controls cannot click through it. */
+    public boolean isPreloadStatusOpen() {
+        return tab == Tab.SHOWS && preloadStatusOpen
+                && !VttClientShowState.preloadVideos().isEmpty();
+    }
+
     public boolean mouseDragged(double mouseX, double mouseY, int screenWidth,
                                 int screenHeight, VTTSession session) {
         if (!draggingProgress && !draggingVolume) return false;

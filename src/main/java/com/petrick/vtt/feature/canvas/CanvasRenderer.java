@@ -97,7 +97,7 @@ public final class CanvasRenderer {
         sceneBackgroundRenderer.render(context, tabletopScene);
         renderObjects(context, tabletopScene, scene, selectionManager, editorSelectionVisible,
                 resizeHandlesVisible, attachmentMarkersVisible,
-                masterView, authoritativeVisibleObjectIds);
+                masterView, authoritativeVisibleObjectIds, false);
         sceneWallRenderer.render(context, tabletopScene, masterView);
         sceneDoorRenderer.render(context, tabletopScene, masterView);
         if (grid != null && grid.isTopLayer()) gridRenderer.render(context, grid);
@@ -110,6 +110,9 @@ public final class CanvasRenderer {
                     authoritativeVisionRegions, maskWhenAuthoritativeVisionEmpty);
         }
         sceneFogRenderer.render(context, tabletopScene, masterView);
+        // Master-marked tokens are intentionally drawn after both player masks and fog.
+        renderObjects(context, tabletopScene, scene, selectionManager, editorSelectionVisible,
+                resizeHandlesVisible, attachmentMarkersVisible, masterView, null, true);
     }
 
     private void renderObjects(
@@ -121,7 +124,8 @@ public final class CanvasRenderer {
             boolean resizeHandlesVisible,
             boolean attachmentMarkersVisible,
             boolean masterView,
-            Collection<String> authoritativeVisibleObjectIds
+            Collection<String> authoritativeVisibleObjectIds,
+            boolean renderAboveMasksOnly
     ) {
         Set<String> visibleIds = authoritativeVisibleObjectIds == null
                 ? null : new HashSet<>(authoritativeVisibleObjectIds);
@@ -132,6 +136,12 @@ public final class CanvasRenderer {
             }
         });
         for (CanvasObject object : scene.getObjects()) {
+            boolean renderAboveMasks = tabletopScene != null && tabletopScene.getObjects().stream()
+                    .filter(metadata -> metadata != null && object.id().equals(metadata.getId()))
+                    .findFirst()
+                    .map(metadata -> metadata.getState().isRenderAboveMasks())
+                    .orElse(false);
+            if (renderAboveMasks != renderAboveMasksOnly) continue;
             if (attachmentMarkersVisible
                     && AttachmentVisibilityResolver.isInactiveForParentState(
                     tabletopScene, scene, object)) continue;

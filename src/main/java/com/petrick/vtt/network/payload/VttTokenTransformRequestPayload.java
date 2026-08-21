@@ -11,7 +11,8 @@ public record VttTokenTransformRequestPayload(
         String sceneId, String objectId, double x, double y, double rotationDegrees,
         double scaleX, double scaleY, int layerIndex,
         boolean flippedHorizontally, boolean visible,
-        String displayName, String activeStateId, int tintColorRgb, boolean bypassCollision
+        String displayName, String activeStateId, int tintColorRgb, boolean renderAboveMasks,
+        boolean bypassCollision
 ) implements CustomPacketPayload {
     public static final Type<VttTokenTransformRequestPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(VTT.MOD_ID, "token_transform_request")
@@ -28,6 +29,7 @@ public record VttTokenTransformRequestPayload(
                         buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(),
                         buffer.readBoolean(), buffer.readBoolean(),
                         buffer.readUtf(128), buffer.readUtf(128), buffer.readVarInt(),
+                        buffer.readBoolean(),
                         buffer.readBoolean());
             }
 
@@ -48,6 +50,7 @@ public record VttTokenTransformRequestPayload(
                 buffer.writeUtf(payload.displayName(), 128);
                 buffer.writeUtf(payload.activeStateId(), 128);
                 buffer.writeVarInt(payload.tintColorRgb());
+                buffer.writeBoolean(payload.renderAboveMasks());
                 buffer.writeBoolean(payload.bypassCollision());
             }
         };

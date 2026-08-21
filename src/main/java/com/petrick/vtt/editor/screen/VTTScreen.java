@@ -563,6 +563,7 @@ public final class VTTScreen extends Screen {
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
             renderFullscreenShow(context);
+            renderMediaLayer(context);
             return;
         }
         if (session.isLocalMaster()) inputController.renderToolOverlay(context, renderState);
@@ -578,6 +579,7 @@ public final class VTTScreen extends Screen {
             VttAssetSyncHudOverlay.render(graphics);
             renderPresentationCurtain(context);
             renderFullscreenShow(context);
+            renderMediaLayer(context);
             return;
         }
 
@@ -749,6 +751,13 @@ public final class VTTScreen extends Screen {
         VttAssetSyncHudOverlay.render(graphics);
         renderPresentationCurtain(context);
         renderFullscreenShow(context);
+        renderMediaLayer(context);
+    }
+
+    private void renderMediaLayer(VRenderContext context) {
+        if (!hudMediaOpen || !session.isLocalMaster() || VttClientShowState.blocksInput()) return;
+        mediaLibraryOverlay.render(
+                context, this.font, session.getAssetLibraryScanResult(), audioPlayerService);
     }
 
     private void renderFullscreenShow(VRenderContext context) {
@@ -1071,11 +1080,6 @@ public final class VTTScreen extends Screen {
             closeAssetFolderDialog();
         }
         editorHudOverlay.render(context, this.font, editorHudState());
-        if (hudMediaOpen && master) {
-            mediaLibraryOverlay.render(
-                    context, this.font, session.getAssetLibraryScanResult(),
-                    audioPlayerService);
-        }
         if (hudSettingsOpen && session.getActiveScene() != null
                 && mapPickerTarget != MapPickerTarget.ACTIVE_SCENE) {
             editorSettingsOverlay.render(
@@ -3011,6 +3015,12 @@ public final class VTTScreen extends Screen {
             }
             return true;
         }
+        if (hudMediaOpen && mediaLibraryOverlay.isPreloadStatusOpen()) {
+            mediaLibraryOverlay.mouseClicked(
+                    mouseX, mouseY, this.width, this.height,
+                    session.getAssetLibraryScanResult(), audioPlayerService, session);
+            return true;
+        }
         if (handleAssetBatchDeleteConfirmationMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -3095,9 +3105,8 @@ public final class VTTScreen extends Screen {
         }
 
         if (handleAssetManagerMouseClicked(mouseX, mouseY, button)) return true;
-        if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
-        if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
-
+        // Context actions must run before generic HUD handling; the latter closes transient
+        // popups when a click is outside the HUD itself.
         if (canvasEmptyContextMenuOverlay.isOpen()) {
             var interaction = canvasEmptyContextMenuOverlay.mouseClicked(
                     mouseX, mouseY, button, this.width, sceneClipboard != null);
@@ -3116,6 +3125,9 @@ public final class VTTScreen extends Screen {
             }
             if (interaction.consumed()) return true;
         }
+
+        if (handleEditorSettingsMouseClicked(mouseX, mouseY, button)) return true;
+        if (handleEditorHudMouseClicked(mouseX, mouseY, button)) return true;
 
         if (handleCanvasAttachmentContextClick(mouseX, mouseY, button)) return true;
 
@@ -4825,6 +4837,8 @@ public final class VTTScreen extends Screen {
                 selectionManager.selectOnly(token.id());
                 inputController.toggleSelectedObjectsVisibility();
             }
+            case TOGGLE_ABOVE_FOG -> mutateCanvasTokenMetadata(() -> sceneObject.getState()
+                    .setRenderAboveMasks(!sceneObject.getState().isRenderAboveMasks()));
             case TOGGLE_VISION -> mutateCanvasTokenMetadata(() ->
                     sceneObject.setVisionEnabled(!sceneObject.isVisionEnabled()));
             case TOGGLE_OWN_LIGHT -> {

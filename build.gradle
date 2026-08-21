@@ -30,8 +30,10 @@ repositories {
     mavenCentral()
 }
 
+version = mod_version
+
 base {
-    archivesName = mod_id
+    archivesName = "P-VTT"
 }
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.

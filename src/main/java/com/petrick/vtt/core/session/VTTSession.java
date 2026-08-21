@@ -684,6 +684,7 @@ public final class VTTSession {
                         sceneObject.getState().setVisible(update.visible());
                         sceneObject.getState().setActiveStateId(update.activeStateId());
                         sceneObject.getState().setTintColorRgb(update.tintColorRgb());
+                        sceneObject.getState().setRenderAboveMasks(update.renderAboveMasks());
                         sceneObject.setDisplayName(update.displayName());
                     });
             for (var sceneObject : activeScene.getObjects()) {

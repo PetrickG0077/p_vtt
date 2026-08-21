@@ -1043,6 +1043,7 @@ public final class VttServerTabletopState {
                 && nearlyEqual(request.scaleY(), requestedScaleY)
                 && request.layerIndex() == previousLayerIndex
                 && request.visible() == object.getState().isVisible()
+                && request.renderAboveMasks() == object.getState().isRenderAboveMasks()
                 && Objects.equals(request.displayName(), object.getDisplayName()));
         Vec2d acceptedPosition = currentPosition.add(allowedDelta);
         double acceptedRotation = stateAppearance != null
@@ -1074,6 +1075,7 @@ public final class VttServerTabletopState {
                 || !nearlyEqual(requestedScaleY, object.getTransform().getScaleY()))
                 || request.layerIndex() != previousLayerIndex
                 || request.visible() != object.getState().isVisible()
+                || request.renderAboveMasks() != object.getState().isRenderAboveMasks()
                 || !Objects.equals(request.displayName(), object.getDisplayName()));
         object.getTransform().setX(acceptedPosition.x());
         object.getTransform().setY(acceptedPosition.y());
@@ -1087,6 +1089,7 @@ public final class VttServerTabletopState {
         if (master) {
             moveObjectToLayer(object, request.layerIndex());
             object.getState().setVisible(request.visible());
+            object.getState().setRenderAboveMasks(request.renderAboveMasks());
             object.setDisplayName(request.displayName());
         }
         if (!followsPosition || editingAttachmentOffset) {
@@ -1108,6 +1111,7 @@ public final class VttServerTabletopState {
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
                 object.getDisplayName(), object.getState().getActiveStateId(),
                 object.getState().getTintColorRgb(),
+                object.getState().isRenderAboveMasks(),
                 playerId, movementAccepted && masterFieldsAccepted);
     }
 
@@ -1145,7 +1149,8 @@ public final class VttServerTabletopState {
                 object.getTransform().getScaleX(), object.getTransform().getScaleY(), currentLayerIndex(object),
                 object.getState().isFlippedHorizontally(), object.getState().isVisible(),
                 object.getDisplayName(), object.getState().getActiveStateId(),
-                object.getState().getTintColorRgb(), playerId, false);
+                object.getState().getTintColorRgb(), object.getState().isRenderAboveMasks(),
+                playerId, false);
     }
 
     /** Resolves bound attachments and attachment-owned lights after a token/attachment changes. */
@@ -1373,6 +1378,7 @@ public final class VttServerTabletopState {
                 currentLayerIndex(object), object.getState().isFlippedHorizontally(),
                 object.getState().isVisible(), object.getDisplayName(),
                 object.getState().getActiveStateId(), object.getState().getTintColorRgb(),
+                object.getState().isRenderAboveMasks(),
                 "server", true);
     }
 

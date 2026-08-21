@@ -14,6 +14,9 @@ public final class VttSceneState {
     /** RGB multiplier applied while rendering this placed token. White is neutral. */
     private int tintColorRgb = 0xFFFFFF;
 
+    /** Renders this token after player vision and fog masks. Master-only editor option. */
+    private boolean renderAboveMasks;
+
     public VttSceneState() {}
 
     public VttSceneState(
@@ -60,5 +63,11 @@ public final class VttSceneState {
 
     public void setTintColorRgb(int tintColorRgb) {
         this.tintColorRgb = tintColorRgb & 0x00FFFFFF;
+    }
+
+    public boolean isRenderAboveMasks() { return renderAboveMasks; }
+
+    public void setRenderAboveMasks(boolean renderAboveMasks) {
+        this.renderAboveMasks = renderAboveMasks;
     }
 }
