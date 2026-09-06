@@ -47,6 +47,12 @@ public final class InputController {
 
     private Vec2d lastGlobalPanMousePosition;
 
+    private boolean keyboardObjectMoveActive;
+
+    /** True only while a WASD camera pan or WASD object move is actively happening
+     * this frame. Used to block tool-switching while the player is mid-action. */
+    private boolean wasdMovementInProgress;
+
     public InputController(
             Camera2D camera,
             CanvasScene scene,
@@ -171,6 +177,66 @@ public final class InputController {
         return toolController.getActiveToolId();
     }
 
+    /** Applies one frame of WASD movement. Camera movement needs no scene history; selected
+     * object movement is captured as one undoable editor action until the keys are released. */
+    public boolean updateWasdMovement(boolean rightMouseHeld, boolean up, boolean down,
+                                      boolean left, boolean right) {
+        boolean moving = up || down || left || right;
+        boolean handCamera = rightMouseHeld && "hand".equals(getActiveToolId());
+        boolean selectedObjects = "select".equals(getActiveToolId())
+                && !selectionManager.getSelectedObjectIds().isEmpty();
+        if (!moving || !handCamera && !selectedObjects) {
+            finishWasdObjectMovement();
+            wasdMovementInProgress = false;
+            return false;
+        }
+        double x = (right ? 1.0 : 0.0) - (left ? 1.0 : 0.0);
+        double y = (down ? 1.0 : 0.0) - (up ? 1.0 : 0.0);
+        Vec2d direction = new Vec2d(x, y);
+        if (direction.lengthSquared() <= 0.0) {
+            wasdMovementInProgress = false;
+            return false;
+        }
+        direction = direction.normalize().multiply(6.0 / Math.max(0.1, camera.getZoom()));
+        wasdMovementInProgress = true;
+        if (handCamera) {
+            finishWasdObjectMovement();
+            camera.move(direction);
+            return true;
+        }
+        if (!keyboardObjectMoveActive) {
+            beginSceneChange();
+            keyboardObjectMoveActive = true;
+        }
+        scene.moveObjects(selectionManager.getSelectedObjectIds(), direction);
+        return true;
+    }
+
+    public void finishWasdObjectMovement() {
+        if (!keyboardObjectMoveActive) return;
+        keyboardObjectMoveActive = false;
+        endSceneChange();
+    }
+
+    /** Called by the screen when an overlay/dialog interrupts input mid-movement,
+     * so the tool-switch lock doesn't stay stuck on. */
+    public void cancelWasdNavigation() {
+        wasdMovementInProgress = false;
+        finishWasdObjectMovement();
+    }
+
+    public boolean isWasdNavigationActive(boolean rightMouseHeld) {
+        return (rightMouseHeld && "hand".equals(getActiveToolId()))
+                || ("select".equals(getActiveToolId())
+                && !selectionManager.getSelectedObjectIds().isEmpty());
+    }
+
+    /** True while a WASD camera pan or WASD object move is actively in progress
+     * (i.e. movement keys are currently being applied), used to lock tool switching. */
+    public boolean isWasdMovementInProgress() {
+        return wasdMovementInProgress;
+    }
+
     public void scaleSelectedObjectsUp() {
         performTransform(() -> scene.scaleObjects(
                 selectionManager.getSelectedObjectIds(),
@@ -249,10 +315,12 @@ public final class InputController {
     }
 
     public void selectHandTool() {
+        if (wasdMovementInProgress) return;
         toolController.selectHandTool();
     }
 
     public void selectSelectTool() {
+        if (wasdMovementInProgress) return;
         toolController.selectSelectTool();
     }
 
@@ -269,18 +337,35 @@ public final class InputController {
         return toolController.closeCollisionBoxEditor();
     }
 
-    public void selectWallTool() { toolController.selectWallTool(); }
+    public void selectWallTool() {
+        if (wasdMovementInProgress) return;
+        toolController.selectWallTool();
+    }
 
-    public void selectDoorTool() { toolController.selectDoorTool(); }
+    public void selectDoorTool() {
+        if (wasdMovementInProgress) return;
+        toolController.selectDoorTool();
+    }
 
-    public void selectFogTool() { toolController.selectFogTool(); }
-    public void selectLightTool() { toolController.selectLightTool(); }
+    public void selectFogTool() {
+        if (wasdMovementInProgress) return;
+        toolController.selectFogTool();
+    }
+
+    public void selectLightTool() {
+        if (wasdMovementInProgress) return;
+        toolController.selectLightTool();
+    }
+
     public boolean selectLight(String lightId) { return toolController.selectLight(lightId); }
     public String getSelectedLightId() { return toolController.getSelectedLightId(); }
     public boolean consumeLightCopyRequest() { return toolController.consumeLightCopyRequest(); }
     public boolean consumeLightCutRequest() { return toolController.consumeLightCutRequest(); }
 
-    public void selectMeasureTool() { toolController.selectMeasureTool(); }
+    public void selectMeasureTool() {
+        if (wasdMovementInProgress) return;
+        toolController.selectMeasureTool();
+    }
 
     public boolean cancelWallDrawing() { return toolController.cancelWallDrawing(); }
 

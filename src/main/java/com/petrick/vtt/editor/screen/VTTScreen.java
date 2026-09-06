@@ -485,6 +485,7 @@ public final class VTTScreen extends Screen {
         applyPendingPresentationCamera();
         sendFollowCameraIfNeeded();
         handleActiveSceneChange();
+        updateWasdTabletopMovement();
         selectionManager.removeMissingObjects(scene);
         if (session.isLocalSpectator()
                 && !selectionManager.getSelectedObjectIds().isEmpty()) {
@@ -1382,11 +1383,11 @@ public final class VTTScreen extends Screen {
             case VttAssetFolderCommandPayload.RENAME_FOLDER -> "renaming folder";
             case VttAssetFolderCommandPayload.DUPLICATE_FOLDER -> "duplicating folder";
             case VttAssetFolderCommandPayload.MOVE_FOLDER,
-                    VttAssetFolderCommandPayload.MOVE_ITEM,
-                    VttAssetFolderCommandPayload.MOVE_SELECTION -> "moving assets";
+                 VttAssetFolderCommandPayload.MOVE_ITEM,
+                 VttAssetFolderCommandPayload.MOVE_SELECTION -> "moving assets";
             case VttAssetFolderCommandPayload.DELETE_SELECTION,
-                    VttAssetFolderCommandPayload.DELETE_FOLDER,
-                    VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
+                 VttAssetFolderCommandPayload.DELETE_FOLDER,
+                 VttAssetFolderCommandPayload.MOVE_CONTENTS_AND_DELETE_FOLDER ->
                     "deleting assets";
             default -> "updating assets";
         };
@@ -2286,7 +2287,7 @@ public final class VTTScreen extends Screen {
             VttScene candidate = sceneId.equals(activeSceneId)
                     ? session.getActiveScene()
                     : session.getTabletopStorage().loadScene(
-                            session.getActiveTabletop().getId(), sceneId);
+                    session.getActiveTabletop().getId(), sceneId);
             if (candidate == null) continue;
             long count;
             if (section == AssetManagerOverlay.Section.MAPS) {
@@ -2942,6 +2943,36 @@ public final class VTTScreen extends Screen {
         return modifiers;
     }
 
+    private void updateWasdTabletopMovement() {
+        if (this.minecraft == null || renderState == null || VttClientShowState.blocksInput()
+                || hudCreationOpen || hudSettingsOpen || tokenCreationDraft != null
+                || attachmentDefinitionDialog.isOpen() || sceneBackgroundEditor.isActive()
+                || canvasTokenContextMenuOverlay.isOpen()
+                || canvasAttachmentContextMenuOverlay.isOpen()
+                || canvasEmptyContextMenuOverlay.isOpen()) {
+            inputController.cancelWasdNavigation();
+            return;
+        }
+        long window = this.minecraft.getWindow().getWindow();
+        boolean rightMouseHeld = GLFW.glfwGetMouseButton(window,
+                GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
+        boolean up = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_W) == GLFW.GLFW_PRESS;
+        boolean down = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_S) == GLFW.GLFW_PRESS;
+        boolean left = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_A) == GLFW.GLFW_PRESS;
+        boolean right = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_D) == GLFW.GLFW_PRESS;
+        inputController.updateWasdMovement(rightMouseHeld, up, down, left, right);
+    }
+
+    private boolean wasdNavigationConsumes(int keyCode) {
+        if (keyCode != GLFW.GLFW_KEY_W && keyCode != GLFW.GLFW_KEY_A
+                && keyCode != GLFW.GLFW_KEY_S && keyCode != GLFW.GLFW_KEY_D
+                || this.minecraft == null) return false;
+        long window = this.minecraft.getWindow().getWindow();
+        boolean rightMouseHeld = GLFW.glfwGetMouseButton(window,
+                GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
+        return inputController.isWasdNavigationActive(rightMouseHeld);
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (VttClientShowState.blocksInput()) {
@@ -3585,9 +3616,9 @@ public final class VTTScreen extends Screen {
 
         TokenDefinition updatedDefinition = session.isNetworkAuthorityActive()
                 ? CreatedTokenStorage.updateCreatedTokenInMemory(
-                        tokenCreationDraft, tokenDefinitionRegistry, assetRegistry)
+                tokenCreationDraft, tokenDefinitionRegistry, assetRegistry)
                 : CreatedTokenStorage.updateCreatedToken(
-                        tokenCreationDraft, tokenDefinitionRegistry, assetRegistry);
+                tokenCreationDraft, tokenDefinitionRegistry, assetRegistry);
 
         if (updatedDefinition == null) {
             tokenCreationDraft.setErrorMessage("Could not save token");
@@ -4108,7 +4139,7 @@ public final class VTTScreen extends Screen {
                         scene.replaceObject(canvasAttachment.withActiveState(stateId));
                         attachment.getState().setActiveStateId(stateId);
                         attachmentDefinitionRegistry.findById(
-                                attachment.getSourceAttachmentDefinitionId())
+                                        attachment.getSourceAttachmentDefinitionId())
                                 .map(definition -> definition.states().get(stateId))
                                 .ifPresent(state -> {
                                     CanvasObject current = scene.findObjectById(attachmentId);
@@ -4161,7 +4192,7 @@ public final class VTTScreen extends Screen {
                 case DETACH -> AttachmentBindingService.detach(
                         session.getActiveScene(), attachmentId);
                 case COPY, CUT, DUPLICATE, DUPLICATE_SUBTREE, DETACH_CHILDREN, DELETE, DELETE_SUBTREE,
-                        SAVE_AS_TEMPLATE -> {
+                     SAVE_AS_TEMPLATE -> {
                 }
                 case NONE -> {
                 }
@@ -4541,7 +4572,7 @@ public final class VTTScreen extends Screen {
         VttLight selectedLight = selectedLightId == null ? null
                 : session.getActiveScene().getLights().stream()
                 .filter(candidate -> candidate != null
-                        && selectedLightId.equals(candidate.getId()))
+                                     && selectedLightId.equals(candidate.getId()))
                 .findFirst().orElse(null);
         if (selectedLight != null) {
             VttLight copy = copySubtreeLight(selectedLight);
@@ -5106,7 +5137,7 @@ public final class VTTScreen extends Screen {
 
         TokenCreationDraft editDraft = session.isNetworkAuthorityActive()
                 ? CreatedTokenStorage.createEditDraftFromFolder(
-                        tokenDefinition, session.getSyncedServerTokensFolder())
+                tokenDefinition, session.getSyncedServerTokensFolder())
                 : CreatedTokenStorage.createEditDraft(tokenDefinition);
 
         if (editDraft == null) {
@@ -6048,17 +6079,20 @@ public final class VTTScreen extends Screen {
         }
 
         if (keyCode == GLFW.GLFW_KEY_H) {
+            if (inputController.isWasdMovementInProgress()) return true;
             inputController.selectHandTool();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_S) {
+            if (wasdNavigationConsumes(keyCode)) return true;
             inputController.selectSelectTool();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_M) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (inputController.isWasdMovementInProgress()) return true;
             selectionManager.clearSelection();
             inputController.selectMeasureTool();
             return true;
@@ -6083,6 +6117,7 @@ public final class VTTScreen extends Screen {
 
         if (keyCode == GLFW.GLFW_KEY_W) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (wasdNavigationConsumes(keyCode)) return true;
             selectionManager.clearSelection();
             inputController.selectWallTool();
             return true;
@@ -6091,7 +6126,8 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_F) {
             if (hasFlippableSelectedTokens()) {
                 inputController.flipSelectedObjectsHorizontally();
-            } else if (session.getLocalRole().canEditTabletop()) {
+            } else if (session.getLocalRole().canEditTabletop()
+                    && !inputController.isWasdMovementInProgress()) {
                 selectionManager.clearSelection();
                 inputController.selectFogTool();
             }
@@ -6111,6 +6147,7 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_D
                 && (getKeyboardModifiers() & GLFW.GLFW_MOD_CONTROL) == 0) {
             if (!session.getLocalRole().canEditTabletop()) return true;
+            if (wasdNavigationConsumes(keyCode)) return true;
             selectionManager.clearSelection();
             inputController.selectDoorTool();
             return true;
@@ -6131,6 +6168,7 @@ public final class VTTScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_L) {
             if (!session.getLocalRole().canEditTabletop()) return true;
             if (inputController.toggleSelectedDoorLocked()) return true;
+            if (inputController.isWasdMovementInProgress()) return true;
             selectionManager.clearSelection();
             inputController.selectLightTool();
             return true;
@@ -6985,7 +7023,7 @@ public final class VTTScreen extends Screen {
                     if (metadata != null) {
                         metadata.getState().setActiveStateId(stateId);
                         attachmentDefinitionRegistry.findById(
-                                metadata.getSourceAttachmentDefinitionId())
+                                        metadata.getSourceAttachmentDefinitionId())
                                 .map(definition -> definition.states().get(stateId))
                                 .ifPresent(state -> {
                                     metadata.getState().setTintColorRgb(state.tintColorRgb());
@@ -7896,8 +7934,8 @@ public final class VTTScreen extends Screen {
                 if (childDefinition == null) continue;
                 String childId = ids.get(node.templateNodeId());
                 CanvasObject child = AttachmentFactory.createCanvasObject(
-                        childDefinition, childId, world, assetRegistry,
-                        session.getAssetThumbnailRegistry())
+                                childDefinition, childId, world, assetRegistry,
+                                session.getAssetThumbnailRegistry())
                         .withDisplayName(node.displayName());
                 scene.addObject(child);
             }
