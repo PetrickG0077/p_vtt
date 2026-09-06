@@ -4,6 +4,8 @@ import com.petrick.vtt.feature.asset.LibraryTextureAssetRef;
 import net.minecraft.client.Minecraft;
 
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Serviço responsável por carregar e cachear texturas animadas.
@@ -16,12 +18,22 @@ public final class AnimatedTextureService {
     private final AnimatedTextureRegistry registry;
 
     private final AnimatedTextureLoader loader;
+
+    /**
+     * IDs de texturas animadas que falharam ao carregar.
+     *
+     * Evita tentar carregar repetidamente um GIF inválido
+     * a cada chamada do renderer.
+     */
+    private final Set<String> failedTextureIds;
+
     private boolean useServerCache;
     private Path serverCacheRoot;
 
     public AnimatedTextureService() {
         this.registry = new AnimatedTextureRegistry();
         this.loader = new AnimatedTextureLoader();
+        this.failedTextureIds = new HashSet<>();
     }
 
     public AnimatedTextureFrame getCurrentFrame(
@@ -47,18 +59,26 @@ public final class AnimatedTextureService {
 
     public void clear() {
         registry.clear();
+        failedTextureIds.clear();
     }
 
     public void setUseServerCache(boolean useServerCache) {
         this.useServerCache = useServerCache;
-        if (!useServerCache) this.serverCacheRoot = null;
+
+        if (!useServerCache) {
+            this.serverCacheRoot = null;
+        }
+
         clear();
     }
 
     public void setServerCacheRoot(Path serverCacheRoot) {
         this.serverCacheRoot = serverCacheRoot == null
-                ? null : serverCacheRoot.toAbsolutePath().normalize();
+                ? null
+                : serverCacheRoot.toAbsolutePath().normalize();
+
         this.useServerCache = this.serverCacheRoot != null;
+
         clear();
     }
 
@@ -74,21 +94,40 @@ public final class AnimatedTextureService {
             return existingTexture;
         }
 
+        /*
+         * Se este arquivo já falhou anteriormente, não tenta
+         * carregá-lo novamente a cada frame.
+         */
+        if (failedTextureIds.contains(animatedTextureId)) {
+            return null;
+        }
+
         Path gameDirectory = Minecraft.getInstance()
                 .gameDirectory
                 .toPath();
-        String relativePath = normalizeLibraryRelativePath(libraryTexture.sourceRelativePath());
+
+        String relativePath = normalizeLibraryRelativePath(
+                libraryTexture.sourceRelativePath()
+        );
+
         Path syncedRoot = serverCacheRoot == null
                 ? gameDirectory.resolve("config/vtt_assets/cache/server")
                 : serverCacheRoot;
-        Path syncedFile = syncedRoot.resolve("assets")
+
+        Path syncedFile = syncedRoot
+                .resolve("assets")
                 .resolve(relativePath);
+
         Path localFile = gameDirectory
                 .resolve("config")
                 .resolve("vtt_assets")
                 .resolve("assets")
                 .resolve(relativePath);
-        Path file = useServerCache && java.nio.file.Files.isRegularFile(syncedFile) ? syncedFile : localFile;
+
+        Path file = useServerCache
+                && java.nio.file.Files.isRegularFile(syncedFile)
+                ? syncedFile
+                : localFile;
 
         AnimatedTexture loadedTexture = loader.loadGif(
                 animatedTextureId,
@@ -96,6 +135,7 @@ public final class AnimatedTextureService {
         );
 
         if (loadedTexture == null) {
+            failedTextureIds.add(animatedTextureId);
             return null;
         }
 

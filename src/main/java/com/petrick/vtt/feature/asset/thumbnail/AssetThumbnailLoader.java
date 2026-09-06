@@ -284,19 +284,32 @@ public final class AssetThumbnailLoader {
     ) {
         DynamicTexture dynamicTexture = new DynamicTexture(image);
 
-        ResourceLocation textureLocation = Minecraft.getInstance()
-                .getTextureManager()
-                .register(
-                        textureName,
-                        dynamicTexture
-                );
+        try {
+            ResourceLocation textureLocation = Minecraft.getInstance()
+                    .getTextureManager()
+                    .register(
+                            textureName,
+                            dynamicTexture
+                    );
 
-        registry.register(new AssetThumbnail(
-                thumbnailId,
-                textureLocation,
-                image.getWidth(),
-                image.getHeight()
-        ));
+            registry.register(new AssetThumbnail(
+                    thumbnailId,
+                    textureLocation,
+                    image.getWidth(),
+                    image.getHeight()
+            ));
+
+        } catch (RuntimeException exception) {
+            dynamicTexture.close();
+
+            VTT.LOGGER.error(
+                    "Failed to register VTT asset thumbnail texture: {}",
+                    textureName,
+                    exception
+            );
+
+            throw exception;
+        }
     }
 
     private boolean isFileSizeAllowed(AssetLibraryEntry entry) {
