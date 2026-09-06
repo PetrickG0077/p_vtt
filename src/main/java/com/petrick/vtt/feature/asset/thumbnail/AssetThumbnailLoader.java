@@ -169,6 +169,7 @@ public final class AssetThumbnailLoader {
     }
 
     private NativeImage readFirstGifFrameAsNativeImage(AssetLibraryEntry entry) throws IOException {
+        ImageIO.setUseCache(false);
         try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(
                 Files.newInputStream(entry.absolutePath())
         )) {

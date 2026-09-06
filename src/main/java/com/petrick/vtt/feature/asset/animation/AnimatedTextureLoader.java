@@ -60,6 +60,8 @@ public final class AnimatedTextureLoader {
         List<AnimatedTextureFrame> frames = new ArrayList<>();
         ImageReader reader = null;
 
+        ImageIO.setUseCache(false);
+
         try (
                 ImageInputStream imageInputStream =
                         ImageIO.createImageInputStream(
