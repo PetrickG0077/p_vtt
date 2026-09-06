@@ -76,8 +76,8 @@ public final class TokenCatalogOverlay {
 
     private boolean detailsPopupSuppressed;
 
-    public TokenCatalogOverlay() {
-        this.visualRenderer = new CanvasVisualRenderer(new AnimatedTextureService());
+    public TokenCatalogOverlay(AnimatedTextureService animatedTextureService) {
+        this.visualRenderer = new CanvasVisualRenderer(animatedTextureService);
     }
 
     public void render(

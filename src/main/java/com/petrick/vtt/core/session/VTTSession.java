@@ -1052,7 +1052,16 @@ public final class VTTSession {
             reloadSyncedServerAssets();
             return;
         }
+
         this.assetLibraryScanResult = assetLibraryService.scanLibrary();
+
+        // Libera todas as thumbnails antigas antes de recriar
+        // as thumbnails correspondentes aos assets atuais.
+        assetThumbnailRegistry.clear();
+
+        // Limpa também as texturas animadas carregadas anteriormente.
+        animatedTextureService.clear();
+
         loadAssetThumbnails();
         refreshPlacedAttachmentVisuals();
     }

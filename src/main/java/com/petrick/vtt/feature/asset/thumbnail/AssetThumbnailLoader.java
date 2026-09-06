@@ -34,6 +34,8 @@ public final class AssetThumbnailLoader {
 
     private static final int MAX_IMAGE_HEIGHT = 5120;
 
+    private static final long MAX_NATIVE_IMAGE_BYTES = 64L * 1024L * 1024L;
+
     private static final int ANIMATED_FALLBACK_PLACEHOLDER_SIZE = 64;
 
     private final AssetThumbnailRegistry registry;
@@ -329,8 +331,16 @@ public final class AssetThumbnailLoader {
     }
 
     private boolean isImageSizeAllowed(NativeImage image) {
-        return image.getWidth() <= MAX_IMAGE_WIDTH
-                && image.getHeight() <= MAX_IMAGE_HEIGHT;
+        if (image.getWidth() > MAX_IMAGE_WIDTH
+                || image.getHeight() > MAX_IMAGE_HEIGHT) {
+            return false;
+        }
+
+        long estimatedBytes = (long) image.getWidth()
+                * image.getHeight()
+                * 4L;
+
+        return estimatedBytes <= MAX_NATIVE_IMAGE_BYTES;
     }
 
     private String sanitizeTextureName(String value) {

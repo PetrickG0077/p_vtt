@@ -441,7 +441,9 @@ public final class VTTScreen extends Screen {
         this.assetCatalogSelection = new AssetCatalogSelection();
         this.assetCatalogController = new AssetCatalogController(assetCatalogSelection);
 
-        this.tokenCatalogOverlay = new TokenCatalogOverlay();
+        this.tokenCatalogOverlay = new TokenCatalogOverlay(
+                session.getAnimatedTextureService()
+        );
         this.tokenCatalogSelection = new TokenCatalogSelection();
         this.tokenCatalogController = new TokenCatalogController(tokenCatalogSelection);
         this.mapCatalogOverlay = new MapCatalogOverlay();
