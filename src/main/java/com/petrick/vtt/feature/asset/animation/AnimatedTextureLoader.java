@@ -46,41 +46,72 @@ public final class AnimatedTextureLoader {
             Path file
     ) {
         if (animatedTextureId == null || animatedTextureId.isBlank()) {
-            throw new IllegalArgumentException("Animated texture id cannot be null or blank");
+            throw new IllegalArgumentException(
+                    "Animated texture id cannot be null or blank"
+            );
         }
 
         if (file == null) {
-            throw new IllegalArgumentException("Animated texture file cannot be null");
+            throw new IllegalArgumentException(
+                    "Animated texture file cannot be null"
+            );
         }
 
-        try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(Files.newInputStream(file))) {
+        List<AnimatedTextureFrame> frames = new ArrayList<>();
+        ImageReader reader = null;
+
+        try (
+                ImageInputStream imageInputStream =
+                        ImageIO.createImageInputStream(
+                                Files.newInputStream(file)
+                        )
+        ) {
             if (imageInputStream == null) {
-                throw new IOException("Could not create image input stream for " + file);
+                throw new IOException(
+                        "Could not create image input stream for " + file
+                );
             }
 
-            Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName("gif");
+            Iterator<ImageReader> readers =
+                    ImageIO.getImageReadersByFormatName("gif");
 
             if (!readers.hasNext()) {
                 throw new IOException("No GIF ImageReader available");
             }
 
-            ImageReader reader = readers.next();
+            reader = readers.next();
             reader.setInput(imageInputStream, false, false);
 
-            int frameCount = Math.min(reader.getNumImages(true), MAX_FRAMES);
+            int frameCount = Math.min(
+                    reader.getNumImages(true),
+                    MAX_FRAMES
+            );
 
             if (frameCount <= 0) {
-                throw new IOException("GIF has no frames: " + file);
+                throw new IOException(
+                        "GIF has no frames: " + file
+                );
             }
-
-            List<AnimatedTextureFrame> frames = new ArrayList<>();
 
             BufferedImage canvas = null;
 
             for (int frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+
                 BufferedImage rawFrame = reader.read(frameIndex);
 
-                if (rawFrame.getWidth() > MAX_WIDTH || rawFrame.getHeight() > MAX_HEIGHT) {
+                if (rawFrame == null) {
+                    throw new IOException(
+                            "Could not read GIF frame "
+                                    + frameIndex
+                                    + ": "
+                                    + file
+                    );
+                }
+
+                if (
+                        rawFrame.getWidth() > MAX_WIDTH
+                                || rawFrame.getHeight() > MAX_HEIGHT
+                ) {
                     throw new IOException(
                             "Animated image is too large: "
                                     + rawFrame.getWidth()
@@ -99,42 +130,63 @@ public final class AnimatedTextureLoader {
 
                 Graphics2D graphics = canvas.createGraphics();
 
-                graphics.setComposite(AlphaComposite.Clear);
-                graphics.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+                try {
+                    graphics.setComposite(AlphaComposite.Clear);
+                    graphics.fillRect(
+                            0,
+                            0,
+                            canvas.getWidth(),
+                            canvas.getHeight()
+                    );
 
-                graphics.setComposite(AlphaComposite.SrcOver);
-                graphics.drawImage(rawFrame, 0, 0, null);
+                    graphics.setComposite(AlphaComposite.SrcOver);
 
-                graphics.dispose();
+                    graphics.drawImage(
+                            rawFrame,
+                            0,
+                            0,
+                            null
+                    );
+                } finally {
+                    graphics.dispose();
+                }
 
-                NativeImage nativeImage = convertToNativeImage(canvas);
+                NativeImage nativeImage =
+                        convertToNativeImage(canvas);
 
-                ResourceLocation textureLocation = Minecraft.getInstance()
-                        .getTextureManager()
-                        .register(
-                                "vtt_animated_texture/"
-                                        + sanitizeTextureName(animatedTextureId)
-                                        + "/frame_"
-                                        + frameIndex,
-                                new DynamicTexture(nativeImage)
+                ResourceLocation textureLocation =
+                        Minecraft.getInstance()
+                                .getTextureManager()
+                                .register(
+                                        "vtt_animated_texture/"
+                                                + sanitizeTextureName(
+                                                animatedTextureId
+                                        )
+                                                + "/frame_"
+                                                + frameIndex,
+                                        new DynamicTexture(nativeImage)
+                                );
+
+                int durationMs =
+                        readFrameDurationMs(
+                                reader.getImageMetadata(frameIndex)
                         );
 
-                int durationMs = readFrameDurationMs(reader.getImageMetadata(frameIndex));
-
-                frames.add(new AnimatedTextureFrame(
-                        textureLocation,
-                        canvas.getWidth(),
-                        canvas.getHeight(),
-                        durationMs
-                ));
+                frames.add(
+                        new AnimatedTextureFrame(
+                                textureLocation,
+                                canvas.getWidth(),
+                                canvas.getHeight(),
+                                durationMs
+                        )
+                );
             }
 
-            reader.dispose();
-
-            AnimatedTexture animatedTexture = new AnimatedTexture(
-                    animatedTextureId,
-                    frames
-            );
+            AnimatedTexture animatedTexture =
+                    new AnimatedTexture(
+                            animatedTextureId,
+                            frames
+                    );
 
             VTT.LOGGER.info(
                     "Loaded VTT animated texture: {} ({} frames)",
@@ -143,7 +195,11 @@ public final class AnimatedTextureLoader {
             );
 
             return animatedTexture;
+
         } catch (IOException exception) {
+
+            releaseFrames(frames);
+
             VTT.LOGGER.error(
                     "Failed to load animated texture: {}",
                     file,
@@ -151,7 +207,11 @@ public final class AnimatedTextureLoader {
             );
 
             return null;
+
         } catch (RuntimeException exception) {
+
+            releaseFrames(frames);
+
             VTT.LOGGER.error(
                     "Unexpected error while loading animated texture: {}",
                     file,
@@ -159,6 +219,12 @@ public final class AnimatedTextureLoader {
             );
 
             return null;
+
+        } finally {
+
+            if (reader != null) {
+                reader.dispose();
+            }
         }
     }
 
@@ -252,5 +318,21 @@ public final class AnimatedTextureLoader {
                 .toLowerCase()
                 .replace('\\', '/')
                 .replaceAll("[^a-z0-9/._-]", "_");
+    }
+
+    private void releaseFrames(List<AnimatedTextureFrame> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return;
+        }
+
+        var textureManager = Minecraft.getInstance().getTextureManager();
+
+        for (AnimatedTextureFrame frame : frames) {
+            if (frame == null || frame.texture() == null) {
+                continue;
+            }
+
+            textureManager.release(frame.texture());
+        }
     }
 }
